@@ -150,6 +150,38 @@ def test_synthesise_none_sources_no_references(synthesiser, mock_llm, sample_res
     assert "References" not in result
 
 
+# ── short mode tests ──────────────────────────────────────────────────────────
+
+def test_synthesise_short_mode_returns_string(synthesiser, mock_llm, sample_results):
+    mock_llm.chat.return_value = LLMResponse(type="text", content="## Summary\n\nBrief overview.")
+    result = synthesiser.synthesise("nuclear fusion", sample_results, short=True)
+    assert isinstance(result, str)
+    assert len(result) > 0
+
+
+def test_synthesise_short_mode_no_references(synthesiser, mock_llm,
+                                              sample_results, sample_sources):
+    mock_llm.chat.return_value = LLMResponse(type="text", content="## Summary")
+    result = synthesiser.synthesise("nuclear fusion", sample_results,
+                                    sources=sample_sources, short=True)
+    assert "References" not in result
+
+
+def test_synthesise_short_mode_uses_lower_token_limit(synthesiser, mock_llm,
+                                                       sample_results, config):
+    config.max_tokens_synthesis = 8192
+    mock_llm.chat.return_value = LLMResponse(type="text", content="## Summary")
+    synthesiser.synthesise("nuclear fusion", sample_results, short=True)
+    assert mock_llm.chat.call_args[1]["max_tokens"] <= 2048
+
+
+def test_synthesise_default_is_not_short(synthesiser, mock_llm, sample_results, config):
+    config.max_tokens_synthesis = 8192
+    mock_llm.chat.return_value = LLMResponse(type="text", content="# Report")
+    synthesiser.synthesise("nuclear fusion", sample_results)
+    assert mock_llm.chat.call_args[1]["max_tokens"] == 8192
+
+
 # ── _format_findings() tests ──────────────────────────────────────────────────
 
 def test_format_findings_includes_all_questions(synthesiser, sample_results):
@@ -277,3 +309,24 @@ def test_real_synthesise():
     assert len(report) > 500
     assert "#" in report
     assert "References" in report
+
+
+@pytest.mark.integration
+def test_real_synthesise_short_mode():
+    from llm import AnthropicClient
+    from dotenv import load_dotenv
+    load_dotenv()
+
+    llm = AnthropicClient()
+    synthesiser = Synthesiser(llm=llm)
+
+    results = {
+        "What is nuclear fusion?": "Nuclear fusion combines light nuclei releasing enormous energy.",
+        "What are the challenges?": "Plasma confinement and materials science are key challenges.",
+    }
+
+    report = synthesiser.synthesise("nuclear fusion energy", results, short=True)
+
+    assert isinstance(report, str)
+    assert len(report) > 100
+    assert "References" not in report

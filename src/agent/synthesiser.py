@@ -23,6 +23,21 @@ Guidelines:
 You MUST respond ONLY with the markdown report. No preamble, no explanation.
 """
 
+SHORT_SYNTHESISE_PROMPT = """You are a research report writer.
+
+Given a topic and structured research findings, write a concise executive summary
+in markdown format.
+
+The summary should:
+- Be 3-5 paragraphs
+- Cover the most important findings only
+- Include a brief conclusion
+- Note the most critical gaps
+
+Be factual, concise, and well-organised.
+You MUST respond ONLY with the markdown summary. No preamble, no explanation.
+"""
+
 
 class Synthesiser:
 
@@ -31,7 +46,8 @@ class Synthesiser:
         self.config = config or Config()
 
     def synthesise(self, topic: str, results: dict,
-                   sources: dict = None, max_tokens: int = None) -> str:
+                   sources: dict = None, max_tokens: int = None,
+                   short: bool = False) -> str:
         """
         Synthesise research findings into a structured report.
 
@@ -40,14 +56,22 @@ class Synthesiser:
             results:    {question: answer} dict from orchestrator
             sources:    {question: [{"title": str, "url": str}]} from orchestrator
             max_tokens: Override config value if needed
+            short:      If True, generate executive summary only
         """
         print("\n📝 Synthesising report...")
 
-        max_tokens = max_tokens or self.config.max_tokens_synthesis
+        if short:
+            print("   (executive summary mode)")
+            max_tokens = max_tokens or min(2048, self.config.max_tokens_synthesis)
+            prompt_template = SHORT_SYNTHESISE_PROMPT
+        else:
+            max_tokens = max_tokens or self.config.max_tokens_synthesis
+            prompt_template = SYNTHESISE_PROMPT
+
         findings = self._format_findings(results, sources or {})
 
         prompt = (
-            SYNTHESISE_PROMPT +
+            prompt_template +
             f"\n\n# Topic\n{topic}\n\n# Research Findings\n{findings}"
         )
 
@@ -58,8 +82,8 @@ class Synthesiser:
 
         report = response.content
 
-        # Append master reference list if sources available
-        if sources:
+        # Append master reference list if sources available and not short mode
+        if sources and not short:
             references = self._format_master_references(sources)
             if references:
                 report += "\n\n" + references

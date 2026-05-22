@@ -162,3 +162,23 @@ def test_ollama_models_configurable_independently(tmp_path, monkeypatch):
     config = load_config("config.yaml")
     assert config.ollama_orchestration_model == "llama3.1"
     assert config.ollama_synthesis_model == "llama3.2"
+    
+        
+def test_default_orchestration_provider_is_none():
+    config = Config()
+    assert config.orchestration_provider is None
+
+
+def test_default_synthesis_provider_is_none():
+    config = Config()
+    assert config.synthesis_provider is None
+
+
+def test_orchestration_provider_configurable(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    config_data = {"orchestration_provider": "ollama", "synthesis_provider": "anthropic"}
+    with open(tmp_path / "config.yaml", "w") as f:
+        yaml.dump(config_data, f)
+    config = load_config("config.yaml")
+    assert config.orchestration_provider == "ollama"
+    assert config.synthesis_provider == "anthropic"

@@ -8,7 +8,11 @@ from typing import Optional
 class Config:
     # Provider
     provider: str = "anthropic"
-    model: Optional[str] = None  # single override — overrides both tiers if set
+    model: Optional[str] = None
+
+    # Mixed provider support
+    orchestration_provider: Optional[str] = None  # overrides provider for orchestration
+    synthesis_provider: Optional[str] = None      # overrides provider for synthesis
 
     # Anthropic model tiering
     anthropic_orchestration_model: str = "claude-haiku-4-5-20251001"
