@@ -1,6 +1,8 @@
 import sys
 import os
 import argparse
+
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "src"))
 from dotenv import load_dotenv
 from llm import AnthropicClient, OllamaClient
 from agent import Orchestrator, Synthesiser
