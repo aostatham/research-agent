@@ -41,6 +41,7 @@ python main.py "your topic"
 | Fallback synthesis | Rescues questions that exhaust search iterations |
 | Provider abstraction | Normalised LLM interface across Anthropic and Ollama |
 | Model tiering | Cheaper model for orchestration, stronger for synthesis |
+| Mixed provider | Ollama orchestration + Anthropic synthesis in one run |
 | Exponential backoff | Handles transient API failures gracefully |
 | Three-layer config | Hardcoded defaults → config.yaml → CLI overrides |
 
@@ -50,6 +51,7 @@ python main.py "your topic"
 
 - Python 3.11+
 - Anthropic API key (for Anthropic provider and web search)
+- Tavily API key (optional — free 1,000/month at app.tavily.com)
 - Ollama (optional, for local inference)
 
 ---
@@ -66,16 +68,19 @@ source venv/bin/activate
 pip install -r requirements.txt
 ```
 
-### 2. Configure API key
+### 2. Configure API keys
 
 Create a `.env` file in the project root:
 
 ```
 ANTHROPIC_API_KEY=sk-ant-your-key-here
+TAVILY_API_KEY=tvly-your-key-here   # optional
 ```
 
-Get your API key from [console.anthropic.com](https://console.anthropic.com).
+Get your Anthropic API key from [console.anthropic.com](https://console.anthropic.com).
 New accounts receive approximately $5 in free trial credits.
+
+Get a free Tavily key at [app.tavily.com](https://app.tavily.com) — no credit card required.
 
 ---
 
@@ -94,7 +99,20 @@ python main.py "your research topic"
 python main.py "nuclear fusion energy"
 
 # Ollama (local inference)
-python main.py "nuclear fusion energy" --provider ollama --model llama3.1
+python main.py "nuclear fusion energy" -p ollama -m llama3.1
+
+# Tavily search instead of Anthropic search
+python main.py "nuclear fusion energy" --search-provider tavily
+```
+
+### Mixed provider — Ollama orchestration + Anthropic synthesis
+
+```bash
+python main.py "nuclear fusion energy" \
+  --orchestration-provider ollama \
+  --orchestration-model llama3.1 \
+  --synthesis-provider anthropic \
+  --synthesis-model claude-sonnet-4-6
 ```
 
 ### Maximum depth — Anthropic
@@ -126,22 +144,27 @@ python main.py "the current state of nuclear fusion energy" \
 
 ```
 positional arguments:
-  topic                           Research topic
+  topic                                   Research topic
 
 optional arguments:
-  --provider {anthropic,ollama}   LLM provider (default: from config.yaml)
-  --model MODEL                   Model override for both tiers
-  --orchestration-model MODEL     Override orchestration model specifically
-  --synthesis-model MODEL         Override synthesis model specifically
-  --min-questions N               Minimum sub-questions to generate (default: 4)
-  --max-questions N               Maximum sub-questions to generate (default: 5)
-  --max-iterations N              Max search iterations per question (default: 5)
-  --max-tokens-research N         Max tokens per research call (default: 2048)
-  --max-tokens-synthesis N        Max tokens for synthesis (default: 8192)
-  --config PATH                   Path to config file (default: config.yaml)
+  -p, --provider {anthropic,ollama}       LLM provider for both tiers
+  -m, --model MODEL                       Model override for both tiers
+  --orchestration-provider {anthropic,ollama}
+  --orchestration-model MODEL
+  --synthesis-provider {anthropic,ollama}
+  --synthesis-model MODEL
+  --search-provider {anthropic,tavily}    Search provider (default: anthropic)
+  --min-questions N                       Minimum sub-questions (default: 4)
+  --max-questions N                       Maximum sub-questions (default: 5)
+  --max-iterations N                      Max search iterations per question (default: 5)
+  --max-tokens-research N                 Max tokens per research call (default: 2048)
+  --max-tokens-synthesis N                Max tokens for synthesis (default: 8192)
+  -s, --short                             Executive summary only
+  -f, --format {markdown,html}            Output format (default: markdown)
+  --config PATH                           Custom config file path
 ```
 
-Reports are saved to `output/<topic>.md`.
+Reports are saved to `output/<topic>.md` or `output/<topic>.html`.
 
 ---
 
@@ -151,9 +174,9 @@ Reports are saved to `output/<topic>.md`.
 🔬 Research Agent
 ──────────────────────────────────────────────────
 Topic:              the current state of nuclear fusion energy
-Provider:           anthropic
-Orchestration model:claude-haiku-4-5-20251001
-Synthesis model:    claude-sonnet-4-6
+Orch provider:      anthropic / claude-haiku-4-5-20251001
+Synth provider:     anthropic / claude-sonnet-4-6
+Search provider:    anthropic
 Questions:          4–5
 ──────────────────────────────────────────────────
 
@@ -177,16 +200,33 @@ Questions:          4–5
 
 ──────────────────────────────────────────────────
 ✅ Done — report saved to output/the_current_state_of_nuclear_fusion_energy.md
+   Questions: 16  Searches: 63  Search provider: anthropic  Time: 455.8s
 ──────────────────────────────────────────────────
 ```
 
 ---
 
+## Search Providers
+
+| Provider | Cost | Free Limit | Notes |
+|---|---|---|---|
+| **Anthropic** (default) | $10/1,000 searches | None | Native citations, highest quality |
+| **Tavily** | Pay-as-you-go | 1,000/month | Designed for AI agents, #1 DeepResearch Bench |
+
+Configure in `config.yaml` or per-run with `--search-provider`:
+
+```yaml
+search_provider: tavily
+# tavily_api_key: tvly-...  # or set TAVILY_API_KEY in .env
+```
+
+> **Note:** Web searches always use the configured search provider regardless of which LLM provider handles orchestration. Ollama runs still use Anthropic or Tavily for web search.
+
+---
+
 ## Ollama Setup (Local Inference)
 
-Ollama lets you run models locally — no API key needed for inference.
-
-> **Note:** Web searches still use the Anthropic API regardless of provider, so an API key is always required. Ollama replaces the LLM orchestration and synthesis calls only.
+Ollama lets you run models locally — no API key needed for LLM inference.
 
 ### Install
 
@@ -212,7 +252,7 @@ ollama pull llama3.2
 
 ### Configure model storage (optional)
 
-To store models on an external drive, add to ~/.zshrc:
+To store models on an external drive, add to `~/.zshrc`:
 
 ```bash
 export OLLAMA_MODELS=/Volumes/YourDriveName/ollama-models
@@ -229,7 +269,9 @@ Then reload: `source ~/.zshrc`
 | Synthesis quality | Excellent | Moderate |
 | Comparative questions | Handles well | May need fallback |
 | Speed | Fast | Slower |
-| Cost | ~$0.10–$1.00/run | Free (local compute) |
+| LLM cost | ~$0.10–$1.00/run | Free (local compute) |
+
+**Best of both worlds:** Use `--orchestration-provider ollama --synthesis-provider anthropic` for free orchestration with high-quality Sonnet synthesis.
 
 ---
 
@@ -251,6 +293,15 @@ anthropic_synthesis_model: claude-sonnet-4-6
 ollama_orchestration_model: llama3.1
 ollama_synthesis_model: llama3.1
 ollama_base_url: http://localhost:11434
+
+# Mixed provider (optional — overrides provider for specific tiers)
+# orchestration_provider: ollama
+# synthesis_provider: anthropic
+
+# Search provider
+search_provider: anthropic   # anthropic | tavily
+# tavily_api_key: tvly-...   # or set TAVILY_API_KEY in .env
+# tavily_max_results: 5
 
 # Research behaviour
 min_questions: 4
@@ -290,22 +341,23 @@ research-agent/
 ├── requirements.txt
 ├── pytest.ini
 ├── README.md
-├── llm/                      # LLM provider abstraction
-│   ├── __init__.py
-│   ├── base.py               # Abstract LLMClient + LLMResponse
-│   ├── anthropic_client.py   # Anthropic implementation
-│   ├── ollama_client.py      # Ollama implementation
-│   └── retry.py              # Exponential backoff decorator
-├── agent/                    # Agent logic
-│   ├── __init__.py
-│   ├── orchestrator.py       # Decompose, research, reflect
-│   ├── synthesiser.py        # Report generation
-│   └── tools.py              # Tool definitions + web search
-├── config/                   # Configuration management
-│   ├── __init__.py
-│   └── settings.py           # Config dataclass + loader
-├── tests/                    # Test suite
-│   ├── __init__.py
+├── PROJECT_CONTEXT.md        # Handoff doc for continuing development
+├── src/                      # Source packages (src layout)
+│   ├── agent/
+│   │   ├── __init__.py
+│   │   ├── orchestrator.py   # Decompose, research loop, reflect
+│   │   ├── synthesiser.py    # Report generation
+│   │   └── tools.py          # Tool definitions + Anthropic/Tavily search
+│   ├── llm/
+│   │   ├── __init__.py
+│   │   ├── base.py           # Abstract LLMClient + LLMResponse
+│   │   ├── anthropic_client.py
+│   │   ├── ollama_client.py
+│   │   └── retry.py          # Exponential backoff decorator
+│   └── config/
+│       ├── __init__.py
+│       └── settings.py       # Config dataclass + three-layer loader
+├── tests/
 │   ├── test_base.py
 │   ├── test_anthropic_client.py
 │   ├── test_ollama_client.py
@@ -315,8 +367,9 @@ research-agent/
 │   ├── test_orchestrator.py
 │   ├── test_synthesiser.py
 │   ├── test_cli.py
+│   ├── test_tools.py
 │   └── test_integration_smoke.py
-└── output/                   # Generated reports (git-ignored)
+└── output/                   # Generated reports + index.md
 ```
 
 ---
@@ -336,6 +389,8 @@ pytest tests/ -m "ollama" -v
 # Full suite
 pytest tests/ -v
 ```
+
+Current test count: **183 unit tests passing**.
 
 ---
 
@@ -359,7 +414,7 @@ LLMResponse(type="text", content="...")
 LLMResponse(type="tool_call", tool_name="web_search", tool_input={"query": "..."})
 ```
 
-To add a new provider (e.g. OpenAI), create `llm/openai_client.py` implementing `LLMClient` and register it in `main.py`'s `build_llms()`.
+To add a new provider (e.g. OpenAI), create `src/llm/openai_client.py` implementing `LLMClient` and register it in `main.py`'s `build_llms()`.
 
 ---
 
@@ -367,75 +422,68 @@ To add a new provider (e.g. OpenAI), create `llm/openai_client.py` implementing 
 
 | Component | Cost |
 |---|---|
-| Web search | $10 / 1,000 searches (always Anthropic API) |
+| Anthropic web search | $10 / 1,000 searches |
+| Tavily search | Free up to 1,000/month |
 | Haiku orchestration | $1.00 / 1M input tokens, $5.00 / 1M output tokens |
 | Sonnet synthesis | $3.00 / 1M input tokens, $15.00 / 1M output tokens |
-| Typical run (default settings) | ~$0.05–$0.15 |
-| Maximum depth run | ~$0.50–$1.00 |
-
-> Web searches use the Anthropic API regardless of which LLM provider is selected for orchestration.
+| Typical default run (Anthropic search) | ~$0.05–$0.15 |
+| Maximum depth run (Anthropic search) | ~$0.50–$1.00 |
+| Ollama orchestration + Anthropic synthesis | ~$0.10–$0.20 |
+| Full Tavily search run | Search cost: $0 (within free tier) |
 
 ---
 
 ## Roadmap
 
 ### Phase A — Stability & Quality ✅ Complete
-- [x] `--provider` CLI flag to switch Anthropic / Ollama at runtime
+- [x] `-p` / `--provider` CLI flag
 - [x] Exponential backoff retry on API failures
-- [x] Config file (`config.yaml`) with three-layer hierarchy
-- [x] Fix message history edge case (tool call string bug)
-- [x] Model tiering — Haiku for orchestration, Sonnet for synthesis
+- [x] Config file with three-layer hierarchy
+- [x] Fix message history edge case
+- [x] Model tiering — Haiku orchestration, Sonnet synthesis
 - [x] Stronger reflection / critic persona
-- [x] Source citations carried through to final report
+- [x] Source citations in final report
 - [x] Repeated query detection + fallback synthesis
 
-### Phase B — Output Options
-- [ ] `--format` flag for HTML output
-- [ ] PDF export
-- [ ] `--short` flag for executive summary only
-- [ ] Report metadata — date, topic, model used, token count, search count
-- [ ] Index file tracking all reports generated
+### Phase B — Output Options ✅ Complete
+- [x] Report metadata table (date, topic, models, search count, time)
+- [x] `-s` / `--short` flag — executive summary only
+- [x] `-f` / `--format` flag — markdown or HTML output
+- [x] `output/index.md` — running index of all reports
+- [ ] PDF export (requires `weasyprint` or `pdfkit`)
 
 ### Phase C — Memory & Context
-- [ ] Persistent result cache — don't re-research the same question
-- [ ] Cross-run topic index — "what have I researched before?"
-- [ ] Context window management — summarise long message histories mid-loop
-- [ ] Follow-up mode — `--follow-up` to extend a previous report
+- [ ] Persistent result cache
+- [ ] Cross-run topic index
+- [ ] Context window management
+- [ ] Follow-up mode (`--follow-up`)
 
 ### Phase D — Multi-Agent
-- [ ] Separate planner agent from researcher agent
-- [ ] Critic agent that challenges the synthesiser's conclusions
-- [ ] Fact-checker agent that cross-references claims across sources
-- [ ] Parallel research — multiple questions researched simultaneously
+- [ ] Separate planner and researcher agents
+- [ ] Critic agent
+- [ ] Fact-checker agent
+- [ ] Parallel research
 
-### Phase E — Tools & Sources
-
-**Search providers** — selectable via `config.yaml` `search_provider` key:
-- [ ] **Tavily** — managed API, free 1,000/month, designed for AI agents, #1 DeepResearch Bench
-- [ ] **SearXNG** — self-hosted, unlimited, aggregates Google+Bing+DuckDuckGo
-- [ ] **Brave Search** — managed API, independent index, 2,000/month free
-- [ ] **Google Custom Search** — actual Google results, 100/day free
-
-**Additional tools:**
-- [ ] `read_url` — fetch and read a specific page directly
-- [ ] `arxiv_search` — search academic papers
-- [ ] `youtube_transcript` — extract content from video
-- [ ] `file_reader` — include local documents as context
-- [ ] Configurable tool set per run via CLI flags
+### Phase E — Tools & Sources ✅ Tavily Complete
+- [x] **Tavily** search — free 1,000/month, AI-optimised
+- [ ] SearXNG self-hosted search (unlimited)
+- [ ] Brave Search API (2,000/month free)
+- [ ] `read_url` tool
+- [ ] `arxiv_search` tool
+- [ ] `youtube_transcript` tool
+- [ ] `file_reader` tool
 
 ### Phase F — Interface
-- [ ] Web UI — Flask or FastAPI frontend
-- [ ] Progress streaming to browser via SSE
+- [ ] Web UI (Flask or FastAPI)
+- [ ] Progress streaming via SSE
 - [ ] Report library browser
-- [ ] REST API — accept topics, return report IDs, retrieve reports
+- [ ] REST API
 
 ### Phase G — Ollama & Provider Optimisation
-- [ ] Mixed-provider support — Ollama orchestration + Anthropic synthesis
-- [ ] Provider-specific prompt variants — separate prompts per provider in config
-- [ ] Rephrase comparative questions during decomposition for weaker models
-- [ ] `simple_questions` config flag — avoid complex comparative questions
-- [ ] Context window pressure management — summarise message history mid-loop
-- [ ] Test alternative Ollama models — llama3.2, mistral, mixtral
+- [x] Mixed-provider support (Ollama orchestration + Anthropic synthesis)
+- [ ] Provider-specific prompt variants
+- [ ] Rephrase comparative questions for weaker models
+- [ ] `simple_questions` config flag
 - [ ] System prompt support in `LLMClient`
 - [ ] Ollama model capability registry
 
@@ -443,11 +491,10 @@ To add a new provider (e.g. OpenAI), create `llm/openai_client.py` implementing 
 
 | Priority | Phase | Reason |
 |---|---|---|
-| Next | B | Output options immediately useful, low complexity |
-| Then | E — Tavily + SearXNG | Removes Anthropic search dependency, enables free high-volume use |
-| Then | G — Mixed provider | Biggest quality improvement for Ollama users at low cost |
-| Then | C | Makes agent stateful and reusable across runs |
-| Then | D | Most architecturally interesting, highest learning value |
+| Next | B.5 — PDF | Completes Phase B |
+| Then | E — SearXNG | Fully free, unlimited search option |
+| Then | C | Makes agent stateful across runs |
+| Then | D | Most architecturally interesting |
 | Then | E — remaining tools | Highest research quality gains |
 | Last | F | Only needed if sharing with others |
 
@@ -455,18 +502,20 @@ To add a new provider (e.g. OpenAI), create `llm/openai_client.py` implementing 
 
 ## Known Issues & Observations
 
-- Comparative questions ("How does X compare to Y?") are harder for llama3.1 — more likely to hit max iterations before synthesising
-- Llama3.1 synthesis is shallower than Sonnet — report depth is model-dependent
+- Comparative questions ("How does X compare to Y?") harder for llama3.1 — more likely to hit max iterations
+- Llama3.1 synthesis shallower than Sonnet — report depth is model-dependent
 - Fallback synthesis reliably rescues failed questions but produces shorter answers
-- Web searches cost $0.01 each via Anthropic API regardless of which LLM provider orchestrates
+- Anthropic web searches cost $0.01 each regardless of LLM provider
+- Tavily citations are per-result rather than per-sentence (less granular than Anthropic)
 
 ---
 
 ## Notes
 
-- Reports are saved to `output/` — add to `.gitignore` if topics are sensitive
-- The agent uses Haiku by default for orchestration (fast, cheap) and Sonnet for synthesis (quality)
-- Ollama tool calling quality varies by model — `llama3.1` is more reliable than `llama3.2`
+- Reports saved to `output/` — add to `.gitignore` if topics are sensitive
+- Haiku handles orchestration by default (fast, cheap); Sonnet handles synthesis (quality)
+- Ollama tool calling quality varies — `llama3.1` more reliable than `llama3.2`
+- See `PROJECT_CONTEXT.md` for full architectural context and handoff documentation
 
 ---
 
