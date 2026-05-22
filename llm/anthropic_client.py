@@ -2,6 +2,7 @@ import os
 import anthropic
 from dotenv import load_dotenv
 from .base import LLMClient, LLMResponse
+from .retry import with_retry
 
 load_dotenv()
 
@@ -17,17 +18,17 @@ class AnthropicClient(LLMClient):
         self.client = anthropic.Anthropic(api_key=api_key)
         self.model = model
 
-    def chat(self, messages: list, tools: list = None) -> LLMResponse:
+    @with_retry(max_attempts=3, base_delay=1.0, max_delay=30.0)
+    def chat(self, messages: list, tools: list = None, max_tokens: int = 2048) -> LLMResponse:
         kwargs = {
             "model": self.model,
-            "max_tokens": 1024,
+            "max_tokens": max_tokens,
             "messages": messages,
         }
         if tools:
             kwargs["tools"] = self._convert_tools(tools)
 
         response = self.client.messages.create(**kwargs)
-
         return self._normalise(response)
 
     def _convert_tools(self, tools: list) -> list:
@@ -51,6 +52,5 @@ class AnthropicClient(LLMClient):
                     tool_input=block.input,
                     raw=response
                 )
-        # Default to text
         text = next((b.text for b in response.content if b.type == "text"), "")
         return LLMResponse(type="text", content=text, raw=response)

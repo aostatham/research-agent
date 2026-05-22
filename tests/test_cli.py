@@ -74,7 +74,7 @@ def test_main_exits_without_args():
         with pytest.raises(SystemExit) as exc:
             from main import main
             main()
-    assert exc.value.code == 1
+    assert exc.value.code == 2
 
 
 def test_main_runs_full_pipeline(tmp_path, monkeypatch):
@@ -84,7 +84,7 @@ def test_main_runs_full_pipeline(tmp_path, monkeypatch):
     mock_orchestrator = MagicMock()
     mock_synthesiser = MagicMock()
 
-    mock_orchestrator.run.return_value = SAMPLE_RESULTS
+    mock_orchestrator.run.return_value = (SAMPLE_RESULTS, {})
     mock_synthesiser.synthesise.return_value = SAMPLE_REPORT
 
     with patch("sys.argv", ["main.py", "nuclear fusion"]), \
@@ -95,7 +95,8 @@ def test_main_runs_full_pipeline(tmp_path, monkeypatch):
         main()
 
     mock_orchestrator.run.assert_called_once_with("nuclear fusion")
-    mock_synthesiser.synthesise.assert_called_once_with("nuclear fusion", SAMPLE_RESULTS)
+    mock_synthesiser.synthesise.assert_called_once_with("nuclear fusion", SAMPLE_RESULTS, sources={}
+)
 
 
 def test_main_saves_report_to_output(tmp_path, monkeypatch):
@@ -105,7 +106,7 @@ def test_main_saves_report_to_output(tmp_path, monkeypatch):
     mock_orchestrator = MagicMock()
     mock_synthesiser = MagicMock()
 
-    mock_orchestrator.run.return_value = SAMPLE_RESULTS
+    mock_orchestrator.run.return_value = (SAMPLE_RESULTS, {})
     mock_synthesiser.synthesise.return_value = SAMPLE_REPORT
 
     with patch("sys.argv", ["main.py", "nuclear fusion"]), \
@@ -119,6 +120,51 @@ def test_main_saves_report_to_output(tmp_path, monkeypatch):
     assert len(output_files) == 1
     assert output_files[0].endswith(".md")
 
+
+# ── build_llm() tests ─────────────────────────────────────────────────────────
+
+def test_build_llms_returns_two_anthropic_clients():
+    from main import build_llms
+    from config import Config
+    with patch("main.AnthropicClient") as mock:
+        orch, synth = build_llms(Config(provider="anthropic"))
+        assert mock.call_count == 2
+
+
+def test_build_llms_returns_two_ollama_clients():
+    from main import build_llms
+    from config import Config
+    with patch("main.OllamaClient") as mock:
+        orch, synth = build_llms(Config(provider="ollama"))
+        assert mock.call_count == 2
+
+
+def test_build_llms_anthropic_uses_different_models_by_default():
+    from main import build_llms
+    from config import Config
+    with patch("main.AnthropicClient") as mock:
+        build_llms(Config(provider="anthropic"))
+        calls = [c.kwargs.get("model") or c.args[0] if c.args else c.kwargs.get("model")
+                 for c in mock.call_args_list]
+        models = [mock.call_args_list[0][1].get("model"),
+                  mock.call_args_list[1][1].get("model")]
+        assert models[0] != models[1]
+
+
+def test_build_llms_model_override_applies_to_both():
+    from main import build_llms
+    from config import Config
+    with patch("main.AnthropicClient") as mock:
+        build_llms(Config(provider="anthropic", model="claude-sonnet-4-6"))
+        for call in mock.call_args_list:
+            assert call[1].get("model") == "claude-sonnet-4-6"
+
+
+def test_build_llms_unknown_provider_exits():
+    from main import build_llms
+    from config import Config
+    with pytest.raises(SystemExit):
+        build_llms(Config(provider="unknown_provider"))
 
 # ── Integration tests ─────────────────────────────────────────────────────────
 

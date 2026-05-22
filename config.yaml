@@ -1,0 +1,27 @@
+# Research Agent Configuration
+
+# LLM Provider
+provider: anthropic
+
+# Anthropic model tiering
+anthropic_orchestration_model: claude-haiku-4-5-20251001
+anthropic_synthesis_model: claude-sonnet-4-6
+
+# Ollama model tiering
+ollama_orchestration_model: llama3.1
+ollama_synthesis_model: llama3.1
+ollama_base_url: http://localhost:11434
+
+# Research behaviour
+min_questions: 4
+max_questions: 5
+max_iterations: 5
+
+# Token limits
+max_tokens_research: 2048
+max_tokens_synthesis: 8192
+
+# Retry behaviour
+retry_max_attempts: 3
+retry_base_delay: 1.0
+retry_max_delay: 30.0

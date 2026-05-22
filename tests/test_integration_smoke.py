@@ -43,7 +43,7 @@ def test_anthropic_web_search_execute():
 @pytest.mark.ollama
 def test_ollama_basic_chat():
     from llm import OllamaClient
-    client = OllamaClient(model="llama3.2")
+    client = OllamaClient(model="llama3.1")
     response = client.chat([{"role": "user", "content": "Reply with exactly two words."}])
     assert response.type == "text"
     assert len(response.content) > 0
@@ -54,7 +54,7 @@ def test_ollama_basic_chat():
 def test_ollama_tool_call():
     from llm import OllamaClient
     from agent.tools import ALL_TOOLS
-    client = OllamaClient(model="llama3.2")
+    client = OllamaClient(model="llama3.1")
     response = client.chat(
         messages=[{"role": "user", "content": "Search for the latest news on nuclear fusion."}],
         tools=ALL_TOOLS
@@ -73,7 +73,7 @@ def test_both_providers_respond_to_same_prompt():
     prompt = [{"role": "user", "content": "In one sentence, what is nuclear fusion?"}]
 
     anthropic_response = AnthropicClient().chat(prompt)
-    ollama_response = OllamaClient(model="llama3.2").chat(prompt)
+    ollama_response = OllamaClient(model="llama3.1").chat(prompt)
 
     assert anthropic_response.type == "text"
     assert ollama_response.type == "text"

@@ -30,7 +30,6 @@ ALL_TOOLS = [WEB_SEARCH_TOOL]
 def execute_tool(tool_name: str, tool_input: dict) -> str:
     """
     Dispatch a tool call and return the result as a string.
-    Add new tools here as the project grows.
     """
     if tool_name == "web_search":
         return _web_search(tool_input["query"])
@@ -38,25 +37,62 @@ def execute_tool(tool_name: str, tool_input: dict) -> str:
     raise ValueError(f"Unknown tool: {tool_name}")
 
 
+def execute_tool_with_sources(tool_name: str, tool_input: dict) -> tuple[str, list[dict]]:
+    """
+    Dispatch a tool call and return (result_text, sources).
+    sources is a list of {"title": str, "url": str}
+    """
+    if tool_name == "web_search":
+        return _web_search_with_sources(tool_input["query"])
+
+    raise ValueError(f"Unknown tool: {tool_name}")
+
+
 def _web_search(query: str) -> str:
+    """Execute a web search, return text only."""
+    result, _ = _web_search_with_sources(query)
+    return result
+
+
+def _web_search_with_sources(query: str) -> tuple[str, list[dict]]:
     """
     Execute a web search using Anthropic's built-in web search tool.
-    Returns the search results as a formatted string.
+    Returns (result_text, sources) where sources is a list of
+    {"title": str, "url": str} dicts.
+
+    Citations are attached to text blocks, not tool_result blocks.
+    Each text block may have a citations attribute containing a list of
+    CitationsWebSearchResultLocation objects with url and title fields.
     """
     api_key = os.getenv("ANTHROPIC_API_KEY")
     client = anthropic.Anthropic(api_key=api_key)
 
     response = client.messages.create(
         model="claude-haiku-4-5-20251001",
-        max_tokens=1024,
+        max_tokens=2048,
         tools=[{"type": "web_search_20250305", "name": "web_search"}],
         messages=[{"role": "user", "content": f"Search for: {query}"}]
     )
 
-    # Extract text content from response
     results = []
+    sources = []
+    seen_urls = set()
+
     for block in response.content:
-        if hasattr(block, "text"):
+        # Collect text content
+        if hasattr(block, "text") and block.text:
             results.append(block.text)
 
-    return "\n".join(results) if results else "No results found."
+        # Extract citations from text blocks
+        if hasattr(block, "citations") and block.citations:
+            for citation in block.citations:
+                url = getattr(citation, "url", None)
+                if url and url not in seen_urls:
+                    seen_urls.add(url)
+                    sources.append({
+                        "title": getattr(citation, "title", url),
+                        "url": url
+                    })
+
+    result_text = "\n".join(results) if results else "No results found."
+    return result_text, sources

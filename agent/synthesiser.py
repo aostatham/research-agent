@@ -1,4 +1,5 @@
 from llm.base import LLMClient
+from config import Config
 
 
 SYNTHESISE_PROMPT = """You are a research report writer.
@@ -25,17 +26,25 @@ You MUST respond ONLY with the markdown report. No preamble, no explanation.
 
 class Synthesiser:
 
-    def __init__(self, llm: LLMClient):
+    def __init__(self, llm: LLMClient, config: Config = None):
         self.llm = llm
+        self.config = config or Config()
 
-    def synthesise(self, topic: str, results: dict) -> str:
+    def synthesise(self, topic: str, results: dict,
+                   sources: dict = None, max_tokens: int = None) -> str:
         """
-        Take a topic and dict of {question: answer} findings,
-        return a structured markdown report.
+        Synthesise research findings into a structured report.
+
+        Args:
+            topic:      Research topic
+            results:    {question: answer} dict from orchestrator
+            sources:    {question: [{"title": str, "url": str}]} from orchestrator
+            max_tokens: Override config value if needed
         """
         print("\n📝 Synthesising report...")
 
-        findings = self._format_findings(results)
+        max_tokens = max_tokens or self.config.max_tokens_synthesis
+        findings = self._format_findings(results, sources or {})
 
         prompt = (
             SYNTHESISE_PROMPT +
@@ -43,16 +52,54 @@ class Synthesiser:
         )
 
         response = self.llm.chat(
-            messages=[{"role": "user", "content": prompt}]
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=max_tokens
         )
 
-        print(f"  ✅ Report generated ({len(response.content)} chars)")
-        return response.content
+        report = response.content
 
-    def _format_findings(self, results: dict) -> str:
-        """Format findings dict into a readable string for the prompt."""
+        # Append master reference list if sources available
+        if sources:
+            references = self._format_master_references(sources)
+            if references:
+                report += "\n\n" + references
+
+        print(f"  ✅ Report generated ({len(report)} chars)")
+        return report
+
+    def _format_findings(self, results: dict, sources: dict) -> str:
+        """Format findings with inline source attribution."""
         sections = []
         for i, (question, answer) in enumerate(results.items(), 1):
-            sections.append(f"## Finding {i}\n**Question:** {question}\n\n**Answer:**\n{answer}")
+            question_sources = sources.get(question, [])
+            source_text = ""
+            if question_sources:
+                source_lines = "\n".join([
+                    f"  - [{s['title']}]({s['url']})"
+                    for s in question_sources
+                ])
+                source_text = f"\n\n**Sources:**\n{source_lines}"
+            sections.append(
+                f"## Finding {i}\n**Question:** {question}\n\n"
+                f"**Answer:**\n{answer}{source_text}"
+            )
         return "\n\n---\n\n".join(sections)
-    
+
+    def _format_master_references(self, sources: dict) -> str:
+        """Build a deduplicated master reference list."""
+        seen = set()
+        all_sources = []
+        for question_sources in sources.values():
+            for s in question_sources:
+                if s["url"] not in seen:
+                    seen.add(s["url"])
+                    all_sources.append(s)
+
+        if not all_sources:
+            return ""
+
+        lines = ["## References\n"]
+        for i, s in enumerate(all_sources, 1):
+            lines.append(f"{i}. [{s['title']}]({s['url']})")
+
+        return "\n".join(lines)

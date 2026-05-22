@@ -24,7 +24,7 @@ class LLMClient(ABC):
     """Abstract base class for all LLM providers."""
 
     @abstractmethod
-    def chat(self, messages: list, tools: Optional[list] = None) -> LLMResponse:
+    def chat(self, messages: list, tools: Optional[list] = None, max_tokens: int = 2048) -> LLMResponse:
         """
         Send messages to the LLM and return a normalised response.
 
