@@ -1,3 +1,15 @@
+"""
+Tests for llm/retry.py — with_retry decorator and _is_retryable helper.
+
+Verifies:
+    - _is_retryable() correctly classifies Anthropic SDK exceptions,
+      HTTP status codes, and nested response.status_code patterns.
+    - with_retry() retries on retryable errors and re-raises on non-retryable ones.
+    - Exponential backoff delay sequence is correct (doubles each attempt).
+    - Delay is capped at max_delay.
+    - Function metadata (__name__) is preserved via @wraps.
+"""
+
 import pytest
 import time
 from unittest.mock import MagicMock, patch
@@ -5,8 +17,11 @@ from llm.retry import with_retry, _is_retryable
 
 
 # ── _is_retryable() tests ─────────────────────────────────────────────────────
+# Verify the classification logic across all three detection paths:
+# exception class name, direct status_code, and nested response.status_code.
 
 def test_rate_limit_error_is_retryable():
+    """Anthropic RateLimitError (429 equivalent) should be retried."""
     exc = MagicMock()
     exc.__class__.__name__ = "RateLimitError"
     type(exc).__name__ = "RateLimitError"
@@ -14,50 +29,59 @@ def test_rate_limit_error_is_retryable():
 
 
 def test_internal_server_error_is_retryable():
+    """Anthropic InternalServerError (500 equivalent) should be retried."""
     exc = MagicMock()
     type(exc).__name__ = "InternalServerError"
     assert _is_retryable(exc)
 
 
 def test_status_code_429_is_retryable():
+    """HTTP 429 (rate limit) should be retried."""
     exc = Exception("rate limit")
     exc.status_code = 429
     assert _is_retryable(exc)
 
 
 def test_status_code_500_is_retryable():
+    """HTTP 500 (server error) should be retried."""
     exc = Exception("server error")
     exc.status_code = 500
     assert _is_retryable(exc)
 
 
 def test_status_code_529_is_retryable():
+    """HTTP 529 (Anthropic overloaded) should be retried."""
     exc = Exception("overloaded")
     exc.status_code = 529
     assert _is_retryable(exc)
 
 
 def test_status_code_400_is_not_retryable():
+    """HTTP 400 (bad request) is a client error and must not be retried."""
     exc = Exception("bad request")
     exc.status_code = 400
     assert not _is_retryable(exc)
 
 
 def test_status_code_401_is_not_retryable():
+    """HTTP 401 (unauthorized) indicates an auth problem that won't fix on retry."""
     exc = Exception("unauthorized")
     exc.status_code = 401
     assert not _is_retryable(exc)
 
 
 def test_value_error_is_not_retryable():
+    """ValueError is a programming error, not a transient API failure."""
     assert not _is_retryable(ValueError("bad input"))
 
 
 def test_connection_error_is_not_retryable():
+    """ConnectionError indicates the server is unreachable — retrying immediately is not helpful."""
     assert not _is_retryable(ConnectionError("no connection"))
 
 
 def test_http_error_with_retryable_response_status():
+    """requests.HTTPError with response.status_code == 503 should be retried."""
     exc = Exception("http error")
     exc.response = MagicMock()
     exc.response.status_code = 503
@@ -65,6 +89,7 @@ def test_http_error_with_retryable_response_status():
 
 
 def test_http_error_with_non_retryable_response_status():
+    """requests.HTTPError with response.status_code == 404 must not be retried."""
     exc = Exception("http error")
     exc.response = MagicMock()
     exc.response.status_code = 404
@@ -72,8 +97,10 @@ def test_http_error_with_non_retryable_response_status():
 
 
 # ── with_retry() decorator tests ──────────────────────────────────────────────
+# Verify retry count, error propagation, delay sequence, and metadata preservation.
 
 def test_succeeds_on_first_attempt():
+    """No retries if the first attempt succeeds."""
     mock_fn = MagicMock(return_value="ok")
     decorated = with_retry(max_attempts=3, base_delay=0)(mock_fn)
     result = decorated()
@@ -82,6 +109,7 @@ def test_succeeds_on_first_attempt():
 
 
 def test_retries_on_retryable_error():
+    """A retryable error on attempt 1 is followed by a successful attempt 2."""
     retryable_exc = Exception("server error")
     retryable_exc.status_code = 500
 
@@ -96,6 +124,7 @@ def test_retries_on_retryable_error():
 
 
 def test_does_not_retry_non_retryable_error():
+    """Non-retryable errors are re-raised immediately after the first attempt."""
     mock_fn = MagicMock(side_effect=ValueError("bad input"))
     decorated = with_retry(max_attempts=3, base_delay=0)(mock_fn)
 
@@ -106,6 +135,7 @@ def test_does_not_retry_non_retryable_error():
 
 
 def test_raises_after_max_attempts():
+    """After max_attempts all fail, the last exception is re-raised."""
     retryable_exc = Exception("server error")
     retryable_exc.status_code = 500
 
@@ -120,6 +150,7 @@ def test_raises_after_max_attempts():
 
 
 def test_exponential_backoff_delay_sequence():
+    """Sleep delays double each attempt: 1s, 2s, 4s (3 sleeps for 4 attempts)."""
     retryable_exc = Exception("server error")
     retryable_exc.status_code = 500
 
@@ -135,6 +166,7 @@ def test_exponential_backoff_delay_sequence():
 
 
 def test_delay_capped_at_max():
+    """No sleep delay ever exceeds max_delay regardless of attempt count."""
     retryable_exc = Exception("server error")
     retryable_exc.status_code = 500
 
@@ -150,6 +182,7 @@ def test_delay_capped_at_max():
 
 
 def test_preserves_function_name():
+    """@wraps ensures the decorated function retains its original __name__."""
     def my_function():
         pass
     decorated = with_retry()(my_function)

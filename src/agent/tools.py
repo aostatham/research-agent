@@ -1,10 +1,29 @@
+"""
+Tool definitions and execution layer for the research agent.
+
+Provides a provider-agnostic web_search tool that the orchestrator's agentic
+loop can call, and routes actual search execution to the configured backend:
+
+    - "anthropic": Anthropic's built-in web_search_20250305 tool ($0.01/search,
+                   always hits the Anthropic API even during Ollama runs).
+    - "tavily":    Tavily Search API (1,000 free searches/month, richer content).
+
+The active backend is set once at startup via configure_search(), which stores
+it in module-level state.  All subsequent calls to execute_tool* use that state.
+
+Tool definitions use a provider-agnostic format so each LLM client can
+translate them to its own schema (Anthropic input_schema vs OpenAI function).
+"""
+
 import os
 import anthropic
 from dotenv import load_dotenv
 
 load_dotenv()
 
-# Optional Tavily import — None if not installed
+# Optional Tavily import — None if not installed.
+# Using try/except avoids a hard dependency: Anthropic-only users don't need
+# tavily-python installed.
 try:
     from tavily import TavilyClient
 except ImportError:
@@ -28,12 +47,15 @@ WEB_SEARCH_TOOL = {
     }
 }
 
+# Passed to LLMClient.chat() to advertise available tools to the model.
 ALL_TOOLS = [WEB_SEARCH_TOOL]
 
 
 # ── Search provider state ─────────────────────────────────────────────────────
 
-# Configured once at startup via configure_search()
+# Module-level state set once at startup by configure_search().
+# Using module globals rather than a singleton class keeps call sites simple:
+# execute_tool_with_sources() needs no context object.
 _search_provider = "anthropic"
 _tavily_api_key = None
 _tavily_max_results = 5
@@ -42,13 +64,21 @@ _tavily_max_results = 5
 def configure_search(provider: str, tavily_api_key: str = None,
                      tavily_max_results: int = 5):
     """
-    Configure the search provider used by execute_tool.
-    Called once at startup from main.py.
+    Configure the search backend used by all execute_tool* calls.
+
+    Called once at startup from main.py before any research begins.
+    Writes into module-level globals so all downstream calls automatically
+    use the configured provider.
 
     Args:
-        provider:           "anthropic" or "tavily"
-        tavily_api_key:     Required if provider is "tavily"
-        tavily_max_results: Number of results to return per Tavily search
+        provider:           "anthropic" or "tavily".
+        tavily_api_key:     Required when provider is "tavily".  Can also be
+                            set via TAVILY_API_KEY environment variable
+                            (load_config handles the env fallback).
+        tavily_max_results: Number of results to return per Tavily search.
+
+    Raises:
+        ValueError: If provider is "tavily" but no API key is provided.
     """
     global _search_provider, _tavily_api_key, _tavily_max_results
     _search_provider = provider
@@ -66,8 +96,21 @@ def configure_search(provider: str, tavily_api_key: str = None,
 
 def execute_tool(tool_name: str, tool_input: dict) -> str:
     """
-    Dispatch a tool call and return the result as a string.
+    Dispatch a tool call and return the result as a plain string.
+
     Uses the search provider configured via configure_search().
+    Sources (citations) are discarded; use execute_tool_with_sources()
+    when citation tracking is needed.
+
+    Args:
+        tool_name:  Name of the tool to execute (currently only "web_search").
+        tool_input: Dict of tool arguments ({"query": "..."}).
+
+    Returns:
+        Search result as a plain string.
+
+    Raises:
+        ValueError: If tool_name is not recognised.
     """
     if tool_name == "web_search":
         return _web_search(tool_input["query"])
@@ -76,9 +119,21 @@ def execute_tool(tool_name: str, tool_input: dict) -> str:
 
 def execute_tool_with_sources(tool_name: str, tool_input: dict) -> tuple[str, list[dict]]:
     """
-    Dispatch a tool call and return (result_text, sources).
-    sources is a list of {"title": str, "url": str} dicts.
-    Uses the search provider configured via configure_search().
+    Dispatch a tool call and return both result text and source citations.
+
+    Used by the orchestrator so citations are carried through to the synthesiser
+    and formatted into the final report's References section.
+
+    Args:
+        tool_name:  Name of the tool to execute (currently only "web_search").
+        tool_input: Dict of tool arguments ({"query": "..."}).
+
+    Returns:
+        Tuple of (result_text, sources) where sources is a list of
+        {"title": str, "url": str} dicts, deduplicated by URL.
+
+    Raises:
+        ValueError: If tool_name is not recognised.
     """
     if tool_name == "web_search":
         return _web_search_with_sources(tool_input["query"])
@@ -94,9 +149,16 @@ def _web_search(query: str) -> str:
 def _web_search_with_sources(query: str) -> tuple[str, list[dict]]:
     """
     Execute a web search using the configured provider.
-    Routes to Anthropic or Tavily based on _search_provider.
-    Returns (result_text, sources) where sources is a list of
-    {"title": str, "url": str} dicts.
+
+    Routes to Anthropic or Tavily based on the _search_provider module global
+    set by configure_search().
+
+    Args:
+        query: The search query string.
+
+    Returns:
+        Tuple of (result_text, sources) where sources is a list of
+        {"title": str, "url": str} dicts.
     """
     if _search_provider == "tavily":
         return _tavily_search_with_sources(query)
@@ -107,13 +169,20 @@ def _web_search_with_sources(query: str) -> tuple[str, list[dict]]:
 
 def _anthropic_search_with_sources(query: str) -> tuple[str, list[dict]]:
     """
-    Execute a web search using Anthropic's built-in web search tool.
+    Execute a web search using Anthropic's built-in web_search_20250305 tool.
 
-    Citations are attached to text blocks — each text block may have a
-    citations attribute containing CitationsWebSearchResultLocation objects
-    with url and title fields. Citations are NOT on tool_result blocks.
+    Always calls the Anthropic API regardless of which LLM provider handles
+    orchestration.  Each call costs ~$0.01.
 
-    Returns (result_text, sources) where sources is deduplicated by URL.
+    Citations are attached to *text blocks*, not tool_result blocks.  Each
+    text block may have a `citations` attribute containing a list of
+    CitationsWebSearchResultLocation objects with `url` and `title` fields.
+
+    Args:
+        query: The search query string.
+
+    Returns:
+        Tuple of (result_text, sources) where sources is deduplicated by URL.
     """
     api_key = os.getenv("ANTHROPIC_API_KEY")
     client = anthropic.Anthropic(api_key=api_key)
@@ -127,7 +196,7 @@ def _anthropic_search_with_sources(query: str) -> tuple[str, list[dict]]:
 
     results = []
     sources = []
-    seen_urls = set()
+    seen_urls = set()  # deduplicate citations that appear across multiple blocks
 
     for block in response.content:
         # Collect text content from text blocks
@@ -155,11 +224,23 @@ def _tavily_search_with_sources(query: str) -> tuple[str, list[dict]]:
     """
     Execute a web search using the Tavily API.
 
-    Tavily returns structured results with title, url, and content per result,
-    plus an optional synthesised answer. Unlike Anthropic search, citations are
-    per-result rather than per-sentence.
+    Tavily returns structured results with title, url, and pre-extracted
+    content per result, plus an optional synthesised answer.  Unlike Anthropic
+    search, citations are per-result rather than per-sentence.
 
-    Returns (result_text, sources) in the same normalised format as Anthropic search.
+    Uses search_depth="advanced" for richer content and include_answer=True to
+    get Tavily's own synthesis as a lead paragraph in the result text.
+
+    Args:
+        query: The search query string.
+
+    Returns:
+        Tuple of (result_text, sources) in the same normalised format as
+        _anthropic_search_with_sources(), so the orchestrator treats both
+        backends identically.
+
+    Raises:
+        ImportError: If tavily-python is not installed.
     """
     if TavilyClient is None:
         raise ImportError(
@@ -179,11 +260,11 @@ def _tavily_search_with_sources(query: str) -> tuple[str, list[dict]]:
     seen_urls = set()
     result_parts = []
 
-    # Include Tavily's synthesised answer if available
+    # Include Tavily's synthesised answer as the lead paragraph if available
     if response.get("answer"):
         result_parts.append(response["answer"])
 
-    # Include individual result content and collect sources
+    # Append each result's extracted content and record its URL as a source
     for result in response.get("results", []):
         url = result.get("url", "")
         title = result.get("title", url)

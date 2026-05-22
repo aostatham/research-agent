@@ -1,3 +1,20 @@
+"""
+Tests for agent/orchestrator.py — Orchestrator.
+
+Verifies:
+    - decompose(): JSON parsing, max_questions enforcement, fallback on bad JSON,
+      prompt includes min/max bounds, max_tokens passed from config.
+    - research_question(): text/tool_call routing, message history accumulation,
+      repeated query detection, tool-call-string detection, max_iterations guard,
+      source deduplication, config.max_tokens_research respected.
+    - reflect(): JSON parsing, sufficient/insufficient paths, markdown-fenced JSON
+      handling, fallback on parse error, topic and findings included in prompt.
+    - run(): full pipeline composition, gap research triggered on insufficient
+      reflection, gap research skipped when sufficient.
+
+All tests mock the LLM and patch execute_tool_with_sources to avoid API calls.
+"""
+
 import pytest
 from unittest.mock import MagicMock, patch
 from agent.orchestrator import Orchestrator
@@ -9,6 +26,7 @@ from config import Config
 
 @pytest.fixture
 def config():
+    """Standard Config for orchestrator tests."""
     return Config(
         min_questions=4,
         max_questions=5,
@@ -20,25 +38,31 @@ def config():
 
 @pytest.fixture
 def mock_llm():
+    """Mock LLM client."""
     return MagicMock()
 
 
 @pytest.fixture
 def orchestrator(mock_llm, config):
+    """Orchestrator wired to a mock LLM and test config."""
     return Orchestrator(llm=mock_llm, config=config)
 
 
 def make_text_response(content):
+    """Build a text LLMResponse with the given content string."""
     return LLMResponse(type="text", content=content)
 
 
 def make_tool_response(tool_name, tool_input):
+    """Build a tool_call LLMResponse for the given tool and input dict."""
     return LLMResponse(type="tool_call", tool_name=tool_name, tool_input=tool_input)
 
 
 # ── decompose() tests ─────────────────────────────────────────────────────────
+# Verify topic decomposition: JSON parsing, slicing to max_questions, fallback.
 
 def test_decompose_returns_list_of_questions(orchestrator, mock_llm):
+    """Valid JSON array response is parsed into a list of question strings."""
     mock_llm.chat.return_value = make_text_response(
         '["What is fusion?", "How does fusion work?", "What are fusion challenges?", "Who leads fusion research?"]'
     )
@@ -49,6 +73,7 @@ def test_decompose_returns_list_of_questions(orchestrator, mock_llm):
 
 
 def test_decompose_invalid_json_returns_fallback(orchestrator, mock_llm):
+    """Non-JSON response triggers the four-question fallback list."""
     mock_llm.chat.return_value = make_text_response("not valid json at all")
     questions = orchestrator.decompose("nuclear fusion")
     assert isinstance(questions, list)
@@ -56,12 +81,14 @@ def test_decompose_invalid_json_returns_fallback(orchestrator, mock_llm):
 
 
 def test_decompose_calls_llm_once(orchestrator, mock_llm):
+    """decompose() makes exactly one LLM call."""
     mock_llm.chat.return_value = make_text_response('["Q1?", "Q2?", "Q3?", "Q4?"]')
     orchestrator.decompose("nuclear fusion")
     assert mock_llm.chat.call_count == 1
 
 
 def test_decompose_respects_max_questions(orchestrator, mock_llm, config):
+    """Returned list is capped at config.max_questions even if LLM returns more."""
     config.max_questions = 3
     mock_llm.chat.return_value = make_text_response(
         '["Q1?", "Q2?", "Q3?", "Q4?", "Q5?"]'
@@ -71,6 +98,7 @@ def test_decompose_respects_max_questions(orchestrator, mock_llm, config):
 
 
 def test_decompose_includes_min_max_in_prompt(orchestrator, mock_llm, config):
+    """Prompt sent to LLM includes both min and max question counts."""
     config.min_questions = 3
     config.max_questions = 6
     mock_llm.chat.return_value = make_text_response('["Q1?", "Q2?", "Q3?"]')
@@ -81,12 +109,14 @@ def test_decompose_includes_min_max_in_prompt(orchestrator, mock_llm, config):
 
 
 def test_decompose_fallback_meets_min_questions(orchestrator, mock_llm):
+    """Fallback list always has at least 4 questions."""
     mock_llm.chat.return_value = make_text_response("not valid json")
     questions = orchestrator.decompose("nuclear fusion")
     assert len(questions) >= 4
 
 
 def test_decompose_uses_config_max_tokens(orchestrator, mock_llm, config):
+    """max_tokens passed to LLM matches config.max_tokens_research."""
     config.max_tokens_research = 512
     mock_llm.chat.return_value = make_text_response('["Q1?", "Q2?", "Q3?", "Q4?"]')
     orchestrator.decompose("nuclear fusion")
@@ -94,8 +124,10 @@ def test_decompose_uses_config_max_tokens(orchestrator, mock_llm, config):
 
 
 # ── research_question() tests ─────────────────────────────────────────────────
+# Verify the agentic loop: routing, history building, guards, source handling.
 
 def test_research_question_returns_text_directly(orchestrator, mock_llm):
+    """If the first response is text, it is returned immediately."""
     mock_llm.chat.return_value = make_text_response("Fusion is the process of combining atoms.")
     with patch("agent.orchestrator.execute_tool_with_sources", return_value=("results", [])):
         result, sources = orchestrator.research_question("What is fusion?")
@@ -104,6 +136,7 @@ def test_research_question_returns_text_directly(orchestrator, mock_llm):
 
 
 def test_research_question_returns_sources(orchestrator, mock_llm):
+    """Sources from tool execution are returned alongside the answer."""
     mock_llm.chat.side_effect = [
         make_tool_response("web_search", {"query": "nuclear fusion"}),
         make_text_response("Fusion combines nuclei.")
@@ -116,6 +149,7 @@ def test_research_question_returns_sources(orchestrator, mock_llm):
 
 
 def test_research_question_handles_tool_call_then_text(orchestrator, mock_llm):
+    """Tool call on turn 1 followed by text on turn 2 returns the text answer."""
     mock_llm.chat.side_effect = [
         make_tool_response("web_search", {"query": "what is nuclear fusion"}),
         make_text_response("Fusion combines light atomic nuclei.")
@@ -128,6 +162,7 @@ def test_research_question_handles_tool_call_then_text(orchestrator, mock_llm):
 
 
 def test_research_question_executes_tool_with_correct_args(orchestrator, mock_llm):
+    """execute_tool_with_sources is called with the exact tool name and input from the LLM."""
     mock_llm.chat.side_effect = [
         make_tool_response("web_search", {"query": "fusion energy 2026"}),
         make_text_response("Here are the findings.")
@@ -139,6 +174,7 @@ def test_research_question_executes_tool_with_correct_args(orchestrator, mock_ll
 
 
 def test_research_question_respects_max_iterations(orchestrator, mock_llm):
+    """If every response is a tool_call, the loop exits at max_iterations."""
     mock_llm.chat.return_value = make_tool_response("web_search", {"query": "fusion"})
     with patch("agent.orchestrator.execute_tool_with_sources", return_value=("results", [])):
         result, sources = orchestrator.research_question("What is fusion?")
@@ -147,6 +183,7 @@ def test_research_question_respects_max_iterations(orchestrator, mock_llm):
 
 
 def test_research_question_appends_tool_results_to_history(orchestrator, mock_llm):
+    """Search results are present in the message history for the second LLM call."""
     mock_llm.chat.side_effect = [
         make_tool_response("web_search", {"query": "fusion"}),
         make_text_response("Answer.")
@@ -160,6 +197,7 @@ def test_research_question_appends_tool_results_to_history(orchestrator, mock_ll
 
 
 def test_research_question_message_history_has_original_question(orchestrator, mock_llm):
+    """The original question is still visible in the message history after a search."""
     mock_llm.chat.side_effect = [
         make_tool_response("web_search", {"query": "fusion energy"}),
         make_text_response("Fusion combines nuclei.")
@@ -173,7 +211,10 @@ def test_research_question_message_history_has_original_question(orchestrator, m
 
 
 def test_research_question_detects_tool_call_string_and_retries(orchestrator, mock_llm):
-    """Regression test for Q3 bug — tool call string returned as text."""
+    """
+    Regression test: some models return a literal '[Calling ...]' string as text
+    instead of a proper tool_call response.  This must be detected and redirected.
+    """
     mock_llm.chat.side_effect = [
         LLMResponse(type="text", content="[Calling web_search with {'query': 'fusion'}]"),
         LLMResponse(type="text", content="Fusion is the process of combining atomic nuclei.")
@@ -185,6 +226,7 @@ def test_research_question_detects_tool_call_string_and_retries(orchestrator, mo
 
 
 def test_research_question_tool_result_included_in_history(orchestrator, mock_llm):
+    """Tool output is injected into the message history so the LLM can use it."""
     mock_llm.chat.side_effect = [
         make_tool_response("web_search", {"query": "fusion"}),
         make_text_response("Answer.")
@@ -198,6 +240,7 @@ def test_research_question_tool_result_included_in_history(orchestrator, mock_ll
 
 
 def test_research_question_uses_config_max_tokens(orchestrator, mock_llm, config):
+    """max_tokens in every LLM call reflects config.max_tokens_research."""
     config.max_tokens_research = 1024
     mock_llm.chat.return_value = make_text_response("Answer.")
     with patch("agent.orchestrator.execute_tool_with_sources", return_value=("results", [])):
@@ -206,7 +249,7 @@ def test_research_question_uses_config_max_tokens(orchestrator, mock_llm, config
 
 
 def test_research_question_deduplicates_sources(orchestrator, mock_llm):
-    """Duplicate URLs should appear only once in returned sources."""
+    """Duplicate URLs from multiple searches appear only once in returned sources."""
     mock_llm.chat.side_effect = [
         make_tool_response("web_search", {"query": "fusion"}),
         make_tool_response("web_search", {"query": "fusion energy"}),
@@ -221,14 +264,16 @@ def test_research_question_deduplicates_sources(orchestrator, mock_llm):
 
 
 def test_research_question_respects_max_iterations(orchestrator, mock_llm):
+    """Loop hits max_iterations and returns the 'unable to retrieve' failure message."""
     mock_llm.chat.return_value = make_tool_response("web_search", {"query": "fusion"})
     with patch("agent.orchestrator.execute_tool_with_sources", return_value=("results", [])):
         result, sources = orchestrator.research_question("What is fusion?")
     assert "unable to retrieve" in result.lower()
     assert mock_llm.chat.call_count >= 5
 
+
 def test_research_question_handles_repeated_query(orchestrator, mock_llm):
-    """Repeated identical queries should trigger synthesis prompt not another search."""
+    """Repeated identical queries trigger a synthesis-forcing message instead of another search."""
     mock_llm.chat.side_effect = [
         make_tool_response("web_search", {"query": "fusion energy"}),
         make_tool_response("web_search", {"query": "fusion energy"}),  # repeat
@@ -242,7 +287,7 @@ def test_research_question_handles_repeated_query(orchestrator, mock_llm):
 
 
 def test_research_question_does_not_call_tool_on_repeated_query(orchestrator, mock_llm):
-    """Tool executor should not be called for a repeated query."""
+    """execute_tool_with_sources is called only once for a repeated query pair."""
     mock_llm.chat.side_effect = [
         make_tool_response("web_search", {"query": "fusion energy"}),
         make_tool_response("web_search", {"query": "fusion energy"}),  # repeat
@@ -255,7 +300,7 @@ def test_research_question_does_not_call_tool_on_repeated_query(orchestrator, mo
 
 
 def test_research_question_allows_different_queries(orchestrator, mock_llm):
-    """Different queries should each trigger a real search."""
+    """Different queries each trigger a real search execution."""
     mock_llm.chat.side_effect = [
         make_tool_response("web_search", {"query": "fusion basics"}),
         make_tool_response("web_search", {"query": "fusion challenges"}),
@@ -268,8 +313,10 @@ def test_research_question_allows_different_queries(orchestrator, mock_llm):
 
 
 # ── reflect() tests ───────────────────────────────────────────────────────────
+# Verify JSON parsing, sufficient/insufficient paths, prompt content, edge cases.
 
 def test_reflect_returns_sufficient_true(orchestrator, mock_llm):
+    """sufficient=true JSON response returns (True, [])."""
     mock_llm.chat.return_value = make_text_response('{"sufficient": true, "missing": []}')
     sufficient, missing = orchestrator.reflect("fusion", {"Q1": "A1"})
     assert sufficient is True
@@ -277,6 +324,7 @@ def test_reflect_returns_sufficient_true(orchestrator, mock_llm):
 
 
 def test_reflect_returns_sufficient_false_with_gaps(orchestrator, mock_llm):
+    """sufficient=false JSON response returns the missing list."""
     mock_llm.chat.return_value = make_text_response(
         '{"sufficient": false, "missing": ["commercial viability", "development timeline"]}'
     )
@@ -287,6 +335,7 @@ def test_reflect_returns_sufficient_false_with_gaps(orchestrator, mock_llm):
 
 
 def test_reflect_invalid_json_defaults_to_sufficient(orchestrator, mock_llm):
+    """Parse failure defaults to sufficient=True to avoid spurious extra research."""
     mock_llm.chat.return_value = make_text_response("not valid json")
     sufficient, missing = orchestrator.reflect("fusion", {"Q1": "A1"})
     assert sufficient is True
@@ -294,6 +343,7 @@ def test_reflect_invalid_json_defaults_to_sufficient(orchestrator, mock_llm):
 
 
 def test_reflect_uses_config_max_tokens(orchestrator, mock_llm, config):
+    """max_tokens for the reflect call matches config.max_tokens_research."""
     config.max_tokens_research = 512
     mock_llm.chat.return_value = make_text_response('{"sufficient": true, "missing": []}')
     orchestrator.reflect("fusion", {"Q1": "A1"})
@@ -301,6 +351,7 @@ def test_reflect_uses_config_max_tokens(orchestrator, mock_llm, config):
 
 
 def test_reflect_includes_topic_in_prompt(orchestrator, mock_llm):
+    """The topic string appears in the prompt sent to the LLM."""
     mock_llm.chat.return_value = make_text_response('{"sufficient": true, "missing": []}')
     orchestrator.reflect("nuclear fusion", {"Q1": "A1"})
     call_content = mock_llm.chat.call_args[1]["messages"][0]["content"]
@@ -308,6 +359,7 @@ def test_reflect_includes_topic_in_prompt(orchestrator, mock_llm):
 
 
 def test_reflect_includes_findings_in_prompt(orchestrator, mock_llm):
+    """The question strings from the results dict appear in the prompt."""
     mock_llm.chat.return_value = make_text_response('{"sufficient": true, "missing": []}')
     orchestrator.reflect("fusion", {"What is fusion?": "Fusion combines nuclei."})
     call_content = mock_llm.chat.call_args[1]["messages"][0]["content"]
@@ -315,6 +367,7 @@ def test_reflect_includes_findings_in_prompt(orchestrator, mock_llm):
 
 
 def test_reflect_handles_markdown_fenced_json(orchestrator, mock_llm):
+    """JSON wrapped in ```json code fences is stripped and parsed correctly."""
     mock_llm.chat.return_value = make_text_response(
         '```json\n{"sufficient": true, "missing": []}\n```'
     )
@@ -323,6 +376,7 @@ def test_reflect_handles_markdown_fenced_json(orchestrator, mock_llm):
 
 
 def test_reflect_prompt_includes_full_findings(orchestrator, mock_llm):
+    """Answers up to 300 chars are included in the prompt (truncation check)."""
     mock_llm.chat.return_value = make_text_response('{"sufficient": true, "missing": []}')
     results = {"What is fusion?": "A" * 400}
     orchestrator.reflect("fusion", results)
@@ -331,7 +385,7 @@ def test_reflect_prompt_includes_full_findings(orchestrator, mock_llm):
 
 
 def test_reflect_returns_all_gaps_without_filtering(orchestrator, mock_llm):
-    """All gaps returned regardless of length."""
+    """All gap strings are returned regardless of their length."""
     mock_llm.chat.return_value = make_text_response(
         '{"sufficient": false, "missing": ["timeline", "cost", "commercial viability and investment landscape"]}'
     )
@@ -343,8 +397,10 @@ def test_reflect_returns_all_gaps_without_filtering(orchestrator, mock_llm):
 
 
 # ── run() tests ───────────────────────────────────────────────────────────────
+# Verify the full pipeline composition: decompose + research + reflect + gap fill.
 
 def test_run_returns_dict_of_results(orchestrator, mock_llm):
+    """run() returns a results dict with one entry per question."""
     mock_llm.chat.side_effect = [
         make_text_response('["What is fusion?", "How does fusion work?", "What are challenges?", "Who leads research?"]'),
         make_text_response("Fusion is combining atoms."),
@@ -361,6 +417,7 @@ def test_run_returns_dict_of_results(orchestrator, mock_llm):
 
 
 def test_run_returns_sources_dict(orchestrator, mock_llm):
+    """run() returns a sources dict keyed by question."""
     mock_llm.chat.side_effect = [
         make_text_response('["What is fusion?", "What are challenges?", "Who leads?", "What is timeline?"]'),
         make_text_response("Fusion is combining atoms."),
@@ -379,6 +436,7 @@ def test_run_returns_sources_dict(orchestrator, mock_llm):
 
 
 def test_run_researches_gaps_when_insufficient(orchestrator, mock_llm):
+    """Gap questions identified by reflect() are added to results and sources."""
     mock_llm.chat.side_effect = [
         make_text_response('["What is fusion?", "What are challenges?", "Who leads?", "What is the timeline?"]'),
         make_text_response("Fusion is combining atoms."),
@@ -395,6 +453,7 @@ def test_run_researches_gaps_when_insufficient(orchestrator, mock_llm):
 
 
 def test_run_does_not_research_gaps_when_sufficient(orchestrator, mock_llm):
+    """When reflect returns sufficient=True, no extra LLM calls are made."""
     mock_llm.chat.side_effect = [
         make_text_response('["What is fusion?", "What are challenges?", "Who leads?", "What is the timeline?"]'),
         make_text_response("Fusion is combining atoms."),
@@ -405,10 +464,12 @@ def test_run_does_not_research_gaps_when_sufficient(orchestrator, mock_llm):
     ]
     with patch("agent.orchestrator.execute_tool_with_sources", return_value=("results", [])):
         results, sources = orchestrator.run("nuclear fusion")
+    # 1 decompose + 4 research + 1 reflect = exactly 6 calls
     assert mock_llm.chat.call_count == 6
 
 
 def test_run_uses_config_question_bounds(orchestrator, mock_llm, config):
+    """run() respects config.max_questions by researching exactly that many questions."""
     config.min_questions = 3
     config.max_questions = 3
     mock_llm.chat.side_effect = [
@@ -427,6 +488,7 @@ def test_run_uses_config_question_bounds(orchestrator, mock_llm, config):
 
 @pytest.mark.integration
 def test_real_orchestrator_run():
+    """Live end-to-end orchestrator run produces a populated results dict."""
     from llm import AnthropicClient
     from dotenv import load_dotenv
     load_dotenv()

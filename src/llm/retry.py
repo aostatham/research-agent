@@ -1,13 +1,30 @@
+"""
+Exponential-backoff retry decorator for LLM API calls.
+
+Wraps any function with automatic retries on transient failures (rate limits,
+server errors).  The delay doubles after each failed attempt and is capped at
+max_delay.  Non-retryable errors (bad requests, auth failures, value errors)
+are re-raised immediately without retrying.
+
+Usage:
+    @with_retry(max_attempts=3, base_delay=1.0, max_delay=30.0)
+    def my_api_call(...):
+        ...
+"""
+
 import time
 import logging
 from functools import wraps
 
 logger = logging.getLogger(__name__)
 
-# HTTP status codes worth retrying
+# HTTP status codes that indicate a transient server-side problem worth retrying.
+# 429 = rate limited, 500/502/503 = server errors, 529 = Anthropic overloaded.
 RETRYABLE_STATUS_CODES = {429, 500, 502, 503, 529}
 
-# Anthropic SDK exception names worth retrying
+# Anthropic SDK exception class names that map to retryable conditions.
+# Checked by name so we avoid a hard import dependency on the anthropic package
+# in this module.
 RETRYABLE_ANTHROPIC_EXCEPTIONS = {
     "RateLimitError",
     "InternalServerError",
@@ -17,17 +34,22 @@ RETRYABLE_ANTHROPIC_EXCEPTIONS = {
 
 def with_retry(max_attempts: int = 3, base_delay: float = 1.0, max_delay: float = 30.0):
     """
-    Decorator that retries a function with exponential backoff.
+    Decorator factory that adds exponential-backoff retry logic to a function.
 
-    Delay sequence: 1s, 2s, 4s, 8s... capped at max_delay.
+    Delay sequence: base_delay * 2^(attempt-1), capped at max_delay.
+    Example with base_delay=1.0, max_delay=30.0: 1s, 2s, 4s, 8s, 15s, 30s…
 
     Args:
-        max_attempts: Maximum number of attempts (including the first)
-        base_delay:   Initial delay in seconds
-        max_delay:    Maximum delay in seconds
+        max_attempts: Total number of attempts including the first.  A value of
+                      3 means one initial try plus up to two retries.
+        base_delay:   Seconds to wait before the first retry.
+        max_delay:    Upper bound on the inter-retry delay in seconds.
+
+    Returns:
+        A decorator that wraps the target function with retry logic.
     """
     def decorator(func):
-        @wraps(func)
+        @wraps(func)  # preserve __name__, __doc__ etc. on the wrapped function
         def wrapper(*args, **kwargs):
             delay = base_delay
 
@@ -36,9 +58,12 @@ def with_retry(max_attempts: int = 3, base_delay: float = 1.0, max_delay: float 
                     return func(*args, **kwargs)
 
                 except Exception as e:
+                    # Re-raise immediately for errors we cannot recover from
+                    # (e.g. 400 Bad Request, 401 Unauthorized, ValueError).
                     if not _is_retryable(e):
                         raise
 
+                    # On the final attempt, log and re-raise instead of sleeping.
                     if attempt == max_attempts:
                         logger.error(
                             f"All {max_attempts} attempts failed. Last error: {e}"
@@ -52,6 +77,7 @@ def with_retry(max_attempts: int = 3, base_delay: float = 1.0, max_delay: float 
                     print(f"  ⚠️  API error, retrying in {delay:.1f}s... "
                           f"(attempt {attempt}/{max_attempts})")
                     time.sleep(delay)
+                    # Double the delay, but never exceed max_delay
                     delay = min(delay * 2, max_delay)
 
         return wrapper
@@ -59,18 +85,32 @@ def with_retry(max_attempts: int = 3, base_delay: float = 1.0, max_delay: float 
 
 
 def _is_retryable(exception: Exception) -> bool:
-    """Determine if an exception is worth retrying."""
+    """
+    Decide whether an exception represents a transient failure worth retrying.
+
+    Checks three sources of retryability in order:
+    1. Anthropic SDK exception class name (RateLimitError, InternalServerError, …)
+    2. Direct status_code attribute (used by Anthropic SDK and httpx)
+    3. Nested response.status_code (used by requests.exceptions.HTTPError)
+
+    Args:
+        exception: The exception that was raised.
+
+    Returns:
+        True if the exception indicates a transient problem; False otherwise.
+    """
     exc_type = type(exception).__name__
 
-    # Anthropic SDK exceptions
+    # Anthropic SDK raises typed exceptions — match by class name to avoid
+    # importing anthropic here (which would create a circular dependency risk).
     if exc_type in RETRYABLE_ANTHROPIC_EXCEPTIONS:
         return True
 
-    # HTTP errors with retryable status codes
+    # httpx / Anthropic SDK attach status_code directly to the exception object.
     if hasattr(exception, "status_code"):
         return exception.status_code in RETRYABLE_STATUS_CODES
 
-    # requests.exceptions.HTTPError
+    # requests raises HTTPError with a nested response object.
     if hasattr(exception, "response") and hasattr(exception.response, "status_code"):
         return exception.response.status_code in RETRYABLE_STATUS_CODES
 

@@ -1,3 +1,22 @@
+"""
+Tests for main.py — CLI entry point, build_llms(), save_report(),
+build_metadata(), and update_index().
+
+Verifies:
+    - save_report(): file creation, content structure, filename sanitisation,
+      length truncation, html format output.
+    - build_metadata(): all key fields present in the metadata table.
+    - update_index(): file creation, topic recorded, multiple entries appended,
+      short mode noted, mixed providers recorded.
+    - main(): full pipeline wiring (orchestrator and synthesiser called with
+      correct arguments), report and index files created, --short and --format
+      flags propagated correctly, --provider flag selects the right client class.
+    - build_llms(): correct client classes instantiated for all provider
+      combinations, model overrides applied, mixed-provider support verified.
+
+All tests mock LLM clients and agent classes to avoid API calls.
+"""
+
 import pytest
 import sys
 import os
@@ -18,8 +37,10 @@ SAMPLE_METADATA = "| Field | Value |\n|---|---|\n| **Topic** | nuclear fusion |\
 
 
 # ── save_report() tests ───────────────────────────────────────────────────────
+# Verify report file creation, content structure, and filename sanitisation.
 
 def test_save_report_creates_file(tmp_path, monkeypatch):
+    """save_report() creates the output file."""
     monkeypatch.chdir(tmp_path)
     from main import save_report
     path = save_report("nuclear fusion", SAMPLE_METADATA, "# Report content")
@@ -27,6 +48,7 @@ def test_save_report_creates_file(tmp_path, monkeypatch):
 
 
 def test_save_report_contains_topic_heading(tmp_path, monkeypatch):
+    """The topic appears as a top-level heading in the saved markdown file."""
     monkeypatch.chdir(tmp_path)
     from main import save_report
     path = save_report("nuclear fusion", SAMPLE_METADATA, "# Report content")
@@ -36,6 +58,7 @@ def test_save_report_contains_topic_heading(tmp_path, monkeypatch):
 
 
 def test_save_report_contains_metadata(tmp_path, monkeypatch):
+    """The metadata table is included in the saved file."""
     monkeypatch.chdir(tmp_path)
     from main import save_report
     path = save_report("nuclear fusion", SAMPLE_METADATA, "# Report content")
@@ -45,6 +68,7 @@ def test_save_report_contains_metadata(tmp_path, monkeypatch):
 
 
 def test_save_report_contains_report_body(tmp_path, monkeypatch):
+    """The report body is included in the saved file."""
     monkeypatch.chdir(tmp_path)
     from main import save_report
     path = save_report("nuclear fusion", SAMPLE_METADATA, "# Report content")
@@ -54,6 +78,7 @@ def test_save_report_contains_report_body(tmp_path, monkeypatch):
 
 
 def test_save_report_sanitises_filename(tmp_path, monkeypatch):
+    """Special characters are stripped from the filename."""
     monkeypatch.chdir(tmp_path)
     from main import save_report
     path = save_report("nuclear fusion: a review!", SAMPLE_METADATA, "# Report")
@@ -62,6 +87,7 @@ def test_save_report_sanitises_filename(tmp_path, monkeypatch):
 
 
 def test_save_report_truncates_long_topic(tmp_path, monkeypatch):
+    """Filenames are truncated to prevent excessively long paths."""
     monkeypatch.chdir(tmp_path)
     from main import save_report
     long_topic = "a " * 60
@@ -71,6 +97,7 @@ def test_save_report_truncates_long_topic(tmp_path, monkeypatch):
 
 
 def test_save_report_returns_path_string(tmp_path, monkeypatch):
+    """Return value is a string path ending in .md for markdown format."""
     monkeypatch.chdir(tmp_path)
     from main import save_report
     path = save_report("nuclear fusion", SAMPLE_METADATA, "# Report")
@@ -79,6 +106,7 @@ def test_save_report_returns_path_string(tmp_path, monkeypatch):
 
 
 def test_save_report_html_format(tmp_path, monkeypatch):
+    """fmt='html' saves a .html file."""
     monkeypatch.chdir(tmp_path)
     from main import save_report
     path = save_report("nuclear fusion", SAMPLE_METADATA, "# Report", fmt="html")
@@ -87,6 +115,7 @@ def test_save_report_html_format(tmp_path, monkeypatch):
 
 
 def test_save_report_html_contains_title(tmp_path, monkeypatch):
+    """HTML output contains the topic in the title and a DOCTYPE declaration."""
     monkeypatch.chdir(tmp_path)
     from main import save_report
     path = save_report("nuclear fusion", SAMPLE_METADATA, "# Report", fmt="html")
@@ -97,8 +126,10 @@ def test_save_report_html_contains_title(tmp_path, monkeypatch):
 
 
 # ── build_metadata() tests ────────────────────────────────────────────────────
+# Verify all key run statistics appear in the metadata table.
 
 def test_build_metadata_contains_topic(tmp_path, monkeypatch):
+    """Topic string appears in the metadata table."""
     monkeypatch.chdir(tmp_path)
     from main import build_metadata
     from config import Config
@@ -121,6 +152,7 @@ def test_build_metadata_contains_topic(tmp_path, monkeypatch):
 
 
 def test_build_metadata_contains_search_count(tmp_path, monkeypatch):
+    """Search count appears in the metadata table."""
     monkeypatch.chdir(tmp_path)
     from main import build_metadata
     from config import Config
@@ -143,6 +175,7 @@ def test_build_metadata_contains_search_count(tmp_path, monkeypatch):
 
 
 def test_build_metadata_contains_providers(tmp_path, monkeypatch):
+    """Both provider names appear in the metadata table for mixed-provider runs."""
     monkeypatch.chdir(tmp_path)
     from main import build_metadata
     from config import Config
@@ -166,6 +199,7 @@ def test_build_metadata_contains_providers(tmp_path, monkeypatch):
 
 
 def test_build_metadata_short_mode_noted(tmp_path, monkeypatch):
+    """Short mode is reflected in the Mode field of the metadata table."""
     monkeypatch.chdir(tmp_path)
     from main import build_metadata
     from config import Config
@@ -188,6 +222,7 @@ def test_build_metadata_short_mode_noted(tmp_path, monkeypatch):
 
 
 def test_build_metadata_full_mode_noted(tmp_path, monkeypatch):
+    """Full report mode is reflected in the Mode field."""
     monkeypatch.chdir(tmp_path)
     from main import build_metadata
     from config import Config
@@ -210,8 +245,10 @@ def test_build_metadata_full_mode_noted(tmp_path, monkeypatch):
 
 
 # ── update_index() tests ──────────────────────────────────────────────────────
+# Verify index.md creation and row appending.
 
 def test_update_index_creates_file(tmp_path, monkeypatch):
+    """update_index() creates output/index.md on first call."""
     monkeypatch.chdir(tmp_path)
     from main import update_index
     from datetime import datetime
@@ -231,6 +268,7 @@ def test_update_index_creates_file(tmp_path, monkeypatch):
 
 
 def test_update_index_contains_topic(tmp_path, monkeypatch):
+    """The topic appears in the index row."""
     monkeypatch.chdir(tmp_path)
     from main import update_index
     from datetime import datetime
@@ -252,6 +290,7 @@ def test_update_index_contains_topic(tmp_path, monkeypatch):
 
 
 def test_update_index_appends_multiple_entries(tmp_path, monkeypatch):
+    """Multiple calls append multiple rows; all topics are present."""
     monkeypatch.chdir(tmp_path)
     from main import update_index
     from datetime import datetime
@@ -275,6 +314,7 @@ def test_update_index_appends_multiple_entries(tmp_path, monkeypatch):
 
 
 def test_update_index_short_mode_noted(tmp_path, monkeypatch):
+    """Short mode is recorded as 'Summary' in the index row."""
     monkeypatch.chdir(tmp_path)
     from main import update_index
     from datetime import datetime
@@ -296,6 +336,7 @@ def test_update_index_short_mode_noted(tmp_path, monkeypatch):
 
 
 def test_update_index_mixed_providers_recorded(tmp_path, monkeypatch):
+    """Both provider names are recorded in the index row for mixed-provider runs."""
     monkeypatch.chdir(tmp_path)
     from main import update_index
     from datetime import datetime
@@ -318,8 +359,11 @@ def test_update_index_mixed_providers_recorded(tmp_path, monkeypatch):
 
 
 # ── main() tests ──────────────────────────────────────────────────────────────
+# Verify the full pipeline wiring: correct calls to orchestrator, synthesiser,
+# and file system, plus flag propagation.
 
 def test_main_exits_without_args():
+    """main() exits with code 2 (argparse error) when no topic is provided."""
     with patch("sys.argv", ["main.py"]):
         with pytest.raises(SystemExit) as exc:
             from main import main
@@ -328,6 +372,7 @@ def test_main_exits_without_args():
 
 
 def test_main_runs_full_pipeline(tmp_path, monkeypatch):
+    """main() calls orchestrator.run() and synthesiser.synthesise() with correct args."""
     monkeypatch.chdir(tmp_path)
 
     mock_llm = MagicMock()
@@ -354,6 +399,7 @@ def test_main_runs_full_pipeline(tmp_path, monkeypatch):
 
 
 def test_main_saves_report_to_output(tmp_path, monkeypatch):
+    """main() creates exactly one .md report file in output/ (excluding index.md)."""
     monkeypatch.chdir(tmp_path)
 
     mock_llm = MagicMock()
@@ -377,6 +423,7 @@ def test_main_saves_report_to_output(tmp_path, monkeypatch):
 
 
 def test_main_short_flag_passed_to_synthesiser(tmp_path, monkeypatch):
+    """--short flag causes synthesise() to receive short=True."""
     monkeypatch.chdir(tmp_path)
 
     mock_llm = MagicMock()
@@ -398,6 +445,7 @@ def test_main_short_flag_passed_to_synthesiser(tmp_path, monkeypatch):
 
 
 def test_main_html_format_saves_html_file(tmp_path, monkeypatch):
+    """--format html saves a .html file in output/."""
     monkeypatch.chdir(tmp_path)
 
     mock_llm = MagicMock()
@@ -420,6 +468,7 @@ def test_main_html_format_saves_html_file(tmp_path, monkeypatch):
 
 
 def test_main_creates_index_entry(tmp_path, monkeypatch):
+    """main() creates output/index.md and records the topic."""
     monkeypatch.chdir(tmp_path)
 
     mock_llm = MagicMock()
@@ -443,6 +492,7 @@ def test_main_creates_index_entry(tmp_path, monkeypatch):
 
 
 def test_main_mixed_provider_orchestration(tmp_path, monkeypatch):
+    """--orchestration-provider ollama --synthesis-provider anthropic instantiates both clients."""
     monkeypatch.chdir(tmp_path)
 
     mock_orchestrator = MagicMock()
@@ -468,8 +518,10 @@ def test_main_mixed_provider_orchestration(tmp_path, monkeypatch):
 
 
 # ── build_llms() tests ────────────────────────────────────────────────────────
+# Verify provider/model resolution for all Config combinations.
 
 def test_build_llms_returns_two_anthropic_clients():
+    """provider='anthropic' instantiates AnthropicClient for both tiers."""
     from main import build_llms
     from config import Config
     with patch("main.AnthropicClient") as mock:
@@ -478,6 +530,7 @@ def test_build_llms_returns_two_anthropic_clients():
 
 
 def test_build_llms_returns_two_ollama_clients():
+    """provider='ollama' instantiates OllamaClient for both tiers."""
     from main import build_llms
     from config import Config
     with patch("main.OllamaClient") as mock:
@@ -486,6 +539,7 @@ def test_build_llms_returns_two_ollama_clients():
 
 
 def test_build_llms_anthropic_uses_different_models_by_default():
+    """Default Anthropic config uses different models for orchestration and synthesis."""
     from main import build_llms
     from config import Config
     with patch("main.AnthropicClient") as mock:
@@ -495,6 +549,7 @@ def test_build_llms_anthropic_uses_different_models_by_default():
 
 
 def test_build_llms_model_override_applies_to_both():
+    """Global model override sets the same model for both tiers."""
     from main import build_llms
     from config import Config
     with patch("main.AnthropicClient") as mock:
@@ -504,6 +559,7 @@ def test_build_llms_model_override_applies_to_both():
 
 
 def test_build_llms_unknown_provider_exits():
+    """An unrecognised provider triggers SystemExit."""
     from main import build_llms
     from config import Config
     with pytest.raises(SystemExit):
@@ -511,6 +567,7 @@ def test_build_llms_unknown_provider_exits():
 
 
 def test_build_llms_mixed_providers():
+    """orchestration_provider='ollama' + synthesis_provider='anthropic' uses both clients."""
     from main import build_llms
     from config import Config
     with patch("main.OllamaClient") as mock_ollama, \
@@ -527,6 +584,7 @@ def test_build_llms_mixed_providers():
 
 
 def test_build_llms_returns_correct_provider_names():
+    """build_llms() returns the resolved provider and model strings in the 6-tuple."""
     from main import build_llms
     from config import Config
     with patch("main.AnthropicClient"):
@@ -538,6 +596,7 @@ def test_build_llms_returns_correct_provider_names():
 
 
 def test_main_uses_anthropic_by_default(tmp_path, monkeypatch):
+    """Without a --provider flag, AnthropicClient is used."""
     monkeypatch.chdir(tmp_path)
     mock_orchestrator = MagicMock()
     mock_synthesiser = MagicMock()
@@ -554,6 +613,7 @@ def test_main_uses_anthropic_by_default(tmp_path, monkeypatch):
 
 
 def test_main_uses_ollama_when_specified(tmp_path, monkeypatch):
+    """--provider ollama causes OllamaClient to be used."""
     monkeypatch.chdir(tmp_path)
     mock_orchestrator = MagicMock()
     mock_synthesiser = MagicMock()
@@ -573,6 +633,7 @@ def test_main_uses_ollama_when_specified(tmp_path, monkeypatch):
 
 @pytest.mark.integration
 def test_real_full_pipeline(tmp_path, monkeypatch):
+    """Live end-to-end pipeline run produces a non-trivial report with metadata."""
     monkeypatch.chdir(tmp_path)
 
     with patch("sys.argv", ["main.py", "the current state of nuclear fusion energy"]):

@@ -1,3 +1,20 @@
+"""
+CLI entry point for the research agent.
+
+Parses command-line arguments, loads configuration (three-layer hierarchy),
+builds the LLM clients, runs the full pipeline, and saves the output report.
+
+Pipeline:
+    parse_args() + load_config()
+        → build_llms()             — instantiate one LLM client per tier
+        → configure_search()       — set the search backend (Anthropic or Tavily)
+        → Orchestrator.run()       — decompose, research, reflect
+        → Synthesiser.synthesise() — write structured markdown report
+        → build_metadata()         — generate report metadata table
+        → save_report()            — write .md or .html to output/
+        → update_index()           — append row to output/index.md
+"""
+
 import sys
 import os
 import argparse
@@ -16,7 +33,20 @@ load_dotenv()
 
 
 def build_client(provider: str, model: str, config) -> object:
-    """Build a single LLM client for a given provider and model."""
+    """
+    Instantiate a single LLM client for the given provider and model.
+
+    Args:
+        provider: "anthropic" or "ollama".
+        model:    Model ID string (e.g. "claude-haiku-4-5-20251001", "llama3.1").
+        config:   Config instance; used for ollama_base_url.
+
+    Returns:
+        AnthropicClient or OllamaClient instance.
+
+    Raises:
+        SystemExit: If provider is not recognised.
+    """
     if provider == "anthropic":
         return AnthropicClient(model=model)
     elif provider == "ollama":
@@ -28,8 +58,23 @@ def build_client(provider: str, model: str, config) -> object:
 
 def build_llms(config):
     """
-    Return (orch_llm, synth_llm, orch_provider, orch_model, synth_provider, synth_model).
-    Supports mixed providers — orchestration and synthesis can use different backends.
+    Build orchestration and synthesis LLM clients from the resolved config.
+
+    Resolves each tier's provider and model independently, supporting
+    mixed-provider setups (e.g. Ollama orchestration + Anthropic synthesis).
+
+    Resolution order for each tier:
+      1. Per-tier provider override (orchestration_provider / synthesis_provider)
+      2. Global provider field
+      3. Global model override (applies to both tiers if set)
+      4. Provider-specific tier model (anthropic_orchestration_model, etc.)
+
+    Args:
+        config: Fully resolved Config instance.
+
+    Returns:
+        6-tuple: (orch_llm, synth_llm, orch_provider, orch_model,
+                  synth_provider, synth_model)
     """
     orch_provider = config.orchestration_provider or config.provider
     if orch_provider == "anthropic":
@@ -50,6 +95,12 @@ def build_llms(config):
 
 
 def parse_args():
+    """
+    Define and parse CLI arguments.
+
+    Returns:
+        argparse.Namespace with all parsed arguments.
+    """
     parser = argparse.ArgumentParser(description="Research Agent")
     parser.add_argument("topic", nargs="+", help="Research topic")
     parser.add_argument("-p", "--provider", choices=["anthropic", "ollama"], default=None,
@@ -86,13 +137,23 @@ def parse_args():
 
 
 def main():
+    """
+    Main entry point: orchestrate the full research pipeline.
+
+    Loads config, builds clients, runs orchestrator, synthesises the report,
+    saves output, and updates the run index.
+    """
     args = parse_args()
 
+    # Build the overrides dict — None values are ignored by load_config so
+    # absent CLI flags don't clobber config.yaml values.
     overrides = {
         "provider": args.provider,
         "model": args.model,
         "orchestration_provider": args.orchestration_provider,
         "synthesis_provider": args.synthesis_provider,
+        # Apply --orchestration-model / --synthesis-model to both provider-specific
+        # fields so whichever provider is active for each tier picks it up.
         "anthropic_orchestration_model": args.orchestration_model,
         "anthropic_synthesis_model": args.synthesis_model,
         "ollama_orchestration_model": args.orchestration_model,
@@ -190,7 +251,26 @@ def main():
 def build_metadata(topic, config, orch_provider, orch_model, synth_provider,
                    synth_model, started_at, elapsed, question_count,
                    search_count, report_chars, short):
-    """Build a metadata table for the top of the report."""
+    """
+    Build a markdown table of run metadata for the top of the report.
+
+    Args:
+        topic:          The research topic string.
+        config:         Resolved Config instance (used for search_provider).
+        orch_provider:  Resolved orchestration provider name.
+        orch_model:     Resolved orchestration model name.
+        synth_provider: Resolved synthesis provider name.
+        synth_model:    Resolved synthesis model name.
+        started_at:     datetime when the run began.
+        elapsed:        Wall-clock seconds for the full pipeline.
+        question_count: Number of questions researched (including gap questions).
+        search_count:   Total web searches executed.
+        report_chars:   Character count of the generated report.
+        short:          Whether executive summary mode was used.
+
+    Returns:
+        Markdown table string (two columns: Field, Value).
+    """
     mode = "Executive Summary" if short else "Full Report"
     lines = [
         "| Field | Value |",
@@ -211,9 +291,24 @@ def build_metadata(topic, config, orch_provider, orch_model, synth_provider,
 
 
 def save_report(topic: str, metadata: str, report: str, fmt: str = "markdown") -> str:
-    """Save report to output/ directory, return path."""
+    """
+    Save the generated report to the output/ directory.
+
+    Filename is derived from the topic: lowercased, stripped of special
+    characters, spaces replaced with underscores, truncated to 50 chars.
+
+    Args:
+        topic:    Research topic string (used to derive filename).
+        metadata: Markdown metadata table string.
+        report:   Report body string.
+        fmt:      "markdown" (saves .md) or "html" (saves .html).
+
+    Returns:
+        Relative path string to the saved file (e.g. "output/topic.md").
+    """
     os.makedirs("output", exist_ok=True)
     filename = topic.lower()
+    # Strip everything except alphanumerics and spaces, then join with underscores
     filename = "".join(c if c.isalnum() or c == " " else "" for c in filename)
     filename = filename.strip().replace(" ", "_")[:50]
 
@@ -233,7 +328,20 @@ def save_report(topic: str, metadata: str, report: str, fmt: str = "markdown") -
 
 
 def convert_to_html(topic: str, metadata: str, report: str) -> str:
-    """Convert markdown report to a clean HTML page."""
+    """
+    Convert a markdown report to a self-contained HTML page.
+
+    Uses the markdown package with tables and fenced_code extensions.
+    Falls back to <pre> blocks if the package is not installed.
+
+    Args:
+        topic:    Used as the HTML <title> and <h1>.
+        metadata: Markdown metadata table (rendered with tables extension).
+        report:   Report body markdown (rendered with tables + fenced_code).
+
+    Returns:
+        Complete HTML document as a string.
+    """
     try:
         import markdown
         meta_html = markdown.markdown(metadata, extensions=["tables"])
@@ -280,10 +388,28 @@ def convert_to_html(topic: str, metadata: str, report: str) -> str:
 
 def update_index(topic, output_path, started_at, orch_provider, orch_model,
                  synth_provider, synth_model, question_count, search_count, short):
-    """Append entry to output/index.md."""
+    """
+    Append a row to output/index.md for this run.
+
+    Creates the index file with a header row on first use.  Subsequent calls
+    append a single pipe-delimited row.
+
+    Args:
+        topic:          Research topic string.
+        output_path:    Path to the saved report file (basename used for link).
+        started_at:     datetime when the run began.
+        orch_provider:  Resolved orchestration provider name.
+        orch_model:     Resolved orchestration model name.
+        synth_provider: Resolved synthesis provider name.
+        synth_model:    Resolved synthesis model name.
+        question_count: Total questions researched.
+        search_count:   Total web searches executed.
+        short:          Whether executive summary mode was used.
+    """
     os.makedirs("output", exist_ok=True)
     index_path = "output/index.md"
 
+    # Write header row on first use
     if not os.path.exists(index_path):
         with open(index_path, "w", encoding="utf-8") as f:
             f.write("# Research Agent — Report Index\n\n")

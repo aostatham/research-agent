@@ -1,3 +1,26 @@
+"""
+Research orchestration layer.
+
+Implements the full agentic research loop:
+
+    1. decompose()         — LLM breaks a topic into 4–5 focused sub-questions.
+    2. research_question() — Agentic loop per question: LLM calls web_search
+                             until it has enough information to write an answer.
+    3. reflect()           — Critic LLM identifies genuine gaps in the combined
+                             findings.
+    4. run()               — Ties all three together, optionally researching gaps
+                             identified by the critic.
+
+Key robustness mechanisms in research_question():
+    - Repeated query detection: if the model issues the same search twice,
+      a synthesis-forcing message is injected instead of executing another search.
+    - Tool-call string detection: some smaller models return a literal "[Calling …]"
+      string as text; this is caught and redirected.
+    - Fallback synthesis: if max_iterations is reached but search results were
+      accumulated, a standalone LLM call synthesises from those results rather
+      than returning a failure message.
+"""
+
 import json
 from llm.base import LLMClient
 from agent.tools import ALL_TOOLS, execute_tool_with_sources
@@ -44,13 +67,42 @@ Do not invent gaps for the sake of it — if coverage is genuinely good, mark as
 
 
 class Orchestrator:
+    """
+    Manages the full research lifecycle for a given topic.
+
+    Coordinates decomposition, per-question agentic research loops, and
+    critic-based gap reflection.  Passes a single LLMClient for all
+    orchestration LLM calls (decompose, research, reflect); the synthesiser
+    uses a separate client that may be a different model or provider.
+    """
 
     def __init__(self, llm: LLMClient, config: Config = None):
+        """
+        Initialise the orchestrator.
+
+        Args:
+            llm:    LLMClient instance to use for all orchestration calls
+                    (decompose, research_question, reflect).
+            config: Config instance; defaults to Config() if not provided.
+        """
         self.llm = llm
         self.config = config or Config()
 
     def decompose(self, topic: str) -> list[str]:
-        """Break a topic into focused sub-questions."""
+        """
+        Break a research topic into focused sub-questions.
+
+        Asks the LLM to produce a JSON array of question strings.  If JSON
+        parsing fails, falls back to four generic questions so the pipeline
+        can always continue.
+
+        Args:
+            topic: The research topic string.
+
+        Returns:
+            List of question strings, capped at config.max_questions.
+            Never shorter than four questions (fallback guarantees this).
+        """
         print(f"\n📋 Decomposing topic: '{topic}'")
 
         prompt = (
@@ -67,6 +119,7 @@ class Orchestrator:
 
         try:
             questions = json.loads(response.content)
+            # Enforce the hard cap; the model sometimes ignores the max instruction
             questions = questions[:self.config.max_questions]
             if len(questions) < self.config.min_questions:
                 print(f"  ⚠️  Only {len(questions)} questions generated, expected "
@@ -75,6 +128,8 @@ class Orchestrator:
                 print(f"  {i}. {q}")
             return questions
         except json.JSONDecodeError:
+            # The model returned non-JSON; use safe generic questions so the
+            # pipeline doesn't hard-fail at the very first step.
             print("  ⚠️  Failed to parse questions, using fallback")
             return [f"What is {topic}?", f"What are recent developments in {topic}?",
                     f"What are the key challenges in {topic}?",
@@ -82,17 +137,35 @@ class Orchestrator:
 
     def research_question(self, question: str) -> tuple[str, list[dict]]:
         """
-        Run the agent loop for a single question.
-        Returns (answer, sources) where sources is a list of {"title", "url"} dicts.
+        Run the agentic research loop for a single sub-question.
+
+        The loop runs until:
+          - The LLM returns a text response (answer found), or
+          - max_iterations is reached (fallback synthesis attempted), or
+          - A repeated query is detected and synthesis is forced.
+
+        Message history is built manually as a list of role/content dicts.
+        After each search, a forceful "do not call any tools" instruction is
+        appended so smaller models don't loop indefinitely.
+
+        Args:
+            question: The sub-question to research.
+
+        Returns:
+            Tuple of (answer, sources) where:
+              - answer is the synthesised text answer string.
+              - sources is a deduplicated list of {"title", "url"} dicts.
+            Returns a failure string and empty sources only if max_iterations
+            is reached with no accumulated search results.
         """
         print(f"\n🔍 Researching: '{question}'")
 
         messages = [{"role": "user", "content": question}]
         iteration = 0
         all_sources = []
-        last_query = None
+        last_query = None           # tracks the previous search query for repeat detection
         repeated_query_count = 0
-        accumulated_results = []  # track all search results for fallback
+        accumulated_results = []    # saves all search outputs for fallback synthesis
 
         while iteration < self.config.max_iterations:
             iteration += 1
@@ -106,7 +179,9 @@ class Orchestrator:
                 current_query = response.tool_input.get("query")
 
                 if current_query == last_query:
-                    # Repeated query — search already happened, push toward synthesis
+                    # Same query as last time — the model already has these results.
+                    # Injecting a synthesis message here breaks the loop for smaller
+                    # models (e.g. llama3.1) that tend to keep re-searching.
                     repeated_query_count += 1
                     print(f"  ⚠️  Repeated query detected ({repeated_query_count}x), "
                           f"prompting synthesis...")
@@ -125,7 +200,7 @@ class Orchestrator:
                     })
                     continue
 
-                # New query — execute the search
+                # New query — execute the actual search
                 print(f"  🌐 Searching: '{current_query}'")
                 tool_result, sources = execute_tool_with_sources(
                     response.tool_name, response.tool_input
@@ -133,8 +208,11 @@ class Orchestrator:
                 all_sources.extend(sources)
                 last_query = current_query
                 repeated_query_count = 0
+                # Save for fallback synthesis in case max_iterations is reached
                 accumulated_results.append(f"Search: '{current_query}'\n{tool_result}")
 
+                # Build assistant turn first (required by the message format),
+                # then inject results as a user turn with a synthesis instruction.
                 messages.append({
                     "role": "assistant",
                     "content": (
@@ -159,6 +237,9 @@ class Orchestrator:
             elif response.type == "text":
                 content = response.content.strip()
                 if content.startswith("[Calling") or content.startswith("I'll search"):
+                    # Some models (notably llama3.1) return a literal tool-call
+                    # representation as text instead of a proper tool_call response.
+                    # Detect this and redirect the model toward answering directly.
                     print(f"  ⚠️  Detected tool call string, forcing summary...")
                     messages.append({"role": "assistant", "content": content})
                     messages.append({
@@ -170,6 +251,7 @@ class Orchestrator:
                     })
                     continue
 
+                # Genuine text answer — deduplicate sources and return
                 print(f"  ✅ Answer found ({len(content)} chars)")
                 seen = set()
                 unique_sources = []
@@ -179,7 +261,9 @@ class Orchestrator:
                         unique_sources.append(s)
                 return content, unique_sources
 
-        # Max iterations reached — attempt fallback synthesis from accumulated results
+        # Max iterations reached — attempt fallback synthesis from accumulated results.
+        # This rescues questions where the model kept searching without answering,
+        # producing a shorter but usable answer from whatever was gathered.
         if accumulated_results:
             print(f"  ⚠️  Max iterations reached, attempting fallback synthesis...")
             combined = "\n\n".join(accumulated_results)
@@ -205,17 +289,42 @@ class Orchestrator:
                         unique_sources.append(s)
                 return fallback_response.content, unique_sources
 
+        # No accumulated results at all — genuine research failure
         print(f"  ❌ Research failed for: '{question}'")
         return f"Unable to retrieve information on: {question}", []
 
     def reflect(self, topic: str, results: dict) -> tuple[bool, list[str]]:
-        """Critic-based reflection to identify genuine research gaps."""
+        """
+        Run the critic reflection pass to identify genuine research gaps.
+
+        Sends a structured critic prompt to the LLM with the topic and a
+        truncated summary of all findings.  Parses the JSON response to
+        determine whether research is sufficient and what specific gaps remain.
+
+        Handles markdown-fenced JSON responses (``` or ```json wrappers) from
+        models that ignore the "raw JSON only" instruction.
+
+        Args:
+            topic:   The original research topic.
+            results: Dict of {question: answer} from the research phase.
+                     Answers are truncated to 300 chars in the prompt to stay
+                     within token limits.
+
+        Returns:
+            Tuple of (sufficient, missing) where:
+              - sufficient is True if no meaningful gaps were found.
+              - missing is a list of gap description strings.
+            Returns (True, []) if JSON parsing fails (conservative default).
+        """
         print(f"\n🤔 Reflecting on research completeness...")
 
+        # Truncate answers to 300 chars each to keep the prompt size reasonable
         findings_summary = "\n\n".join([
             f"Q: {q}\nA: {a[:300]}..." for q, a in results.items()
         ])
 
+        # REFLECT_PROMPT uses .format() with {{ }} escaping for literal braces
+        # in the JSON examples — do not change to f-string.
         prompt = REFLECT_PROMPT.format(
             topic=topic,
             findings=findings_summary
@@ -228,6 +337,7 @@ class Orchestrator:
 
         try:
             content = response.content.strip()
+            # Strip markdown code fences if the model wrapped the JSON
             if content.startswith("```"):
                 content = content.split("```")[1]
                 if content.startswith("json"):
@@ -247,15 +357,27 @@ class Orchestrator:
             return sufficient, missing
 
         except json.JSONDecodeError:
+            # If we can't parse the reflection, assume research is good enough
+            # rather than triggering unnecessary extra research.
             print("  ⚠️  Could not parse reflection, proceeding anyway")
             return True, []
 
     def run(self, topic: str) -> tuple[dict, dict]:
         """
-        Full orchestration loop.
-        Returns (results, sources) where:
-          results = {question: answer}
-          sources = {question: [{"title": str, "url": str}]}
+        Execute the full orchestration pipeline for a topic.
+
+        Steps:
+          1. Decompose the topic into sub-questions.
+          2. Research each sub-question via the agentic loop.
+          3. Reflect on completeness; research any identified gaps.
+
+        Args:
+            topic: The research topic string.
+
+        Returns:
+            Tuple of (results, sources) where:
+              - results = {question: answer} dict (includes gap questions).
+              - sources = {question: [{"title": str, "url": str}]} dict.
         """
         questions = self.decompose(topic)
         results = {}

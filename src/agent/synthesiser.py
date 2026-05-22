@@ -1,3 +1,21 @@
+"""
+Report synthesis layer.
+
+Takes the structured research findings produced by the Orchestrator and
+generates a polished markdown report via a single LLM call.
+
+Two modes are supported:
+    - Full report (default): executive summary, per-finding sections,
+      conclusion, gaps, and a deduplicated References section.
+    - Executive summary (--short): 3–5 paragraphs, no References section,
+      lower token limit.
+
+Sources are formatted at two levels:
+    1. Inline per-finding "Sources:" block within the formatted prompt so the
+       LLM can reference them in-text.
+    2. Master deduplicated References section appended to the final report.
+"""
+
 from llm.base import LLMClient
 from config import Config
 
@@ -40,8 +58,25 @@ You MUST respond ONLY with the markdown summary. No preamble, no explanation.
 
 
 class Synthesiser:
+    """
+    Generates a structured markdown report from orchestrator findings.
+
+    Receives the {question: answer} results dict and the {question: sources}
+    dict, formats them into a structured prompt, and delegates the actual
+    writing to an LLM.  Post-processes the response to append a deduplicated
+    master References section.
+    """
 
     def __init__(self, llm: LLMClient, config: Config = None):
+        """
+        Initialise the synthesiser.
+
+        Args:
+            llm:    LLMClient instance for synthesis calls.  Typically a higher-
+                    quality model than the orchestration client (e.g. Sonnet vs
+                    Haiku).
+            config: Config instance; defaults to Config() if not provided.
+        """
         self.llm = llm
         self.config = config or Config()
 
@@ -49,19 +84,30 @@ class Synthesiser:
                    sources: dict = None, max_tokens: int = None,
                    short: bool = False) -> str:
         """
-        Synthesise research findings into a structured report.
+        Synthesise research findings into a structured markdown report.
+
+        Formats findings with inline sources into a prompt, calls the LLM,
+        then appends a master References section (full mode only).
 
         Args:
-            topic:      Research topic
-            results:    {question: answer} dict from orchestrator
-            sources:    {question: [{"title": str, "url": str}]} from orchestrator
-            max_tokens: Override config value if needed
-            short:      If True, generate executive summary only
+            topic:      The research topic string.
+            results:    {question: answer} dict from the orchestrator.
+            sources:    {question: [{"title": str, "url": str}]} from the
+                        orchestrator.  Optional — omit or pass None/empty dict
+                        for no citation output.
+            max_tokens: Override the config token limit for this call.
+            short:      If True, use the shorter executive-summary prompt and
+                        a lower token limit (min(2048, config.max_tokens_synthesis)).
+
+        Returns:
+            Markdown string.  Full mode appends a References section;
+            short mode does not.
         """
         print("\n📝 Synthesising report...")
 
         if short:
             print("   (executive summary mode)")
+            # Cap short-mode tokens so we don't waste budget on a brief summary
             max_tokens = max_tokens or min(2048, self.config.max_tokens_synthesis)
             prompt_template = SHORT_SYNTHESISE_PROMPT
         else:
@@ -82,7 +128,7 @@ class Synthesiser:
 
         report = response.content
 
-        # Append master reference list if sources available and not short mode
+        # Append master reference list in full mode only; short summaries omit it
         if sources and not short:
             references = self._format_master_references(sources)
             if references:
@@ -92,7 +138,21 @@ class Synthesiser:
         return report
 
     def _format_findings(self, results: dict, sources: dict) -> str:
-        """Format findings with inline source attribution."""
+        """
+        Format the findings dict as numbered markdown sections for the prompt.
+
+        Each section includes the question, the answer, and an inline Sources
+        block listing the citations for that question.  Sections are separated
+        by horizontal rules so the LLM can clearly distinguish findings.
+
+        Args:
+            results: {question: answer} dict.
+            sources: {question: [{"title": str, "url": str}]} dict.
+                     Missing keys are treated as an empty source list.
+
+        Returns:
+            Multi-section markdown string, or empty string if results is empty.
+        """
         sections = []
         for i, (question, answer) in enumerate(results.items(), 1):
             question_sources = sources.get(question, [])
@@ -110,7 +170,20 @@ class Synthesiser:
         return "\n\n---\n\n".join(sections)
 
     def _format_master_references(self, sources: dict) -> str:
-        """Build a deduplicated master reference list."""
+        """
+        Build a deduplicated numbered References section from all sources.
+
+        Iterates sources in question order, deduplicating by URL so each
+        source appears exactly once even if it was cited across multiple
+        questions.
+
+        Args:
+            sources: {question: [{"title": str, "url": str}]} dict.
+
+        Returns:
+            Markdown "## References" section string, or empty string if
+            no sources are available.
+        """
         seen = set()
         all_sources = []
         for question_sources in sources.values():
