@@ -12,6 +12,11 @@ ollama_orchestration_model: llama3.1
 ollama_synthesis_model: llama3.1
 ollama_base_url: http://localhost:11434
 
+# Search provider
+# Options: anthropic | tavily
+search_provider: anthropic
+# tavily_api_key: tvly-...   # or set TAVILY_API_KEY env var
+
 # Research behaviour
 min_questions: 4
 max_questions: 5

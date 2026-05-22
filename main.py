@@ -9,6 +9,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "src"))
 from dotenv import load_dotenv
 from llm import AnthropicClient, OllamaClient
 from agent import Orchestrator, Synthesiser
+from agent.tools import configure_search
 from config import load_config
 
 load_dotenv()
@@ -27,17 +28,15 @@ def build_client(provider: str, model: str, config) -> object:
 
 def build_llms(config):
     """
-    Return (orchestration_llm, synthesis_llm) based on config.
+    Return (orch_llm, synth_llm, orch_provider, orch_model, synth_provider, synth_model).
     Supports mixed providers — orchestration and synthesis can use different backends.
     """
-    # Resolve orchestration provider and model
     orch_provider = config.orchestration_provider or config.provider
     if orch_provider == "anthropic":
         orch_model = config.model or config.anthropic_orchestration_model
     else:
         orch_model = config.model or config.ollama_orchestration_model
 
-    # Resolve synthesis provider and model
     synth_provider = config.synthesis_provider or config.provider
     if synth_provider == "anthropic":
         synth_model = config.model or config.anthropic_synthesis_model
@@ -65,6 +64,8 @@ def parse_args():
                         default=None, help="Provider for synthesis tier")
     parser.add_argument("--synthesis-model", default=None,
                         help="Model for synthesis tier")
+    parser.add_argument("--search-provider", choices=["anthropic", "tavily"],
+                        default=None, help="Search provider (default: from config.yaml)")
     parser.add_argument("--min-questions", type=int, default=None,
                         help="Minimum number of research questions")
     parser.add_argument("--max-questions", type=int, default=None,
@@ -96,6 +97,7 @@ def main():
         "anthropic_synthesis_model": args.synthesis_model,
         "ollama_orchestration_model": args.orchestration_model,
         "ollama_synthesis_model": args.synthesis_model,
+        "search_provider": args.search_provider,
         "min_questions": args.min_questions,
         "max_questions": args.max_questions,
         "max_iterations": args.max_iterations,
@@ -103,6 +105,13 @@ def main():
         "max_tokens_synthesis": args.max_tokens_synthesis,
     }
     config = load_config(config_path=args.config, overrides=overrides)
+
+    # Configure search provider
+    configure_search(
+        provider=config.search_provider,
+        tavily_api_key=config.tavily_api_key,
+        tavily_max_results=config.tavily_max_results
+    )
 
     topic = " ".join(args.topic)
     started_at = datetime.now()
@@ -115,6 +124,7 @@ def main():
     print(f"Topic:              {topic}")
     print(f"Orch provider:      {orch_provider} / {orch_model}")
     print(f"Synth provider:     {synth_provider} / {synth_model}")
+    print(f"Search provider:    {config.search_provider}")
     print(f"Questions:          {config.min_questions}–{config.max_questions}")
     if args.short:
         print(f"Mode:               Executive summary only")
@@ -172,7 +182,8 @@ def main():
 
     print(f"\n{'─' * 50}")
     print(f"✅ Done — report saved to {output_path}")
-    print(f"   Questions: {len(results)}  Searches: {search_count}  Time: {elapsed:.1f}s")
+    print(f"   Questions: {len(results)}  Searches: {search_count}  "
+          f"Search provider: {config.search_provider}  Time: {elapsed:.1f}s")
     print(f"{'─' * 50}\n")
 
 
@@ -188,6 +199,7 @@ def build_metadata(topic, config, orch_provider, orch_model, synth_provider,
         f"| **Generated** | {started_at.strftime('%Y-%m-%d %H:%M')} |",
         f"| **Orchestration** | {orch_provider} / {orch_model} |",
         f"| **Synthesis** | {synth_provider} / {synth_model} |",
+        f"| **Search provider** | {config.search_provider} |",
         f"| **Questions researched** | {question_count} |",
         f"| **Web searches** | {search_count} |",
         f"| **Time** | {elapsed:.1f}s |",

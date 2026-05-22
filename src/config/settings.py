@@ -11,8 +11,8 @@ class Config:
     model: Optional[str] = None
 
     # Mixed provider support
-    orchestration_provider: Optional[str] = None  # overrides provider for orchestration
-    synthesis_provider: Optional[str] = None      # overrides provider for synthesis
+    orchestration_provider: Optional[str] = None
+    synthesis_provider: Optional[str] = None
 
     # Anthropic model tiering
     anthropic_orchestration_model: str = "claude-haiku-4-5-20251001"
@@ -22,6 +22,11 @@ class Config:
     ollama_orchestration_model: str = "llama3.1"
     ollama_synthesis_model: str = "llama3.1"
     ollama_base_url: str = "http://localhost:11434"
+
+    # Search provider
+    search_provider: str = "anthropic"  # anthropic | tavily
+    tavily_api_key: Optional[str] = None
+    tavily_max_results: int = 5
 
     # Research behaviour
     min_questions: int = 4
@@ -60,5 +65,9 @@ def load_config(config_path: str = "config.yaml", overrides: dict = None) -> Con
         for key, value in overrides.items():
             if value is not None and hasattr(config, key):
                 setattr(config, key, value)
+
+    # Layer 3 — fall back to environment variable for Tavily key
+    if not config.tavily_api_key:
+        config.tavily_api_key = os.getenv("TAVILY_API_KEY")
 
     return config
