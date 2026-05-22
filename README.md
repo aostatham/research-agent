@@ -235,7 +235,7 @@ Then reload: `source ~/.zshrc`
 
 ## Configuration
 
-All settings have hardcoded defaults, can be overridden in config.yaml, and further overridden per-run via CLI flags.
+All settings have hardcoded defaults, can be overridden in `config.yaml`, and further overridden per-run via CLI flags.
 
 ### config.yaml
 
@@ -380,66 +380,93 @@ To add a new provider (e.g. OpenAI), create `llm/openai_client.py` implementing 
 ## Roadmap
 
 ### Phase A — Stability & Quality ✅ Complete
-- [x] --provider CLI flag
-- [x] Exponential backoff retry
-- [x] Config file + CLI overrides
-- [x] Fix message history bug
-- [x] Model tiering — Haiku orchestration, Sonnet synthesis
+- [x] `--provider` CLI flag to switch Anthropic / Ollama at runtime
+- [x] Exponential backoff retry on API failures
+- [x] Config file (`config.yaml`) with three-layer hierarchy
+- [x] Fix message history edge case (tool call string bug)
+- [x] Model tiering — Haiku for orchestration, Sonnet for synthesis
 - [x] Stronger reflection / critic persona
-- [x] Source citations in final report
+- [x] Source citations carried through to final report
 - [x] Repeated query detection + fallback synthesis
 
 ### Phase B — Output Options
-- [ ] --format flag for HTML output
+- [ ] `--format` flag for HTML output
 - [ ] PDF export
-- [ ] --short flag for executive summary only
-- [ ] Report metadata (date, topic, model used, token count, search count)
+- [ ] `--short` flag for executive summary only
+- [ ] Report metadata — date, topic, model used, token count, search count
 - [ ] Index file tracking all reports generated
 
 ### Phase C — Memory & Context
-- [ ] Persistent result cache
-- [ ] Cross-run topic index
-- [ ] Context window management
-- [ ] Follow-up mode (--follow-up)
+- [ ] Persistent result cache — don't re-research the same question
+- [ ] Cross-run topic index — "what have I researched before?"
+- [ ] Context window management — summarise long message histories mid-loop
+- [ ] Follow-up mode — `--follow-up` to extend a previous report
 
 ### Phase D — Multi-Agent
-- [ ] Separate planner and researcher agents
-- [ ] Critic agent
-- [ ] Fact-checker agent
-- [ ] Parallel research
+- [ ] Separate planner agent from researcher agent
+- [ ] Critic agent that challenges the synthesiser's conclusions
+- [ ] Fact-checker agent that cross-references claims across sources
+- [ ] Parallel research — multiple questions researched simultaneously
 
 ### Phase E — Tools & Sources
-- [ ] Tavily search (free tier, AI-optimised, #1 DeepResearch Bench)
-- [ ] SearXNG self-hosted search (unlimited, aggregates Google+Bing+DDG)
-- [ ] Brave Search API (independent index, 2,000/month free)
-- [ ] read_url tool
-- [ ] arxiv_search tool
-- [ ] youtube_transcript tool
-- [ ] file_reader tool
+
+**Search providers** — selectable via `config.yaml` `search_provider` key:
+- [ ] **Tavily** — managed API, free 1,000/month, designed for AI agents, #1 DeepResearch Bench
+- [ ] **SearXNG** — self-hosted, unlimited, aggregates Google+Bing+DuckDuckGo
+- [ ] **Brave Search** — managed API, independent index, 2,000/month free
+- [ ] **Google Custom Search** — actual Google results, 100/day free
+
+**Additional tools:**
+- [ ] `read_url` — fetch and read a specific page directly
+- [ ] `arxiv_search` — search academic papers
+- [ ] `youtube_transcript` — extract content from video
+- [ ] `file_reader` — include local documents as context
+- [ ] Configurable tool set per run via CLI flags
 
 ### Phase F — Interface
-- [ ] Web UI (Flask or FastAPI)
-- [ ] Progress streaming via SSE
+- [ ] Web UI — Flask or FastAPI frontend
+- [ ] Progress streaming to browser via SSE
 - [ ] Report library browser
-- [ ] REST API
+- [ ] REST API — accept topics, return report IDs, retrieve reports
 
 ### Phase G — Ollama & Provider Optimisation
-- [ ] Mixed-provider support (Ollama orchestration + Anthropic synthesis)
-- [ ] Provider-specific prompt variants
-- [ ] Rephrase comparative questions for weaker models
-- [ ] simple_questions config flag
-- [ ] System prompt support in LLMClient
+- [ ] Mixed-provider support — Ollama orchestration + Anthropic synthesis
+- [ ] Provider-specific prompt variants — separate prompts per provider in config
+- [ ] Rephrase comparative questions during decomposition for weaker models
+- [ ] `simple_questions` config flag — avoid complex comparative questions
+- [ ] Context window pressure management — summarise message history mid-loop
+- [ ] Test alternative Ollama models — llama3.2, mistral, mixtral
+- [ ] System prompt support in `LLMClient`
 - [ ] Ollama model capability registry
+
+### Suggested Order of Attack
+
+| Priority | Phase | Reason |
+|---|---|---|
+| Next | B | Output options immediately useful, low complexity |
+| Then | E — Tavily + SearXNG | Removes Anthropic search dependency, enables free high-volume use |
+| Then | G — Mixed provider | Biggest quality improvement for Ollama users at low cost |
+| Then | C | Makes agent stateful and reusable across runs |
+| Then | D | Most architecturally interesting, highest learning value |
+| Then | E — remaining tools | Highest research quality gains |
+| Last | F | Only needed if sharing with others |
+
+---
+
+## Known Issues & Observations
+
+- Comparative questions ("How does X compare to Y?") are harder for llama3.1 — more likely to hit max iterations before synthesising
+- Llama3.1 synthesis is shallower than Sonnet — report depth is model-dependent
+- Fallback synthesis reliably rescues failed questions but produces shorter answers
+- Web searches cost $0.01 each via Anthropic API regardless of which LLM provider orchestrates
 
 ---
 
 ## Notes
 
-- Reports are saved to output/ — add to .gitignore if topics are sensitive
+- Reports are saved to `output/` — add to `.gitignore` if topics are sensitive
 - The agent uses Haiku by default for orchestration (fast, cheap) and Sonnet for synthesis (quality)
-- Ollama tool calling quality varies by model — llama3.1 is more reliable than llama3.2
-- Comparative questions ("How does X compare to Y?") are harder for smaller models
-- Web searches cost $0.01 each via Anthropic regardless of which LLM provider orchestrates
+- Ollama tool calling quality varies by model — `llama3.1` is more reliable than `llama3.2`
 
 ---
 
