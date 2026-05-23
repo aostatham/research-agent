@@ -346,6 +346,7 @@ def test_update_index_creates_file(tmp_path, monkeypatch):
         orch_model="haiku",
         synth_provider="anthropic",
         synth_model="sonnet",
+        search_provider="anthropic",
         question_count=5,
         search_count=8,
         short=False
@@ -365,6 +366,7 @@ def test_update_index_contains_topic(tmp_path, monkeypatch):
         orch_model="haiku",
         synth_provider="anthropic",
         synth_model="sonnet",
+        search_provider="anthropic",
         question_count=5,
         search_count=8,
         short=False
@@ -387,6 +389,7 @@ def test_update_index_appends_multiple_entries(tmp_path, monkeypatch):
             orch_model="haiku",
             synth_provider="anthropic",
             synth_model="sonnet",
+            search_provider="anthropic",
             question_count=5,
             search_count=8,
             short=False
@@ -409,6 +412,7 @@ def test_update_index_short_mode_noted(tmp_path, monkeypatch):
         orch_model="haiku",
         synth_provider="anthropic",
         synth_model="sonnet",
+        search_provider="anthropic",
         question_count=5,
         search_count=8,
         short=True
@@ -430,6 +434,7 @@ def test_update_index_full_mode_noted(tmp_path, monkeypatch):
         orch_model="haiku",
         synth_provider="anthropic",
         synth_model="sonnet",
+        search_provider="anthropic",
         question_count=5,
         search_count=8,
         short=False
@@ -451,6 +456,7 @@ def test_update_index_mixed_providers_recorded(tmp_path, monkeypatch):
         orch_model="llama3.1",
         synth_provider="anthropic",
         synth_model="claude-sonnet-4-6",
+        search_provider="anthropic",
         question_count=5,
         search_count=8,
         short=False
@@ -473,6 +479,7 @@ def test_update_index_creates_header_row(tmp_path, monkeypatch):
         orch_model="haiku",
         synth_provider="anthropic",
         synth_model="sonnet",
+        search_provider="anthropic",
         question_count=5,
         search_count=8,
         short=False
@@ -495,6 +502,7 @@ def test_update_index_contains_file_link(tmp_path, monkeypatch):
         orch_model="haiku",
         synth_provider="anthropic",
         synth_model="sonnet",
+        search_provider="anthropic",
         question_count=5,
         search_count=8,
         short=False

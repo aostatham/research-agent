@@ -195,6 +195,7 @@ def main():
         orch_model=orch_model,
         synth_provider=synth_provider,
         synth_model=synth_model,
+        search_provider=config.search_provider,
         question_count=len(results),
         search_count=search_count,
         short=args.short
