@@ -377,6 +377,35 @@ def test_extract_claims_scores_confidence():
     assert 0.0 <= claims[0]["confidence"] <= 1.0
 
 
+def test_extract_claims_deduplicates_sources_by_url():
+    """Each claim's sources list contains no duplicate URLs."""
+    from output.provenance import extract_claims_from_answer
+    sources = [
+        {"title": "Page A", "url": "https://example.com/a"},
+        {"title": "Page A duplicate", "url": "https://example.com/a"},
+        {"title": "Page B", "url": "https://example.com/b"},
+    ]
+    llm = _make_mock_llm('["Claim one.", "Claim two."]')
+    claims = extract_claims_from_answer("Q?", "Answer.", sources, llm)
+    for claim in claims:
+        urls = [s["url"] for s in claim["sources"]]
+        assert len(urls) == len(set(urls))
+
+
+def test_extract_claims_sources_count_not_inflated():
+    """Total source entries per claim does not exceed the unique URL count."""
+    from output.provenance import extract_claims_from_answer
+    sources = [
+        {"title": f"Page {i}", "url": f"https://example.com/{i}"}
+        for i in range(5)
+    ]
+    llm = _make_mock_llm('["Claim one.", "Claim two.", "Claim three."]')
+    claims = extract_claims_from_answer("Q?", "Answer.", sources, llm)
+    unique_url_count = len({s["url"] for s in sources})
+    for claim in claims:
+        assert len(claim["sources"]) <= unique_url_count
+
+
 def test_extract_claims_classifies_sources():
     """Sources attached to returned claims have source_type set."""
     from output.provenance import extract_claims_from_answer

@@ -49,7 +49,7 @@ Run the agent:
 
 ## Test baseline
 
-276 unit tests must pass before every commit.
+278 unit tests must pass before every commit.
 Always run: pytest tests/ -m "not integration" -v
 Never commit with a failing test.
 

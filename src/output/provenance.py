@@ -355,18 +355,25 @@ def extract_claims_from_answer(
         fallback_text = answer[:200] + (" [extraction failed]" if len(answer) > 200 else "")
         claim_texts = [fallback_text]
 
+    seen_urls: set = set()
+    deduped_sources = []
+    for source in evidence_sources:
+        if source["url"] not in seen_urls:
+            seen_urls.add(source["url"])
+            deduped_sources.append(source)
+
     claims = []
     for i, text in enumerate(claim_texts):
         claim = EvidenceClaim(
             id=claim_id_start + i,
             claim=str(text),
             source=primary_url,
-            confidence=score_confidence(evidence_sources),
+            confidence=score_confidence(deduped_sources),
             contradictions=[],
             evidence_type="qualitative",
             verification_status="unverified",
             timestamp=now,
-            sources=evidence_sources,
+            sources=deduped_sources,
             report_line=None,
         )
         claims.append(claim)
