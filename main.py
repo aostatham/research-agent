@@ -80,6 +80,9 @@ def parse_args():
                         help="Generate executive summary only")
     parser.add_argument("-f", "--format", choices=["markdown", "html", "pdf"],
                         default="markdown", help="Output format (default: markdown)")
+    parser.add_argument("--provenance", choices=["none", "file", "graph"],
+                        default="none",
+                        help="Provenance output: none (default), file (.provenance.json), graph (Phase E)")
 
     return parser.parse_args()
 
@@ -114,6 +117,7 @@ def main():
         "max_iterations": args.max_iterations,
         "max_tokens_research": args.max_tokens_research,
         "max_tokens_synthesis": args.max_tokens_synthesis,
+        "provenance": args.provenance,
     }
     config = load_config(config_path=args.config, overrides=overrides)
 
@@ -198,8 +202,18 @@ def main():
         search_provider=config.search_provider,
         question_count=len(results),
         search_count=search_count,
-        short=args.short
+        short=args.short,
+        provenance=config.provenance,
     )
+
+    if config.provenance == "file":
+        from output.provenance import write_provenance_file, build_quality_metrics, build_placeholder_claims
+        claims = build_placeholder_claims(results, sources)
+        metrics = build_quality_metrics(claims)
+        prov_path = write_provenance_file(output_path, claims, metrics)
+        print(f"   Provenance saved to {prov_path}")
+    elif config.provenance == "graph":
+        print("   ⚠️  Graph provenance not yet implemented (Phase E)")
 
     # Print run summary
     print(f"\n{'─' * 50}")

@@ -84,6 +84,13 @@ class Config:
     retry_base_delay: float = 1.0   # seconds before first retry
     retry_max_delay: float = 30.0   # cap on inter-retry delay
 
+    # ── Provenance ────────────────────────────────────────────────────────────
+
+    # none: no provenance output (default)
+    # file: write .provenance.json alongside the report
+    # graph: Phase E placeholder — not yet implemented
+    provenance: str = "none"
+
 
 def load_config(config_path: str = "config.yaml", overrides: dict = None) -> Config:
     """

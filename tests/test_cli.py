@@ -349,7 +349,8 @@ def test_update_index_creates_file(tmp_path, monkeypatch):
         search_provider="anthropic",
         question_count=5,
         search_count=8,
-        short=False
+        short=False,
+        provenance="none"
     )
     assert os.path.exists(tmp_path / "output" / "index.md")
 
@@ -369,7 +370,8 @@ def test_update_index_contains_topic(tmp_path, monkeypatch):
         search_provider="anthropic",
         question_count=5,
         search_count=8,
-        short=False
+        short=False,
+        provenance="none"
     )
     with open(tmp_path / "output" / "index.md") as f:
         content = f.read()
@@ -392,7 +394,8 @@ def test_update_index_appends_multiple_entries(tmp_path, monkeypatch):
             search_provider="anthropic",
             question_count=5,
             search_count=8,
-            short=False
+            short=False,
+            provenance="none"
         )
     with open(tmp_path / "output" / "index.md") as f:
         content = f.read()
@@ -415,7 +418,8 @@ def test_update_index_short_mode_noted(tmp_path, monkeypatch):
         search_provider="anthropic",
         question_count=5,
         search_count=8,
-        short=True
+        short=True,
+        provenance="none"
     )
     with open(tmp_path / "output" / "index.md") as f:
         content = f.read()
@@ -437,7 +441,8 @@ def test_update_index_full_mode_noted(tmp_path, monkeypatch):
         search_provider="anthropic",
         question_count=5,
         search_count=8,
-        short=False
+        short=False,
+        provenance="none"
     )
     with open(tmp_path / "output" / "index.md") as f:
         content = f.read()
@@ -459,7 +464,8 @@ def test_update_index_mixed_providers_recorded(tmp_path, monkeypatch):
         search_provider="anthropic",
         question_count=5,
         search_count=8,
-        short=False
+        short=False,
+        provenance="none"
     )
     with open(tmp_path / "output" / "index.md") as f:
         content = f.read()
@@ -482,7 +488,8 @@ def test_update_index_creates_header_row(tmp_path, monkeypatch):
         search_provider="anthropic",
         question_count=5,
         search_count=8,
-        short=False
+        short=False,
+        provenance="none"
     )
     with open(tmp_path / "output" / "index.md") as f:
         content = f.read()
@@ -505,7 +512,8 @@ def test_update_index_contains_file_link(tmp_path, monkeypatch):
         search_provider="anthropic",
         question_count=5,
         search_count=8,
-        short=False
+        short=False,
+        provenance="none"
     )
     with open(tmp_path / "output" / "index.md") as f:
         content = f.read()
