@@ -1,18 +1,15 @@
 """
-CLI entry point for the research agent.
+Research Agent — CLI entry point.
 
-Parses command-line arguments, loads configuration (three-layer hierarchy),
-builds the LLM clients, runs the full pipeline, and saves the output report.
+Thin orchestration layer:
+  1. Parse args + load config (three-layer hierarchy)
+  2. Configure search provider (anthropic or tavily)
+  3. Build LLM clients via llm.builder (supports mixed providers)
+  4. Run Orchestrator — decompose topic, research questions, reflect
+  5. Synthesise final report via Synthesiser
+  6. Format metadata, save report, update output/index.md
 
-Pipeline:
-    parse_args() + load_config()
-        → build_llms()             — instantiate one LLM client per tier
-        → configure_search()       — set the search backend (Anthropic or Tavily)
-        → Orchestrator.run()       — decompose, research, reflect
-        → Synthesiser.synthesise() — write structured markdown report
-        → build_metadata()         — generate report metadata table
-        → save_report()            — write .md or .html to output/
-        → update_index()           — append row to output/index.md
+Business logic lives in src/: agent/, llm/, config/, output/.
 """
 
 import sys
@@ -24,136 +21,89 @@ from datetime import datetime
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "src"))
 
 from dotenv import load_dotenv
-from llm import AnthropicClient, OllamaClient
 from agent import Orchestrator, Synthesiser
 from agent.tools import configure_search
 from config import load_config
+from llm.builder import build_llms
+from output.formatter import build_metadata
+from output.writer import save_report, update_index
 
 load_dotenv()
 
 
-def build_client(provider: str, model: str, config) -> object:
-    """
-    Instantiate a single LLM client for the given provider and model.
-
-    Args:
-        provider: "anthropic" or "ollama".
-        model:    Model ID string (e.g. "claude-haiku-4-5-20251001", "llama3.1").
-        config:   Config instance; used for ollama_base_url.
-
-    Returns:
-        AnthropicClient or OllamaClient instance.
-
-    Raises:
-        SystemExit: If provider is not recognised.
-    """
-    if provider == "anthropic":
-        return AnthropicClient(model=model)
-    elif provider == "ollama":
-        return OllamaClient(model=model, base_url=config.ollama_base_url)
-    else:
-        print(f"❌ Unknown provider: '{provider}'. Choose 'anthropic' or 'ollama'.")
-        sys.exit(1)
-
-
-def build_llms(config):
-    """
-    Build orchestration and synthesis LLM clients from the resolved config.
-
-    Resolves each tier's provider and model independently, supporting
-    mixed-provider setups (e.g. Ollama orchestration + Anthropic synthesis).
-
-    Resolution order for each tier:
-      1. Per-tier provider override (orchestration_provider / synthesis_provider)
-      2. Global provider field
-      3. Global model override (applies to both tiers if set)
-      4. Provider-specific tier model (anthropic_orchestration_model, etc.)
-
-    Args:
-        config: Fully resolved Config instance.
-
-    Returns:
-        6-tuple: (orch_llm, synth_llm, orch_provider, orch_model,
-                  synth_provider, synth_model)
-    """
-    orch_provider = config.orchestration_provider or config.provider
-    if orch_provider == "anthropic":
-        orch_model = config.model or config.anthropic_orchestration_model
-    else:
-        orch_model = config.model or config.ollama_orchestration_model
-
-    synth_provider = config.synthesis_provider or config.provider
-    if synth_provider == "anthropic":
-        synth_model = config.model or config.anthropic_synthesis_model
-    else:
-        synth_model = config.model or config.ollama_synthesis_model
-
-    orch_llm = build_client(orch_provider, orch_model, config)
-    synth_llm = build_client(synth_provider, synth_model, config)
-
-    return orch_llm, synth_llm, orch_provider, orch_model, synth_provider, synth_model
-
-
 def parse_args():
     """
-    Define and parse CLI arguments.
+    Parse command-line arguments.
 
-    Returns:
-        argparse.Namespace with all parsed arguments.
+    Short flags: -p (provider), -m (model), -s (short), -f (format)
+    Long flags cover all config overrides plus search provider selection.
     """
     parser = argparse.ArgumentParser(description="Research Agent")
     parser.add_argument("topic", nargs="+", help="Research topic")
+
+    # LLM provider
     parser.add_argument("-p", "--provider", choices=["anthropic", "ollama"], default=None,
                         help="LLM provider for both tiers (default: from config.yaml)")
     parser.add_argument("-m", "--model", default=None,
                         help="Model override for both tiers")
+
+    # Mixed provider support
     parser.add_argument("--orchestration-provider", choices=["anthropic", "ollama"],
-                        default=None, help="Provider for orchestration tier")
+                        default=None, help="Provider for orchestration tier only")
     parser.add_argument("--orchestration-model", default=None,
-                        help="Model for orchestration tier")
+                        help="Model for orchestration tier only")
     parser.add_argument("--synthesis-provider", choices=["anthropic", "ollama"],
-                        default=None, help="Provider for synthesis tier")
+                        default=None, help="Provider for synthesis tier only")
     parser.add_argument("--synthesis-model", default=None,
-                        help="Model for synthesis tier")
+                        help="Model for synthesis tier only")
+
+    # Search provider
     parser.add_argument("--search-provider", choices=["anthropic", "tavily"],
                         default=None, help="Search provider (default: from config.yaml)")
+
+    # Research depth
     parser.add_argument("--min-questions", type=int, default=None,
-                        help="Minimum number of research questions")
+                        help="Minimum number of research questions (default: 4)")
     parser.add_argument("--max-questions", type=int, default=None,
-                        help="Maximum number of research questions")
+                        help="Maximum number of research questions (default: 5)")
     parser.add_argument("--max-iterations", type=int, default=None,
-                        help="Max search iterations per question")
+                        help="Max search iterations per question (default: 5)")
     parser.add_argument("--max-tokens-research", type=int, default=None,
-                        help="Max tokens for research calls")
+                        help="Max tokens per research call (default: 2048)")
     parser.add_argument("--max-tokens-synthesis", type=int, default=None,
-                        help="Max tokens for synthesis call")
+                        help="Max tokens for synthesis call (default: 8192)")
+
+    # Config and output
     parser.add_argument("--config", default="config.yaml",
                         help="Path to config file (default: config.yaml)")
     parser.add_argument("-s", "--short", action="store_true",
                         help="Generate executive summary only")
-    parser.add_argument("-f", "--format", choices=["markdown", "html"], default="markdown",
-                        help="Output format (default: markdown)")
+    parser.add_argument("-f", "--format", choices=["markdown", "html", "pdf"],
+                        default="markdown", help="Output format (default: markdown)")
+
     return parser.parse_args()
 
 
 def main():
     """
-    Main entry point: orchestrate the full research pipeline.
+    Main entry point for the research agent CLI.
 
-    Loads config, builds clients, runs orchestrator, synthesises the report,
-    saves output, and updates the run index.
+    Flow:
+      1. Parse args + load config (three-layer hierarchy)
+      2. Configure search provider
+      3. Build LLM clients (supports mixed providers)
+      4. Run orchestrator — decompose, research, reflect
+      5. Synthesise report
+      6. Build metadata, save report, update index
     """
     args = parse_args()
 
-    # Build the overrides dict — None values are ignored by load_config so
-    # absent CLI flags don't clobber config.yaml values.
+    # Build config overrides from CLI args — None values are ignored by load_config
     overrides = {
         "provider": args.provider,
         "model": args.model,
         "orchestration_provider": args.orchestration_provider,
         "synthesis_provider": args.synthesis_provider,
-        # Apply --orchestration-model / --synthesis-model to both provider-specific
-        # fields so whichever provider is active for each tier picks it up.
         "anthropic_orchestration_model": args.orchestration_model,
         "anthropic_synthesis_model": args.synthesis_model,
         "ollama_orchestration_model": args.orchestration_model,
@@ -167,7 +117,8 @@ def main():
     }
     config = load_config(config_path=args.config, overrides=overrides)
 
-    # Configure search provider
+    # Configure search provider once at startup
+    # All web searches route through execute_tool_with_sources() in tools.py
     configure_search(
         provider=config.search_provider,
         tavily_api_key=config.tavily_api_key,
@@ -178,8 +129,10 @@ def main():
     started_at = datetime.now()
     start_time = time.time()
 
+    # Build LLM clients — returns 6-tuple to support mixed providers
     orch_llm, synth_llm, orch_provider, orch_model, synth_provider, synth_model = build_llms(config)
 
+    # Print run header
     print(f"\n🔬 Research Agent")
     print(f"{'─' * 50}")
     print(f"Topic:              {topic}")
@@ -191,12 +144,17 @@ def main():
         print(f"Mode:               Executive summary only")
     print(f"{'─' * 50}")
 
+    # Run research pipeline
     orchestrator = Orchestrator(llm=orch_llm, config=config)
     synthesiser = Synthesiser(llm=synth_llm, config=config)
 
+    # orchestrator.run() returns ({question: answer}, {question: [sources]})
     results, sources = orchestrator.run(topic)
+
+    # Count total web searches across all questions
     search_count = sum(len(s) for s in sources.values())
 
+    # Synthesise — full report or executive summary
     report = synthesiser.synthesise(
         topic=topic,
         results=results,
@@ -206,6 +164,7 @@ def main():
 
     elapsed = time.time() - start_time
 
+    # Build metadata table and save outputs
     metadata = build_metadata(
         topic=topic,
         config=config,
@@ -241,192 +200,12 @@ def main():
         short=args.short
     )
 
+    # Print run summary
     print(f"\n{'─' * 50}")
     print(f"✅ Done — report saved to {output_path}")
     print(f"   Questions: {len(results)}  Searches: {search_count}  "
           f"Search provider: {config.search_provider}  Time: {elapsed:.1f}s")
     print(f"{'─' * 50}\n")
-
-
-def build_metadata(topic, config, orch_provider, orch_model, synth_provider,
-                   synth_model, started_at, elapsed, question_count,
-                   search_count, report_chars, short):
-    """
-    Build a markdown table of run metadata for the top of the report.
-
-    Args:
-        topic:          The research topic string.
-        config:         Resolved Config instance (used for search_provider).
-        orch_provider:  Resolved orchestration provider name.
-        orch_model:     Resolved orchestration model name.
-        synth_provider: Resolved synthesis provider name.
-        synth_model:    Resolved synthesis model name.
-        started_at:     datetime when the run began.
-        elapsed:        Wall-clock seconds for the full pipeline.
-        question_count: Number of questions researched (including gap questions).
-        search_count:   Total web searches executed.
-        report_chars:   Character count of the generated report.
-        short:          Whether executive summary mode was used.
-
-    Returns:
-        Markdown table string (two columns: Field, Value).
-    """
-    mode = "Executive Summary" if short else "Full Report"
-    lines = [
-        "| Field | Value |",
-        "|---|---|",
-        f"| **Topic** | {topic} |",
-        f"| **Generated** | {started_at.strftime('%Y-%m-%d %H:%M')} |",
-        f"| **Orchestration** | {orch_provider} / {orch_model} |",
-        f"| **Synthesis** | {synth_provider} / {synth_model} |",
-        f"| **Search provider** | {config.search_provider} |",
-        f"| **Questions researched** | {question_count} |",
-        f"| **Web searches** | {search_count} |",
-        f"| **Time** | {elapsed:.1f}s |",
-        f"| **Report length** | {report_chars:,} chars |",
-        f"| **Mode** | {mode} |",
-        "",
-    ]
-    return "\n".join(lines)
-
-
-def save_report(topic: str, metadata: str, report: str, fmt: str = "markdown") -> str:
-    """
-    Save the generated report to the output/ directory.
-
-    Filename is derived from the topic: lowercased, stripped of special
-    characters, spaces replaced with underscores, truncated to 50 chars.
-
-    Args:
-        topic:    Research topic string (used to derive filename).
-        metadata: Markdown metadata table string.
-        report:   Report body string.
-        fmt:      "markdown" (saves .md) or "html" (saves .html).
-
-    Returns:
-        Relative path string to the saved file (e.g. "output/topic.md").
-    """
-    os.makedirs("output", exist_ok=True)
-    filename = topic.lower()
-    # Strip everything except alphanumerics and spaces, then join with underscores
-    filename = "".join(c if c.isalnum() or c == " " else "" for c in filename)
-    filename = filename.strip().replace(" ", "_")[:50]
-
-    if fmt == "html":
-        filepath = f"output/{filename}.html"
-        html = convert_to_html(topic, metadata, report)
-        with open(filepath, "w", encoding="utf-8") as f:
-            f.write(html)
-    else:
-        filepath = f"output/{filename}.md"
-        with open(filepath, "w", encoding="utf-8") as f:
-            f.write(f"# {topic}\n\n")
-            f.write(metadata + "\n")
-            f.write(report)
-
-    return filepath
-
-
-def convert_to_html(topic: str, metadata: str, report: str) -> str:
-    """
-    Convert a markdown report to a self-contained HTML page.
-
-    Uses the markdown package with tables and fenced_code extensions.
-    Falls back to <pre> blocks if the package is not installed.
-
-    Args:
-        topic:    Used as the HTML <title> and <h1>.
-        metadata: Markdown metadata table (rendered with tables extension).
-        report:   Report body markdown (rendered with tables + fenced_code).
-
-    Returns:
-        Complete HTML document as a string.
-    """
-    try:
-        import markdown
-        meta_html = markdown.markdown(metadata, extensions=["tables"])
-        report_html = markdown.markdown(report, extensions=["tables", "fenced_code"])
-    except ImportError:
-        meta_html = f"<pre>{metadata}</pre>"
-        report_html = f"<pre>{report}</pre>"
-
-    return f"""<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{topic}</title>
-    <style>
-        body {{ font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-                max-width: 860px; margin: 40px auto; padding: 0 20px;
-                color: #1a1a1a; line-height: 1.7; }}
-        h1 {{ border-bottom: 2px solid #e0e0e0; padding-bottom: 12px; }}
-        h2 {{ margin-top: 2em; color: #2c2c2c; }}
-        hr {{ border: none; border-top: 1px solid #e0e0e0; margin: 1.5em 0; }}
-        code {{ background: #f5f5f5; padding: 2px 6px; border-radius: 3px;
-                font-size: 0.9em; }}
-        pre {{ background: #f5f5f5; padding: 16px; border-radius: 6px;
-               overflow-x: auto; }}
-        blockquote {{ border-left: 4px solid #e0e0e0; margin: 0;
-                      padding-left: 16px; color: #555; }}
-        table {{ border-collapse: collapse; width: 100%; }}
-        th, td {{ border: 1px solid #e0e0e0; padding: 8px 12px; text-align: left; }}
-        th {{ background: #f5f5f5; }}
-        a {{ color: #0066cc; }}
-        .metadata {{ background: #f9f9f9; border: 1px solid #e0e0e0;
-                     border-radius: 6px; padding: 16px; margin-bottom: 2em;
-                     font-size: 0.9em; }}
-    </style>
-</head>
-<body>
-    <h1>{topic}</h1>
-    <div class="metadata">{meta_html}</div>
-    {report_html}
-</body>
-</html>"""
-
-
-def update_index(topic, output_path, started_at, orch_provider, orch_model,
-                 synth_provider, synth_model, question_count, search_count, short):
-    """
-    Append a row to output/index.md for this run.
-
-    Creates the index file with a header row on first use.  Subsequent calls
-    append a single pipe-delimited row.
-
-    Args:
-        topic:          Research topic string.
-        output_path:    Path to the saved report file (basename used for link).
-        started_at:     datetime when the run began.
-        orch_provider:  Resolved orchestration provider name.
-        orch_model:     Resolved orchestration model name.
-        synth_provider: Resolved synthesis provider name.
-        synth_model:    Resolved synthesis model name.
-        question_count: Total questions researched.
-        search_count:   Total web searches executed.
-        short:          Whether executive summary mode was used.
-    """
-    os.makedirs("output", exist_ok=True)
-    index_path = "output/index.md"
-
-    # Write header row on first use
-    if not os.path.exists(index_path):
-        with open(index_path, "w", encoding="utf-8") as f:
-            f.write("# Research Agent — Report Index\n\n")
-            f.write("| Date | Topic | Orchestration | Synthesis | Questions | Searches | Mode | File |\n")
-            f.write("|---|---|---|---|---|---|---|---|\n")
-
-    mode = "Summary" if short else "Full"
-    date = started_at.strftime("%Y-%m-%d %H:%M")
-    orch = f"{orch_provider}/{orch_model}"
-    synth = f"{synth_provider}/{synth_model}"
-    filename = os.path.basename(output_path)
-    link = f"[{filename}]({filename})"
-
-    row = f"| {date} | {topic} | {orch} | {synth} | {question_count} | {search_count} | {mode} | {link} |\n"
-
-    with open(index_path, "a", encoding="utf-8") as f:
-        f.write(row)
 
 
 if __name__ == "__main__":

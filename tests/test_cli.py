@@ -1,13 +1,18 @@
 """
-Tests for main.py CLI entry point.
+Tests for main.py CLI entry point and extracted output/llm modules.
 
 Covers:
 - save_report(): file creation, content, filename sanitisation, format variants
+  (output.writer)
 - build_metadata(): table content, provider display, mode flags
+  (output.formatter)
 - update_index(): file creation, content, multiple entries, mixed providers
+  (output.writer)
 - main(): full pipeline, flag passing, provider selection, format selection
 - build_llms(): provider routing, model resolution, mixed providers, 6-tuple return
+  (llm.builder)
 - convert_to_pdf(): weasyprint integration, import error handling
+  (output.formatter)
 
 Integration tests require a live Anthropic API key and are marked accordingly.
 """
@@ -35,14 +40,14 @@ SAMPLE_METADATA = "| Field | Value |\n|---|---|\n| **Topic** | nuclear fusion |\
 
 def test_save_report_creates_file(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
-    from main import save_report
+    from output.writer import save_report
     path = save_report("nuclear fusion", SAMPLE_METADATA, "# Report content")
     assert os.path.exists(path)
 
 
 def test_save_report_contains_topic_heading(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
-    from main import save_report
+    from output.writer import save_report
     path = save_report("nuclear fusion", SAMPLE_METADATA, "# Report content")
     with open(path) as f:
         content = f.read()
@@ -51,7 +56,7 @@ def test_save_report_contains_topic_heading(tmp_path, monkeypatch):
 
 def test_save_report_contains_metadata(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
-    from main import save_report
+    from output.writer import save_report
     path = save_report("nuclear fusion", SAMPLE_METADATA, "# Report content")
     with open(path) as f:
         content = f.read()
@@ -60,7 +65,7 @@ def test_save_report_contains_metadata(tmp_path, monkeypatch):
 
 def test_save_report_contains_report_body(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
-    from main import save_report
+    from output.writer import save_report
     path = save_report("nuclear fusion", SAMPLE_METADATA, "# Report content")
     with open(path) as f:
         content = f.read()
@@ -69,7 +74,7 @@ def test_save_report_contains_report_body(tmp_path, monkeypatch):
 
 def test_save_report_sanitises_filename(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
-    from main import save_report
+    from output.writer import save_report
     path = save_report("nuclear fusion: a review!", SAMPLE_METADATA, "# Report")
     assert ":" not in path
     assert "!" not in path
@@ -77,7 +82,7 @@ def test_save_report_sanitises_filename(tmp_path, monkeypatch):
 
 def test_save_report_truncates_long_topic(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
-    from main import save_report
+    from output.writer import save_report
     long_topic = "a " * 60
     path = save_report(long_topic, SAMPLE_METADATA, "# Report")
     filename = os.path.basename(path)
@@ -86,7 +91,7 @@ def test_save_report_truncates_long_topic(tmp_path, monkeypatch):
 
 def test_save_report_returns_path_string(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
-    from main import save_report
+    from output.writer import save_report
     path = save_report("nuclear fusion", SAMPLE_METADATA, "# Report")
     assert isinstance(path, str)
     assert path.endswith(".md")
@@ -94,7 +99,7 @@ def test_save_report_returns_path_string(tmp_path, monkeypatch):
 
 def test_save_report_html_format(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
-    from main import save_report
+    from output.writer import save_report
     path = save_report("nuclear fusion", SAMPLE_METADATA, "# Report", fmt="html")
     assert path.endswith(".html")
     assert os.path.exists(path)
@@ -102,7 +107,7 @@ def test_save_report_html_format(tmp_path, monkeypatch):
 
 def test_save_report_html_contains_title(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
-    from main import save_report
+    from output.writer import save_report
     path = save_report("nuclear fusion", SAMPLE_METADATA, "# Report", fmt="html")
     with open(path) as f:
         content = f.read()
@@ -112,8 +117,8 @@ def test_save_report_html_contains_title(tmp_path, monkeypatch):
 
 def test_save_report_pdf_format(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
-    from main import save_report
-    with patch("main.convert_to_pdf") as mock_pdf:
+    from output.writer import save_report
+    with patch("output.writer.convert_to_pdf") as mock_pdf:
         path = save_report("nuclear fusion", SAMPLE_METADATA, "# Report", fmt="pdf")
     assert path.endswith(".pdf")
     mock_pdf.assert_called_once()
@@ -121,9 +126,9 @@ def test_save_report_pdf_format(tmp_path, monkeypatch):
 
 def test_save_report_pdf_passes_html_to_converter(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
-    from main import save_report
-    with patch("main.convert_to_pdf") as mock_pdf, \
-         patch("main.convert_to_html", return_value="<html>test</html>") as mock_html:
+    from output.writer import save_report
+    with patch("output.writer.convert_to_pdf") as mock_pdf, \
+         patch("output.writer.convert_to_html", return_value="<html>test</html>") as mock_html:
         save_report("nuclear fusion", SAMPLE_METADATA, "# Report", fmt="pdf")
     mock_html.assert_called_once()
     mock_pdf.assert_called_once_with("<html>test</html>", "output/nuclear_fusion.pdf")
@@ -131,8 +136,8 @@ def test_save_report_pdf_passes_html_to_converter(tmp_path, monkeypatch):
 
 def test_save_report_pdf_not_md_or_html(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
-    from main import save_report
-    with patch("main.convert_to_pdf"):
+    from output.writer import save_report
+    with patch("output.writer.convert_to_pdf"):
         path = save_report("nuclear fusion", SAMPLE_METADATA, "# Report", fmt="pdf")
     assert not path.endswith(".md")
     assert not path.endswith(".html")
@@ -140,7 +145,7 @@ def test_save_report_pdf_not_md_or_html(tmp_path, monkeypatch):
 
 def test_save_report_default_is_markdown(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
-    from main import save_report
+    from output.writer import save_report
     path = save_report("nuclear fusion", SAMPLE_METADATA, "# Report")
     assert path.endswith(".md")
 
@@ -149,7 +154,7 @@ def test_save_report_default_is_markdown(tmp_path, monkeypatch):
 
 def test_build_metadata_contains_topic(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
-    from main import build_metadata
+    from output.formatter import build_metadata
     from config import Config
     from datetime import datetime
     metadata = build_metadata(
@@ -171,7 +176,7 @@ def test_build_metadata_contains_topic(tmp_path, monkeypatch):
 
 def test_build_metadata_contains_search_count(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
-    from main import build_metadata
+    from output.formatter import build_metadata
     from config import Config
     from datetime import datetime
     metadata = build_metadata(
@@ -193,7 +198,7 @@ def test_build_metadata_contains_search_count(tmp_path, monkeypatch):
 
 def test_build_metadata_contains_providers(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
-    from main import build_metadata
+    from output.formatter import build_metadata
     from config import Config
     from datetime import datetime
     metadata = build_metadata(
@@ -216,7 +221,7 @@ def test_build_metadata_contains_providers(tmp_path, monkeypatch):
 
 def test_build_metadata_short_mode_noted(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
-    from main import build_metadata
+    from output.formatter import build_metadata
     from config import Config
     from datetime import datetime
     metadata = build_metadata(
@@ -238,7 +243,7 @@ def test_build_metadata_short_mode_noted(tmp_path, monkeypatch):
 
 def test_build_metadata_full_mode_noted(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
-    from main import build_metadata
+    from output.formatter import build_metadata
     from config import Config
     from datetime import datetime
     metadata = build_metadata(
@@ -260,7 +265,7 @@ def test_build_metadata_full_mode_noted(tmp_path, monkeypatch):
 
 def test_build_metadata_contains_search_provider(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
-    from main import build_metadata
+    from output.formatter import build_metadata
     from config import Config
     from datetime import datetime
     config = Config()
@@ -284,7 +289,7 @@ def test_build_metadata_contains_search_provider(tmp_path, monkeypatch):
 
 def test_build_metadata_contains_elapsed_time(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
-    from main import build_metadata
+    from output.formatter import build_metadata
     from config import Config
     from datetime import datetime
     metadata = build_metadata(
@@ -306,7 +311,7 @@ def test_build_metadata_contains_elapsed_time(tmp_path, monkeypatch):
 
 def test_build_metadata_is_markdown_table(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
-    from main import build_metadata
+    from output.formatter import build_metadata
     from config import Config
     from datetime import datetime
     metadata = build_metadata(
@@ -331,7 +336,7 @@ def test_build_metadata_is_markdown_table(tmp_path, monkeypatch):
 
 def test_update_index_creates_file(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
-    from main import update_index
+    from output.writer import update_index
     from datetime import datetime
     update_index(
         topic="nuclear fusion",
@@ -350,7 +355,7 @@ def test_update_index_creates_file(tmp_path, monkeypatch):
 
 def test_update_index_contains_topic(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
-    from main import update_index
+    from output.writer import update_index
     from datetime import datetime
     update_index(
         topic="nuclear fusion",
@@ -371,7 +376,7 @@ def test_update_index_contains_topic(tmp_path, monkeypatch):
 
 def test_update_index_appends_multiple_entries(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
-    from main import update_index
+    from output.writer import update_index
     from datetime import datetime
     for topic in ["nuclear fusion", "quantum computing"]:
         update_index(
@@ -394,7 +399,7 @@ def test_update_index_appends_multiple_entries(tmp_path, monkeypatch):
 
 def test_update_index_short_mode_noted(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
-    from main import update_index
+    from output.writer import update_index
     from datetime import datetime
     update_index(
         topic="nuclear fusion",
@@ -415,7 +420,7 @@ def test_update_index_short_mode_noted(tmp_path, monkeypatch):
 
 def test_update_index_full_mode_noted(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
-    from main import update_index
+    from output.writer import update_index
     from datetime import datetime
     update_index(
         topic="nuclear fusion",
@@ -436,7 +441,7 @@ def test_update_index_full_mode_noted(tmp_path, monkeypatch):
 
 def test_update_index_mixed_providers_recorded(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
-    from main import update_index
+    from output.writer import update_index
     from datetime import datetime
     update_index(
         topic="nuclear fusion",
@@ -458,7 +463,7 @@ def test_update_index_mixed_providers_recorded(tmp_path, monkeypatch):
 
 def test_update_index_creates_header_row(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
-    from main import update_index
+    from output.writer import update_index
     from datetime import datetime
     update_index(
         topic="nuclear fusion",
@@ -480,7 +485,7 @@ def test_update_index_creates_header_row(tmp_path, monkeypatch):
 
 def test_update_index_contains_file_link(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
-    from main import update_index
+    from output.writer import update_index
     from datetime import datetime
     update_index(
         topic="nuclear fusion",
@@ -520,7 +525,7 @@ def test_main_runs_full_pipeline(tmp_path, monkeypatch):
     mock_synthesiser.synthesise.return_value = SAMPLE_REPORT
 
     with patch("sys.argv", ["main.py", "nuclear fusion"]), \
-         patch("main.AnthropicClient", return_value=mock_llm), \
+         patch("llm.builder.AnthropicClient", return_value=mock_llm), \
          patch("main.Orchestrator", return_value=mock_orchestrator), \
          patch("main.Synthesiser", return_value=mock_synthesiser):
         from main import main
@@ -546,7 +551,7 @@ def test_main_saves_report_to_output(tmp_path, monkeypatch):
     mock_synthesiser.synthesise.return_value = SAMPLE_REPORT
 
     with patch("sys.argv", ["main.py", "nuclear fusion"]), \
-         patch("main.AnthropicClient", return_value=mock_llm), \
+         patch("llm.builder.AnthropicClient", return_value=mock_llm), \
          patch("main.Orchestrator", return_value=mock_orchestrator), \
          patch("main.Synthesiser", return_value=mock_synthesiser):
         from main import main
@@ -569,7 +574,7 @@ def test_main_short_flag_passed_to_synthesiser(tmp_path, monkeypatch):
     mock_synthesiser.synthesise.return_value = SAMPLE_REPORT
 
     with patch("sys.argv", ["main.py", "nuclear fusion", "--short"]), \
-         patch("main.AnthropicClient", return_value=mock_llm), \
+         patch("llm.builder.AnthropicClient", return_value=mock_llm), \
          patch("main.Orchestrator", return_value=mock_orchestrator), \
          patch("main.Synthesiser", return_value=mock_synthesiser):
         from main import main
@@ -590,7 +595,7 @@ def test_main_short_flag_short_form(tmp_path, monkeypatch):
     mock_synthesiser.synthesise.return_value = SAMPLE_REPORT
 
     with patch("sys.argv", ["main.py", "nuclear fusion", "-s"]), \
-         patch("main.AnthropicClient", return_value=mock_llm), \
+         patch("llm.builder.AnthropicClient", return_value=mock_llm), \
          patch("main.Orchestrator", return_value=mock_orchestrator), \
          patch("main.Synthesiser", return_value=mock_synthesiser):
         from main import main
@@ -611,7 +616,7 @@ def test_main_html_format_saves_html_file(tmp_path, monkeypatch):
     mock_synthesiser.synthesise.return_value = SAMPLE_REPORT
 
     with patch("sys.argv", ["main.py", "nuclear fusion", "--format", "html"]), \
-         patch("main.AnthropicClient", return_value=mock_llm), \
+         patch("llm.builder.AnthropicClient", return_value=mock_llm), \
          patch("main.Orchestrator", return_value=mock_orchestrator), \
          patch("main.Synthesiser", return_value=mock_synthesiser):
         from main import main
@@ -633,10 +638,10 @@ def test_main_pdf_format_saves_pdf_file(tmp_path, monkeypatch):
     mock_synthesiser.synthesise.return_value = SAMPLE_REPORT
 
     with patch("sys.argv", ["main.py", "nuclear fusion", "--format", "pdf"]), \
-         patch("main.AnthropicClient", return_value=mock_llm), \
+         patch("llm.builder.AnthropicClient", return_value=mock_llm), \
          patch("main.Orchestrator", return_value=mock_orchestrator), \
          patch("main.Synthesiser", return_value=mock_synthesiser), \
-         patch("main.convert_to_pdf") as mock_pdf:
+         patch("output.writer.convert_to_pdf") as mock_pdf:
         from main import main
         main()
 
@@ -654,7 +659,7 @@ def test_main_creates_index_entry(tmp_path, monkeypatch):
     mock_synthesiser.synthesise.return_value = SAMPLE_REPORT
 
     with patch("sys.argv", ["main.py", "nuclear fusion"]), \
-         patch("main.AnthropicClient", return_value=mock_llm), \
+         patch("llm.builder.AnthropicClient", return_value=mock_llm), \
          patch("main.Orchestrator", return_value=mock_orchestrator), \
          patch("main.Synthesiser", return_value=mock_synthesiser):
         from main import main
@@ -680,8 +685,8 @@ def test_main_mixed_provider_orchestration(tmp_path, monkeypatch):
                              "--orchestration-model", "llama3.1",
                              "--synthesis-provider", "anthropic",
                              "--synthesis-model", "claude-sonnet-4-6"]), \
-         patch("main.OllamaClient") as mock_ollama, \
-         patch("main.AnthropicClient") as mock_anthropic, \
+         patch("llm.builder.OllamaClient") as mock_ollama, \
+         patch("llm.builder.AnthropicClient") as mock_anthropic, \
          patch("main.Orchestrator", return_value=mock_orchestrator), \
          patch("main.Synthesiser", return_value=mock_synthesiser):
         from main import main
@@ -699,7 +704,7 @@ def test_main_uses_anthropic_by_default(tmp_path, monkeypatch):
     mock_synthesiser.synthesise.return_value = SAMPLE_REPORT
 
     with patch("sys.argv", ["main.py", "nuclear fusion"]), \
-         patch("main.AnthropicClient") as mock_anthropic, \
+         patch("llm.builder.AnthropicClient") as mock_anthropic, \
          patch("main.Orchestrator", return_value=mock_orchestrator), \
          patch("main.Synthesiser", return_value=mock_synthesiser):
         from main import main
@@ -715,7 +720,7 @@ def test_main_uses_ollama_when_specified(tmp_path, monkeypatch):
     mock_synthesiser.synthesise.return_value = SAMPLE_REPORT
 
     with patch("sys.argv", ["main.py", "nuclear fusion", "--provider", "ollama"]), \
-         patch("main.OllamaClient") as mock_ollama, \
+         patch("llm.builder.OllamaClient") as mock_ollama, \
          patch("main.Orchestrator", return_value=mock_orchestrator), \
          patch("main.Synthesiser", return_value=mock_synthesiser):
         from main import main
@@ -731,7 +736,7 @@ def test_main_multi_word_topic(tmp_path, monkeypatch):
     mock_synthesiser.synthesise.return_value = SAMPLE_REPORT
 
     with patch("sys.argv", ["main.py", "the", "current", "state", "of", "nuclear", "fusion"]), \
-         patch("main.AnthropicClient"), \
+         patch("llm.builder.AnthropicClient"), \
          patch("main.Orchestrator", return_value=mock_orchestrator), \
          patch("main.Synthesiser", return_value=mock_synthesiser):
         from main import main
@@ -745,51 +750,51 @@ def test_main_multi_word_topic(tmp_path, monkeypatch):
 # ── build_llms() tests ────────────────────────────────────────────────────────
 
 def test_build_llms_returns_two_anthropic_clients():
-    from main import build_llms
+    from llm.builder import build_llms
     from config import Config
-    with patch("main.AnthropicClient") as mock:
+    with patch("llm.builder.AnthropicClient") as mock:
         orch, synth, orch_p, orch_m, synth_p, synth_m = build_llms(Config(provider="anthropic"))
         assert mock.call_count == 2
 
 
 def test_build_llms_returns_two_ollama_clients():
-    from main import build_llms
+    from llm.builder import build_llms
     from config import Config
-    with patch("main.OllamaClient") as mock:
+    with patch("llm.builder.OllamaClient") as mock:
         orch, synth, orch_p, orch_m, synth_p, synth_m = build_llms(Config(provider="ollama"))
         assert mock.call_count == 2
 
 
 def test_build_llms_anthropic_uses_different_models_by_default():
-    from main import build_llms
+    from llm.builder import build_llms
     from config import Config
-    with patch("main.AnthropicClient") as mock:
+    with patch("llm.builder.AnthropicClient") as mock:
         build_llms(Config(provider="anthropic"))
         models = [c[1].get("model") for c in mock.call_args_list]
         assert models[0] != models[1]
 
 
 def test_build_llms_model_override_applies_to_both():
-    from main import build_llms
+    from llm.builder import build_llms
     from config import Config
-    with patch("main.AnthropicClient") as mock:
+    with patch("llm.builder.AnthropicClient") as mock:
         build_llms(Config(provider="anthropic", model="claude-sonnet-4-6"))
         for call in mock.call_args_list:
             assert call[1].get("model") == "claude-sonnet-4-6"
 
 
 def test_build_llms_unknown_provider_exits():
-    from main import build_llms
+    from llm.builder import build_llms
     from config import Config
     with pytest.raises(SystemExit):
         build_llms(Config(provider="unknown_provider"))
 
 
 def test_build_llms_mixed_providers():
-    from main import build_llms
+    from llm.builder import build_llms
     from config import Config
-    with patch("main.OllamaClient") as mock_ollama, \
-         patch("main.AnthropicClient") as mock_anthropic:
+    with patch("llm.builder.OllamaClient") as mock_ollama, \
+         patch("llm.builder.AnthropicClient") as mock_anthropic:
         orch, synth, orch_p, orch_m, synth_p, synth_m = build_llms(
             Config(provider="anthropic",
                    orchestration_provider="ollama",
@@ -802,9 +807,9 @@ def test_build_llms_mixed_providers():
 
 
 def test_build_llms_returns_correct_provider_names():
-    from main import build_llms
+    from llm.builder import build_llms
     from config import Config
-    with patch("main.AnthropicClient"):
+    with patch("llm.builder.AnthropicClient"):
         _, _, orch_p, orch_m, synth_p, synth_m = build_llms(Config(provider="anthropic"))
     assert orch_p == "anthropic"
     assert synth_p == "anthropic"
@@ -813,9 +818,9 @@ def test_build_llms_returns_correct_provider_names():
 
 
 def test_build_llms_returns_six_tuple():
-    from main import build_llms
+    from llm.builder import build_llms
     from config import Config
-    with patch("main.AnthropicClient"):
+    with patch("llm.builder.AnthropicClient"):
         result = build_llms(Config(provider="anthropic"))
     assert len(result) == 6
 
@@ -823,7 +828,7 @@ def test_build_llms_returns_six_tuple():
 # ── convert_to_pdf() tests ────────────────────────────────────────────────────
 
 def test_convert_to_pdf_calls_weasyprint(tmp_path):
-    from main import convert_to_pdf
+    from output.formatter import convert_to_pdf
 
     mock_html_class = MagicMock()
     mock_css_class = MagicMock()
@@ -848,7 +853,7 @@ def test_convert_to_pdf_calls_weasyprint(tmp_path):
 
 
 def test_convert_to_pdf_raises_on_missing_weasyprint(tmp_path):
-    from main import convert_to_pdf
+    from output.formatter import convert_to_pdf
     with patch.dict("sys.modules", {"weasyprint": None}):
         with pytest.raises((ImportError, Exception)):
             convert_to_pdf("<html>test</html>", str(tmp_path / "test.pdf"))
