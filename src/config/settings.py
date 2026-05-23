@@ -84,6 +84,21 @@ class Config:
     retry_base_delay: float = 1.0   # seconds before first retry
     retry_max_delay: float = 30.0   # cap on inter-retry delay
 
+    # ── Source classification ─────────────────────────────────────────────────
+
+    # User-extensible domain overrides for classify_source_type().
+    # Add custom domains here rather than modifying the hardcoded list.
+    # Format: {"academic": ["mycustomjournal.org"], "government": ["specialagency.int"]}
+    # Trigger: domain misclassified in 3+ real research runs.
+    source_classification: dict = None
+
+    # ── Output mode ───────────────────────────────────────────────────────────
+
+    # report (default): full narrative report
+    # report-evidence, data, dashboard, slides, matrix, academic,
+    # bibliography, raw: non-report modes stubbed for Phase C+
+    output_mode: str = "report"
+
     # ── Provenance ────────────────────────────────────────────────────────────
 
     # none: no provenance output (default)

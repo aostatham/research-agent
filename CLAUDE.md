@@ -16,10 +16,13 @@ src/
     builder.py            # build_client(), build_llms() factory functions
   config/
     settings.py           # Config dataclass + three-layer loader
+  evidence/
+    schema.py             # EvidenceSource, EvidenceClaim, ProvenanceReport TypedDicts
   output/
     formatter.py          # build_metadata(), convert_to_html(), convert_to_pdf()
     writer.py             # save_report(), update_index()
-    provenance.py         # Phase C stub — not yet implemented
+    provenance.py         # Claim extraction, confidence scoring, source
+                          # classification, provenance file writer
 config.yaml               # Default runtime config (provider, models, search, limits)
 tests/                    # Unit tests — one file per source module
 
@@ -46,7 +49,7 @@ Run the agent:
 
 ## Test baseline
 
-199 unit tests must pass before every commit.
+276 unit tests must pass before every commit.
 Always run: pytest tests/ -m "not integration" -v
 Never commit with a failing test.
 
@@ -61,6 +64,7 @@ Never commit with a failing test.
     patch("llm.builder.AnthropicClient")       not patch("llm.anthropic_client.AnthropicClient")
     patch("output.writer.update_index")        not patch("main.update_index")
     patch("output.formatter.convert_to_pdf")   not patch("main.convert_to_pdf")
+    patch("output.provenance.classify_source_type")  not patch elsewhere
 - Every new function needs at least one unit test
 - New modules need a test file: tests/test_<module>.py
 
@@ -90,6 +94,8 @@ Never commit with a failing test.
 - ANTHROPIC_API_KEY and TAVILY_API_KEY are env vars only
 - config.yaml holds runtime defaults; CLI flags override them; neither is secret
 - Three-layer config hierarchy: hardcoded defaults -> config.yaml -> CLI flags
+- source_classification in config.yaml extends the source type classifier
+  with custom domains — see provenance.py classify_source_type() docstring
 
 
 ## Key architectural notes
@@ -116,66 +122,57 @@ Agentic loop guards in orchestrator.py:
 Output pipeline:
   - formatter.py: build_metadata(), convert_to_html(), convert_to_pdf()
   - writer.py: save_report(), update_index()
-  - provenance.py: Phase C placeholder — not yet implemented
+  - provenance.py: classify_source_type(), score_confidence(),
+    extract_claims_from_answer(), build_claims_from_results(),
+    annotate_report_lines(), write_provenance_file(), build_quality_metrics()
+  - evidence/schema.py: EvidenceSource, EvidenceClaim, ProvenanceReport TypedDicts
   - All output functions are independent of the research pipeline
+
+Evidence and provenance pipeline:
+  - Triggered in main() when --provenance file or --provenance graph
+  - build_claims_from_results() calls extract_claims_from_answer() per question
+  - extract_claims_from_answer() uses synth_llm to extract atomic claims via LLM
+  - classify_source_type() uses five layers: TLD patterns, stable patterns,
+    hardcoded institutional list, custom config domains, LLM fallback
+  - score_confidence() scores per claim based on source types and corroboration
+  - annotate_report_lines() adds [N] markers to report and sets report_line on claims
+  - write_provenance_file() writes .provenance.json alongside the report
+  - provenance.py has no imports from agent/ or llm/ — llm_client passed as argument
+
+Source classification maintenance:
+  - Layer 3 hardcoded list in classify_source_type() — add only when a domain
+    appears in 3+ runs misclassified and LLM fallback unavailable or incorrect
+  - Custom domains go in config.yaml source_classification section
+  - Never add domains speculatively — only on evidence of misclassification
 
 
 ## Current development phase
 
-Phase C — Evidence Layer is next to implement. Do not begin until explicitly instructed.
+Phase C — Evidence Layer is largely complete:
+  Part 1  Evidence schema, provenance file pipeline, --provenance flag
+  Part 2  Atomic claim extraction, confidence scoring, report line tracking
+  Part 3  Source classifier refactor (hybrid pattern + LLM fallback + config)
 
-When Phase C begins, the key changes will be:
-  - Evidence objects replace raw text answers throughout the pipeline
-  - orchestrator.py returns structured evidence objects not raw strings
-  - synthesiser.py receives evidence objects and writes with confidence hedging
-  - provenance.py implements provenance file generation
-  - New CLI flags: --output-mode and --provenance
-  - New output modes: report (default), report-evidence, data, dashboard, raw
-  - New provenance options: none (default), file, graph
+Remaining Phase C items (not yet implemented):
+  - Output mode renderers: dashboard, matrix, academic, bibliography, raw
+  - report-evidence mode: inline [N] markers working but sparse (report line
+    matching improves in Phase D synthesiser integration)
 
-Evidence object schema (TypedDict):
-  {
-    "claim": str,
-    "source": str,
-    "confidence": float,
-    "contradictions": list,
-    "evidence_type": str,    # quantitative | qualitative | cited | inferred
-    "verification_status": str,  # verified | unverified | disputed
-    "timestamp": str
-  }
+276 unit tests passing.
 
-Provenance file format:
-  nuclear_fusion_energy.provenance.json
-  {
-    "report_file": "nuclear_fusion_energy.md",
-    "generated": "2026-05-22T13:50:00",
-    "quality_metrics": {
-      "coverage": 0.87,
-      "confidence": 0.81,
-      "contradictions": 2,
-      "verified_claims": 14,
-      "unverified_claims": 3
-    },
-    "claims": [
-      {
-        "id": 1,
-        "report_line": 42,
-        "claim": "NIF achieved ignition in December 2022",
-        "confidence": 0.96,
-        "verification_status": "verified",
-        "evidence_type": "quantitative",
-        "sources": [...],
-        "contradictions": []
-      }
-    ]
-  }
+Next phases — do not begin without explicit instruction:
+  Option A: Phase D — Parallel Research Architecture
+  Option B: Phase C remaining output mode renderers
+            (dashboard, matrix, academic, bibliography, raw)
+
+Do not begin either option without explicit instruction from the user.
 
 
 ## Roadmap summary
 
 Phase A  Stability and quality                    COMPLETE
 Phase B  Output options (markdown/HTML/PDF)       COMPLETE
-Phase C  Evidence layer and output modes          NEXT
+Phase C  Evidence layer and output modes          LARGELY COMPLETE
 Phase D  Parallel research architecture           PENDING
 Phase E  Memory and persistent knowledge          PENDING
 Phase F  Tools and sources                        PENDING

@@ -30,3 +30,14 @@ max_tokens_synthesis: 8192
 retry_max_attempts: 3
 retry_base_delay: 1.0
 retry_max_delay: 30.0
+
+# Custom source classification — add project-specific domains here.
+# Trigger: domain misclassified in 3+ runs and LLM fallback unavailable
+# or incorrect. Do not add speculatively.
+# source_classification:
+#   academic:
+#     - mycustomjournal.org
+#   government:
+#     - specialagency.int
+#   news:
+#     - myindustrynews.com

@@ -230,3 +230,424 @@ def test_build_placeholder_claims_empty_sources():
     claims = build_placeholder_claims(results, {})
     assert claims[0]["sources"] == []
     assert claims[0]["source"] == ""
+
+
+# ── classify_source_type() — expanded domains ────────────────────────────────
+
+def test_classify_iaea_as_government():
+    """iaea.org is classified as government (intergovernmental organisation)."""
+    from output.provenance import classify_source_type
+    assert classify_source_type("https://www.iaea.org/news/fusion") == "government"
+
+
+def test_classify_iter_as_government():
+    """iter.org is classified as government."""
+    from output.provenance import classify_source_type
+    assert classify_source_type("https://www.iter.org/proj/inafewwords") == "government"
+
+
+def test_classify_sciencedirect_as_academic():
+    """sciencedirect.com is classified as academic."""
+    from output.provenance import classify_source_type
+    assert classify_source_type("https://www.sciencedirect.com/article/pii/X") == "academic"
+
+
+def test_classify_frontiersin_as_academic():
+    """frontiersin.org is classified as academic."""
+    from output.provenance import classify_source_type
+    assert classify_source_type("https://www.frontiersin.org/articles/10.3389/fphy") == "academic"
+
+
+def test_classify_epj_conferences_as_academic():
+    """epj-conferences.org is classified as academic."""
+    from output.provenance import classify_source_type
+    assert classify_source_type("https://www.epj-conferences.org/articles/epjconf") == "academic"
+
+
+def test_classify_wikipedia_as_reference():
+    """wikipedia.org is classified as reference."""
+    from output.provenance import classify_source_type
+    assert classify_source_type("https://en.wikipedia.org/wiki/Nuclear_fusion") == "reference"
+
+
+def test_classify_bbc_com_as_news():
+    """bbc.com is classified as news."""
+    from output.provenance import classify_source_type
+    assert classify_source_type("https://www.bbc.com/news/science") == "news"
+
+
+# ── score_confidence() tests ─────────────────────────────────────────────────
+
+def test_score_confidence_no_sources_returns_base():
+    """No sources returns the base score of 0.4."""
+    from output.provenance import score_confidence
+    assert score_confidence([]) == pytest.approx(0.4)
+
+
+def test_score_confidence_government_source_increases_score():
+    """A government source raises score above base."""
+    from output.provenance import score_confidence
+    sources = [{"source_type": "government"}]
+    assert score_confidence(sources) > 0.4
+
+
+def test_score_confidence_academic_source_increases_score():
+    """An academic source raises score above base."""
+    from output.provenance import score_confidence
+    sources = [{"source_type": "academic"}]
+    assert score_confidence(sources) > 0.4
+
+
+def test_score_confidence_multiple_sources_corroboration_bonus():
+    """Three sources add the corroboration bonus on top of per-source bonuses."""
+    from output.provenance import score_confidence
+    two = [{"source_type": "blog"}, {"source_type": "blog"}]
+    three = [{"source_type": "blog"}, {"source_type": "blog"}, {"source_type": "blog"}]
+    assert score_confidence(three) > score_confidence(two)
+
+
+def test_score_confidence_capped_at_one():
+    """Score never exceeds 1.0 regardless of inputs."""
+    from output.provenance import score_confidence
+    sources = [{"source_type": "government"}] * 10 + [{"source_type": "academic"}] * 10
+    assert score_confidence(sources) == pytest.approx(1.0)
+
+
+def test_score_confidence_mixed_sources():
+    """Mixed source types accumulate bonuses from each type."""
+    from output.provenance import score_confidence
+    gov_only = [{"source_type": "government"}]
+    mixed = [{"source_type": "government"}, {"source_type": "academic"}]
+    assert score_confidence(mixed) > score_confidence(gov_only)
+
+
+# ── extract_claims_from_answer() tests ───────────────────────────────────────
+
+def _make_mock_llm(response_text):
+    """Return a minimal mock LLMClient whose chat() returns response_text."""
+    from unittest.mock import MagicMock
+    from llm.base import LLMResponse
+    mock = MagicMock()
+    mock.chat.return_value = LLMResponse(type="text", content=response_text)
+    return mock
+
+
+def test_extract_claims_returns_list_of_evidence_claims():
+    """extract_claims_from_answer() returns a list of dicts."""
+    from output.provenance import extract_claims_from_answer
+    llm = _make_mock_llm('["Fusion is hot.", "Plasma is ionised gas."]')
+    claims = extract_claims_from_answer("What is fusion?", "Fusion is hot.", [], llm)
+    assert isinstance(claims, list)
+    assert all(isinstance(c, dict) for c in claims)
+
+
+def test_extract_claims_count_between_3_and_8():
+    """The LLM response list is preserved as-is when it is 3–8 items."""
+    from output.provenance import extract_claims_from_answer
+    texts = [f"Claim {i}." for i in range(5)]
+    llm = _make_mock_llm(json.dumps(texts))
+    claims = extract_claims_from_answer("Q?", "Answer.", [], llm)
+    assert len(claims) == 5
+
+
+def test_extract_claims_handles_json_parse_error_gracefully():
+    """Malformed JSON falls back to a single placeholder claim."""
+    from output.provenance import extract_claims_from_answer
+    llm = _make_mock_llm("This is not JSON at all.")
+    claims = extract_claims_from_answer("Q?", "Some answer text.", [], llm)
+    assert len(claims) == 1
+    assert "extraction failed" in claims[0]["claim"] or claims[0]["claim"].startswith("Some")
+
+
+def test_extract_claims_assigns_sequential_ids():
+    """IDs start at claim_id_start and increment."""
+    from output.provenance import extract_claims_from_answer
+    llm = _make_mock_llm('["Claim A.", "Claim B.", "Claim C."]')
+    claims = extract_claims_from_answer("Q?", "Answer.", [], llm, claim_id_start=5)
+    assert claims[0]["id"] == 5
+    assert claims[1]["id"] == 6
+    assert claims[2]["id"] == 7
+
+
+def test_extract_claims_scores_confidence():
+    """Returned claims have a confidence score between 0 and 1."""
+    from output.provenance import extract_claims_from_answer
+    llm = _make_mock_llm('["Fact one."]')
+    claims = extract_claims_from_answer("Q?", "Fact one.", [], llm)
+    assert 0.0 <= claims[0]["confidence"] <= 1.0
+
+
+def test_extract_claims_classifies_sources():
+    """Sources attached to returned claims have source_type set."""
+    from output.provenance import extract_claims_from_answer
+    sources = [{"title": "IAEA", "url": "https://www.iaea.org/news"}]
+    llm = _make_mock_llm('["Nuclear energy is regulated."]')
+    claims = extract_claims_from_answer("Q?", "Nuclear energy is regulated.", sources, llm)
+    assert claims[0]["sources"][0]["source_type"] == "government"
+
+
+# ── annotate_report_lines() tests ────────────────────────────────────────────
+
+def test_annotate_report_lines_returns_tuple():
+    """annotate_report_lines() returns a (str, list) tuple."""
+    from output.provenance import annotate_report_lines
+    result = annotate_report_lines("Some report text.", [])
+    assert isinstance(result, tuple)
+    assert len(result) == 2
+
+
+def test_annotate_report_lines_adds_marker_to_matching_sentence():
+    """A claim whose first 8 words appear in the report gets a [N] marker."""
+    from output.provenance import annotate_report_lines
+    report = "Nuclear fusion combines light nuclei to release energy."
+    claim = {
+        "id": 1, "claim": "Nuclear fusion combines light nuclei to release energy.",
+        "report_line": None,
+    }
+    annotated, _ = annotate_report_lines(report, [claim])
+    assert "[1]" in annotated
+
+
+def test_annotate_report_lines_sets_report_line_on_claim():
+    """The matched claim has report_line set to the 1-based line number."""
+    from output.provenance import annotate_report_lines
+    report = "Line one.\nNuclear fusion produces enormous energy.\nLine three."
+    claim = {
+        "id": 2, "claim": "Nuclear fusion produces enormous energy.",
+        "report_line": None,
+    }
+    _, claims_out = annotate_report_lines(report, [claim])
+    assert claims_out[0]["report_line"] == 2
+
+
+def test_annotate_report_lines_no_match_leaves_report_unchanged():
+    """A claim with no matching text leaves the report unmodified."""
+    from output.provenance import annotate_report_lines
+    report = "The sky is blue."
+    claim = {
+        "id": 1, "claim": "Quantum chromodynamics governs quark interactions.",
+        "report_line": None,
+    }
+    annotated, claims_out = annotate_report_lines(report, [claim])
+    assert annotated == report
+    assert claims_out[0]["report_line"] is None
+
+
+# ── build_claims_from_results() tests ────────────────────────────────────────
+
+def test_build_claims_from_results_returns_list():
+    """build_claims_from_results() returns a list."""
+    from output.provenance import build_claims_from_results
+    llm = _make_mock_llm('["Fact one.", "Fact two."]')
+    results = {"Q1": "Answer one."}
+    claims = build_claims_from_results(results, {}, llm)
+    assert isinstance(claims, list)
+
+
+def test_build_claims_from_results_calls_extraction_per_question():
+    """One LLM call is made per question in results."""
+    from output.provenance import build_claims_from_results
+    llm = _make_mock_llm('["Fact."]')
+    results = {"Q1": "A1", "Q2": "A2", "Q3": "A3"}
+    build_claims_from_results(results, {}, llm)
+    assert llm.chat.call_count == 3
+
+
+# ── classify_source_type() — E006 hybrid layer tests ─────────────────────────
+
+def test_classify_gov_tld_as_government():
+    """Layer 1: .gov TLD is classified as government."""
+    from output.provenance import classify_source_type
+    assert classify_source_type("https://energy.gov/nuclear") == "government"
+
+
+def test_classify_edu_tld_as_academic():
+    """Layer 1: .edu TLD is classified as academic."""
+    from output.provenance import classify_source_type
+    assert classify_source_type("https://mit.edu/research/fusion") == "academic"
+
+
+def test_classify_gov_uk_as_government():
+    """Layer 1: .gov.uk TLD is classified as government."""
+    from output.provenance import classify_source_type
+    assert classify_source_type("https://www.gov.uk/government/publications") == "government"
+
+
+def test_classify_arxiv_as_academic():
+    """Layer 2: arxiv.org is classified as academic."""
+    from output.provenance import classify_source_type
+    assert classify_source_type("https://arxiv.org/abs/2301.00001") == "academic"
+
+
+def test_classify_doi_as_academic():
+    """Layer 2: doi.org links are classified as academic."""
+    from output.provenance import classify_source_type
+    assert classify_source_type("https://doi.org/10.1038/s41586-021-03665-2") == "academic"
+
+
+def test_classify_wikipedia_reference_layer2():
+    """Layer 2: wikipedia.org is classified as reference."""
+    from output.provenance import classify_source_type
+    assert classify_source_type("https://en.wikipedia.org/wiki/Fusion") == "reference"
+
+
+def test_classify_iaea_institutional_government():
+    """Layer 3: iaea.org is classified as government (no .gov TLD)."""
+    from output.provenance import classify_source_type
+    assert classify_source_type("https://www.iaea.org/topics/fusion") == "government"
+
+
+def test_classify_iter_institutional_government():
+    """Layer 3: iter.org is classified as government."""
+    from output.provenance import classify_source_type
+    assert classify_source_type("https://www.iter.org/proj/inafewwords") == "government"
+
+
+def test_classify_frontiersin_institutional_academic():
+    """Layer 3: frontiersin.org is classified as academic."""
+    from output.provenance import classify_source_type
+    assert classify_source_type("https://www.frontiersin.org/articles/10.3389/fphy") == "academic"
+
+
+def test_classify_epj_conferences_institutional_academic():
+    """Layer 3: epj-conferences.org is classified as academic."""
+    from output.provenance import classify_source_type
+    assert classify_source_type("https://www.epj-conferences.org/articles/epjconf") == "academic"
+
+
+def test_classify_custom_academic_domain():
+    """Layer 4: custom academic domain from config is classified correctly."""
+    from output.provenance import classify_source_type
+    custom = {"academic": ["mycustomjournal.org"]}
+    assert classify_source_type("https://mycustomjournal.org/papers/42", custom_domains=custom) == "academic"
+
+
+def test_classify_custom_government_domain():
+    """Layer 4: custom government domain from config is classified correctly."""
+    from output.provenance import classify_source_type
+    custom = {"government": ["specialagency.int"]}
+    assert classify_source_type("https://specialagency.int/reports", custom_domains=custom) == "government"
+
+
+def test_custom_domains_override_blog_default():
+    """Layer 4: without custom_domains, unknown domain falls through to blog."""
+    from output.provenance import classify_source_type
+    url = "https://obscure-but-legit-org.net/paper"
+    assert classify_source_type(url) == "blog"
+    custom = {"academic": ["obscure-but-legit-org.net"]}
+    assert classify_source_type(url, custom_domains=custom) == "academic"
+
+
+def test_classify_unknown_domain_without_llm_returns_blog():
+    """Layer 5: no llm_client means unknown domain falls back to blog."""
+    from output.provenance import classify_source_type
+    assert classify_source_type("https://randomsite12345.xyz/post") == "blog"
+
+
+def test_classify_unknown_domain_with_llm_calls_llm():
+    """Layer 5: llm_client is called when no pattern layer matches."""
+    from output.provenance import classify_source_type
+    llm = _make_mock_llm("academic")
+    result = classify_source_type("https://unknownsite.xyz/paper", llm_client=llm)
+    assert llm.chat.call_count == 1
+    assert result == "academic"
+
+
+def test_classify_llm_fallback_not_called_for_known_domain():
+    """Layer 5: llm_client is NOT called when a pattern layer matches."""
+    from output.provenance import classify_source_type
+    llm = _make_mock_llm("blog")
+    classify_source_type("https://arxiv.org/abs/1234.5678", llm_client=llm)
+    assert llm.chat.call_count == 0
+
+
+# ── classify_source_type() — full spec tests ─────────────────────────────────
+
+def test_classify_ac_uk_tld_as_academic():
+    """Layer 1: .ac.uk TLD is classified as academic."""
+    from output.provenance import classify_source_type
+    assert classify_source_type("https://www.ox.ac.uk/research/fusion") == "academic"
+
+
+def test_classify_mil_tld_as_government():
+    """Layer 1: .mil TLD is classified as government."""
+    from output.provenance import classify_source_type
+    assert classify_source_type("https://www.darpa.mil/program/fusion") == "government"
+
+
+def test_classify_pubmed_as_academic():
+    """Layer 2: pubmed.ncbi pattern is classified as academic."""
+    from output.provenance import classify_source_type
+    assert classify_source_type("https://pubmed.ncbi.nlm.nih.gov/12345678/") == "academic"
+
+
+def test_classify_britannica_as_reference():
+    """Layer 2: britannica.com is classified as reference."""
+    from output.provenance import classify_source_type
+    assert classify_source_type("https://www.britannica.com/science/nuclear-fusion") == "reference"
+
+
+def test_classify_who_as_government():
+    """Layer 3: who.int is classified as government."""
+    from output.provenance import classify_source_type
+    assert classify_source_type("https://www.who.int/health-topics/energy") == "government"
+
+
+def test_classify_springer_as_academic():
+    """Layer 3: springer.com is classified as academic."""
+    from output.provenance import classify_source_type
+    assert classify_source_type("https://link.springer.com/article/10.1007/s00339") == "academic"
+
+
+def test_classify_ieee_as_academic():
+    """Layer 3: ieee.org is classified as academic."""
+    from output.provenance import classify_source_type
+    assert classify_source_type("https://ieeexplore.ieee.org/document/9123456") == "academic"
+
+
+def test_classify_reuters_as_news():
+    """Layer 3: reuters.com is classified as news."""
+    from output.provenance import classify_source_type
+    assert classify_source_type("https://www.reuters.com/technology/fusion") == "news"
+
+
+def test_classify_bbc_as_news():
+    """Layer 3: bbc.co.uk is classified as news."""
+    from output.provenance import classify_source_type
+    assert classify_source_type("https://www.bbc.co.uk/news/science-12345678") == "news"
+
+
+def test_classify_nature_news_as_news():
+    """Layer 3: nature.com/news path is classified as news."""
+    from output.provenance import classify_source_type
+    assert classify_source_type("https://www.nature.com/news/fusion-breakthrough-2024") == "news"
+
+
+def test_custom_domains_none_handled_gracefully():
+    """Layer 4: custom_domains=None does not raise."""
+    from output.provenance import classify_source_type
+    result = classify_source_type("https://example.com/page", custom_domains=None)
+    assert result == "blog"
+
+
+def test_llm_fallback_invalid_response_returns_blog():
+    """Layer 5: LLM returning an invalid type falls back to blog."""
+    from output.provenance import classify_source_type
+    llm = _make_mock_llm("definitely_not_a_type")
+    result = classify_source_type("https://unknownsite.xyz/paper", llm_client=llm)
+    assert result == "blog"
+
+
+def test_llm_fallback_response_stripped_and_lowercased():
+    """Layer 5: LLM response is stripped and lowercased before validation."""
+    from output.provenance import classify_source_type
+    llm = _make_mock_llm("  Academic\n")
+    result = classify_source_type("https://unknownsite.xyz/paper", llm_client=llm)
+    assert result == "academic"
+
+
+def test_classify_source_type_works_with_url_only():
+    """Backward compatibility: calling with url argument only must not raise."""
+    from output.provenance import classify_source_type
+    result = classify_source_type("https://iaea.org/news")
+    assert result == "government"

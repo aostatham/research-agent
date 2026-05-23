@@ -83,6 +83,13 @@ def parse_args():
     parser.add_argument("--provenance", choices=["none", "file", "graph"],
                         default="none",
                         help="Provenance output: none (default), file (.provenance.json), graph (Phase E)")
+    parser.add_argument(
+        "--output-mode",
+        choices=["report", "report-evidence", "data", "dashboard",
+                 "slides", "matrix", "academic", "bibliography", "raw"],
+        default="report",
+        help="Output mode (default: report)"
+    )
 
     return parser.parse_args()
 
@@ -118,6 +125,7 @@ def main():
         "max_tokens_research": args.max_tokens_research,
         "max_tokens_synthesis": args.max_tokens_synthesis,
         "provenance": args.provenance,
+        "output_mode": args.output_mode,
     }
     config = load_config(config_path=args.config, overrides=overrides)
 
@@ -146,6 +154,8 @@ def main():
     print(f"Questions:          {config.min_questions}–{config.max_questions}")
     if args.short:
         print(f"Mode:               Executive summary only")
+    if config.output_mode != "report":
+        print(f"Output mode:        {config.output_mode}")
     print(f"{'─' * 50}")
 
     # Run research pipeline
@@ -167,6 +177,21 @@ def main():
     )
 
     elapsed = time.time() - start_time
+
+    # Build provenance claims before saving so annotated report is written to disk
+    claims = []
+    prov_path = None
+    if config.provenance in ("file", "graph"):
+        from output.provenance import (
+            build_claims_from_results, build_quality_metrics,
+            write_provenance_file, annotate_report_lines,
+        )
+        claims = build_claims_from_results(
+            results, sources, synth_llm,
+            custom_domains=config.source_classification,
+        )
+        if config.output_mode != "data":
+            report, claims = annotate_report_lines(report, claims)
 
     # Build metadata table and save outputs
     metadata = build_metadata(
@@ -207,8 +232,6 @@ def main():
     )
 
     if config.provenance == "file":
-        from output.provenance import write_provenance_file, build_quality_metrics, build_placeholder_claims
-        claims = build_placeholder_claims(results, sources)
         metrics = build_quality_metrics(claims)
         prov_path = write_provenance_file(output_path, claims, metrics)
         print(f"   Provenance saved to {prov_path}")

@@ -22,7 +22,7 @@ def build_metadata(topic, config, orch_provider, orch_model, synth_provider,
     """
     mode = "Executive Summary" if short else "Full Report"
     lines = [
-        "| Field | Value |",
+        "| | |",
         "|---|---|",
         f"| **Topic** | {topic} |",
         f"| **Generated** | {started_at.strftime('%Y-%m-%d %H:%M')} |",
