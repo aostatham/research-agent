@@ -160,7 +160,11 @@ def main():
     start_time = time.time()
 
     # Build LLM clients — returns 6-tuple to support mixed providers
-    orch_llm, synth_llm, orch_provider, orch_model, synth_provider, synth_model = build_llms(config)
+    try:
+        orch_llm, synth_llm, orch_provider, orch_model, synth_provider, synth_model = build_llms(config)
+    except ValueError as e:
+        print(f"❌ {e}")
+        sys.exit(1)
 
     if orch_provider == "ollama" and config.max_workers > 2:
         print(f"  ⚠️  Warning: max_workers={config.max_workers} may cause "

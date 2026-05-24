@@ -9,13 +9,12 @@ backends. Resolution order for each tier:
   3. Hardcoded defaults in the Config dataclass
 """
 
-import sys
-
 from .anthropic_client import AnthropicClient
+from .base import LLMClient
 from .ollama_client import OllamaClient
 
 
-def build_client(provider: str, model: str, config) -> object:
+def build_client(provider: str, model: str, config) -> LLMClient:
     """
     Build a single LLM client for a given provider and model.
 
@@ -32,8 +31,9 @@ def build_client(provider: str, model: str, config) -> object:
     elif provider == "ollama":
         return OllamaClient(model=model, base_url=config.ollama_base_url)
     else:
-        print(f"❌ Unknown provider: '{provider}'. Choose 'anthropic' or 'ollama'.")
-        sys.exit(1)
+        raise ValueError(
+            f"Unknown provider: {provider!r}. Choose 'anthropic' or 'ollama'."
+        )
 
 
 def build_llms(config):

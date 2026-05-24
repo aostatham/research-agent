@@ -818,11 +818,24 @@ def test_build_llms_model_override_applies_to_both():
             assert call[1].get("model") == "claude-sonnet-4-6"
 
 
-def test_build_llms_unknown_provider_exits():
+def test_build_llms_unknown_provider_raises_value_error():
     from llm.builder import build_llms
     from config import Config
-    with pytest.raises(SystemExit):
+    with pytest.raises(ValueError, match="unknown_provider"):
         build_llms(Config(provider="unknown_provider"))
+
+
+def test_main_exits_on_unknown_provider(tmp_path, monkeypatch):
+    """main() catches ValueError from build_llms and exits with code 1."""
+    monkeypatch.chdir(tmp_path)
+    from config import Config
+    bad_config = Config(provider="unknown_provider")
+    with patch("sys.argv", ["main.py", "nuclear fusion"]), \
+         patch("main.load_config", return_value=bad_config):
+        with pytest.raises(SystemExit) as exc:
+            from main import main
+            main()
+    assert exc.value.code == 1
 
 
 def test_build_llms_mixed_providers():
