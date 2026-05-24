@@ -875,6 +875,130 @@ def test_convert_to_pdf_raises_on_missing_weasyprint(tmp_path):
             convert_to_pdf("<html>test</html>", str(tmp_path / "test.pdf"))
 
 
+# ── H1 — CLI model override aliasing tests ───────────────────────────────────
+
+def test_orchestration_model_sets_only_ollama_field_when_ollama_provider(
+    tmp_path, monkeypatch
+):
+    """--orchestration-model with Ollama provider only sets ollama_orchestration_model."""
+    monkeypatch.chdir(tmp_path)
+    captured = {}
+    mock_synth = MagicMock()
+    mock_synth.synthesise.return_value = SAMPLE_REPORT
+
+    def capture_orchestrator(*args, **kwargs):
+        captured["config"] = kwargs.get("config") or args[1]
+        m = MagicMock()
+        m.run.return_value = (SAMPLE_RESULTS, {})
+        return m
+
+    with patch("sys.argv", ["main.py", "nuclear fusion",
+                             "--orchestration-provider", "ollama",
+                             "--orchestration-model", "llama3.1"]), \
+         patch("llm.builder.OllamaClient"), \
+         patch("llm.builder.AnthropicClient"), \
+         patch("main.Orchestrator", side_effect=capture_orchestrator), \
+         patch("main.Synthesiser", return_value=mock_synth):
+        from main import main
+        main()
+
+    config = captured["config"]
+    assert config.ollama_orchestration_model == "llama3.1"
+    assert config.anthropic_orchestration_model == "claude-haiku-4-5-20251001"
+
+
+def test_orchestration_model_sets_only_anthropic_field_when_anthropic_provider(
+    tmp_path, monkeypatch
+):
+    """--orchestration-model with Anthropic provider only sets anthropic_orchestration_model."""
+    monkeypatch.chdir(tmp_path)
+    captured = {}
+    mock_synth = MagicMock()
+    mock_synth.synthesise.return_value = SAMPLE_REPORT
+
+    def capture_orchestrator(*args, **kwargs):
+        captured["config"] = kwargs.get("config") or args[1]
+        m = MagicMock()
+        m.run.return_value = (SAMPLE_RESULTS, {})
+        return m
+
+    with patch("sys.argv", ["main.py", "nuclear fusion",
+                             "--orchestration-provider", "anthropic",
+                             "--orchestration-model", "claude-sonnet-4-6"]), \
+         patch("llm.builder.AnthropicClient"), \
+         patch("main.Orchestrator", side_effect=capture_orchestrator), \
+         patch("main.Synthesiser", return_value=mock_synth):
+        from main import main
+        main()
+
+    config = captured["config"]
+    assert config.anthropic_orchestration_model == "claude-sonnet-4-6"
+    assert config.ollama_orchestration_model == "llama3.1"
+
+
+# ── Ollama max_workers warning tests ─────────────────────────────────────────
+
+def test_main_warns_when_ollama_exceeds_safe_workers(tmp_path, monkeypatch, capsys):
+    monkeypatch.chdir(tmp_path)
+    mock_orchestrator = MagicMock()
+    mock_synthesiser = MagicMock()
+    mock_orchestrator.run.return_value = (SAMPLE_RESULTS, {})
+    mock_synthesiser.synthesise.return_value = SAMPLE_REPORT
+
+    with patch("sys.argv", ["main.py", "nuclear fusion",
+                             "--provider", "ollama",
+                             "--max-workers", "4"]), \
+         patch("llm.builder.OllamaClient"), \
+         patch("main.Orchestrator", return_value=mock_orchestrator), \
+         patch("main.Synthesiser", return_value=mock_synthesiser):
+        from main import main
+        main()
+
+    captured = capsys.readouterr()
+    assert "Warning" in captured.out
+    assert "max_workers" in captured.out
+
+
+def test_main_no_warning_when_ollama_safe_workers(tmp_path, monkeypatch, capsys):
+    monkeypatch.chdir(tmp_path)
+    mock_orchestrator = MagicMock()
+    mock_synthesiser = MagicMock()
+    mock_orchestrator.run.return_value = (SAMPLE_RESULTS, {})
+    mock_synthesiser.synthesise.return_value = SAMPLE_REPORT
+
+    with patch("sys.argv", ["main.py", "nuclear fusion",
+                             "--provider", "ollama",
+                             "--max-workers", "2"]), \
+         patch("llm.builder.OllamaClient"), \
+         patch("main.Orchestrator", return_value=mock_orchestrator), \
+         patch("main.Synthesiser", return_value=mock_synthesiser):
+        from main import main
+        main()
+
+    captured = capsys.readouterr()
+    assert "Warning" not in captured.out
+
+
+def test_main_no_warning_when_anthropic_high_workers(tmp_path, monkeypatch, capsys):
+    monkeypatch.chdir(tmp_path)
+    mock_orchestrator = MagicMock()
+    mock_synthesiser = MagicMock()
+    mock_orchestrator.run.return_value = (SAMPLE_RESULTS, {})
+    mock_synthesiser.synthesise.return_value = SAMPLE_REPORT
+
+    with patch("sys.argv", ["main.py", "nuclear fusion",
+                             "--provider", "anthropic",
+                             "--max-workers", "8"]), \
+         patch("llm.builder.AnthropicClient"), \
+         patch("main.Orchestrator", return_value=mock_orchestrator), \
+         patch("main.Synthesiser", return_value=mock_synthesiser):
+        from main import main
+        main()
+
+    captured = capsys.readouterr()
+    assert "Warning" not in captured.out
+
+
 # ── Integration tests ─────────────────────────────────────────────────────────
 
 @pytest.mark.integration

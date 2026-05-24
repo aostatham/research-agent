@@ -72,6 +72,8 @@ def parse_args():
                         help="Max tokens per research call (default: 2048)")
     parser.add_argument("--max-tokens-synthesis", type=int, default=None,
                         help="Max tokens for synthesis call (default: 8192)")
+    parser.add_argument("--max-workers", type=int, default=None,
+                        help="Parallel research workers (default: 4)")
 
     # Config and output
     parser.add_argument("--config", default="config.yaml",
@@ -108,25 +110,41 @@ def main():
     """
     args = parse_args()
 
+    # Resolve which provider each tier will use (CLI args only — config.yaml not yet loaded)
+    resolved_orch_provider = args.orchestration_provider or args.provider or None
+    resolved_synth_provider = args.synthesis_provider or args.provider or None
+
     # Build config overrides from CLI args — None values are ignored by load_config
     overrides = {
         "provider": args.provider,
         "model": args.model,
         "orchestration_provider": args.orchestration_provider,
         "synthesis_provider": args.synthesis_provider,
-        "anthropic_orchestration_model": args.orchestration_model,
-        "anthropic_synthesis_model": args.synthesis_model,
-        "ollama_orchestration_model": args.orchestration_model,
-        "ollama_synthesis_model": args.synthesis_model,
         "search_provider": args.search_provider,
         "min_questions": args.min_questions,
         "max_questions": args.max_questions,
         "max_iterations": args.max_iterations,
         "max_tokens_research": args.max_tokens_research,
         "max_tokens_synthesis": args.max_tokens_synthesis,
+        "max_workers": args.max_workers,
         "provenance": args.provenance,
         "output_mode": args.output_mode,
     }
+
+    # Only set model fields for the resolved provider — prevents silently overwriting
+    # the other provider's model config when --orchestration-model is passed
+    if args.orchestration_model:
+        if resolved_orch_provider == "ollama":
+            overrides["ollama_orchestration_model"] = args.orchestration_model
+        else:
+            overrides["anthropic_orchestration_model"] = args.orchestration_model
+
+    if args.synthesis_model:
+        if resolved_synth_provider == "ollama":
+            overrides["ollama_synthesis_model"] = args.synthesis_model
+        else:
+            overrides["anthropic_synthesis_model"] = args.synthesis_model
+
     config = load_config(config_path=args.config, overrides=overrides)
 
     # Configure search provider once at startup
@@ -144,6 +162,11 @@ def main():
     # Build LLM clients — returns 6-tuple to support mixed providers
     orch_llm, synth_llm, orch_provider, orch_model, synth_provider, synth_model = build_llms(config)
 
+    if orch_provider == "ollama" and config.max_workers > 2:
+        print(f"  ⚠️  Warning: max_workers={config.max_workers} may cause "
+              f"timeouts with Ollama (safe ceiling: 2)")
+        print(f"     Use --max-workers 2 for Ollama provider")
+
     # Print run header
     print(f"\n🔬 Research Agent")
     print(f"{'─' * 50}")
@@ -152,6 +175,7 @@ def main():
     print(f"Synth provider:     {synth_provider} / {synth_model}")
     print(f"Search provider:    {config.search_provider}")
     print(f"Questions:          {config.min_questions}–{config.max_questions}")
+    print(f"Workers:            {config.max_workers}")
     if args.short:
         print(f"Mode:               Executive summary only")
     if config.output_mode != "report":
