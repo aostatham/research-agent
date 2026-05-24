@@ -17,7 +17,8 @@ Public API:
 
 import json
 import os
-from datetime import datetime
+import warnings
+from datetime import datetime, timezone
 
 from evidence.schema import EvidenceSource, EvidenceClaim, ProvenanceReport
 
@@ -48,7 +49,7 @@ def write_provenance_file(
 
     report = ProvenanceReport(
         report_file=os.path.basename(output_path),
-        generated=datetime.utcnow().isoformat(),
+        generated=datetime.now(timezone.utc).isoformat(),
         quality_metrics=quality_metrics,
         claims=claims
     )
@@ -265,8 +266,9 @@ def classify_source_type(
                      "institutional", "industry", "video", "forum", "general"}
             if result in valid:
                 return result
-        except Exception:
-            pass
+        except (AttributeError, ConnectionError, TimeoutError,
+                json.JSONDecodeError, ValueError) as e:
+            warnings.warn(f"LLM source classification failed: {e}", stacklevel=2)
 
     return "general"
 
@@ -348,7 +350,7 @@ def extract_claims_from_answer(
     Returns:
         List of EvidenceClaim TypedDicts
     """
-    now = datetime.utcnow().isoformat()
+    now = datetime.now(timezone.utc).isoformat()
 
     evidence_sources = [
         EvidenceSource(
@@ -391,7 +393,8 @@ def extract_claims_from_answer(
         claim_texts = json.loads(raw)
         if not isinstance(claim_texts, list) or not claim_texts:
             raise ValueError("empty or non-list response")
-    except Exception:
+    except (json.JSONDecodeError, ValueError, AttributeError) as e:
+        warnings.warn(f"Claim extraction failed, using fallback: {e}", stacklevel=2)
         fallback_text = answer[:200] + (" [extraction failed]" if len(answer) > 200 else "")
         claim_texts = [fallback_text]
 
@@ -524,7 +527,7 @@ def build_placeholder_claims(results: dict, sources: dict) -> list:
     Returns:
         List of EvidenceClaim dicts (one per question)
     """
-    now = datetime.utcnow().isoformat()
+    now = datetime.now(timezone.utc).isoformat()
     claims = []
 
     for i, (question, answer) in enumerate(results.items(), start=1):
