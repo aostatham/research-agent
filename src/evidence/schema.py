@@ -16,7 +16,8 @@ class EvidenceSource(TypedDict):
     """A single cited source attached to an EvidenceClaim."""
     title: str
     url: str
-    source_type: str    # government | academic | news | reference | blog | unknown
+    source_type: str  # government | academic | news | reference |
+                      # institutional | industry | video | forum | general
     retrieved: str      # ISO date string
 
 

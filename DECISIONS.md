@@ -217,6 +217,12 @@ independent verifier model are the right architectural home for contradiction de
 Implementing a weaker version now and replacing it in Phase D is waste.
 **Date:** Phase C Part 2 scoping
 
+### E009 — Rename source type "blog" to "general"
+**Decision:** Rename the catch-all source type from "blog" to "general". "blog" implies a specific content format rather than an unclassified catch-all. "general" more accurately describes sources that didn't match any specific pattern. Confidence weight unchanged at +0.00. Pure rename — no logic change.
+
+### E008 — Source taxonomy expansion: blog is too broad
+**Decision:** The current "blog" classification catches institutional sources, industry sites, think tanks, videos, and forums alongside actual blogs. This undermines confidence scoring which weights source types. Recommended expansion: add institutional, industry, video, forum as distinct types. Implement as part of Phase C classifier refinement or Phase D evidence quality work.
+
 ### E006 — Source type classifier refactor: hybrid pattern + LLM fallback (supersedes E004)
 **Decision:** classify_source_type() uses five classification layers in order:
   1. TLD patterns — .gov, .edu, .mil, .gov.uk (most reliable, zero maintenance)

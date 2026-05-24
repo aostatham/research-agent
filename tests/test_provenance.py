@@ -4,7 +4,7 @@ write_provenance_file(), and build_placeholder_claims().
 
 Verifies:
   - classify_source_type(): government (.gov/.mil), academic (arxiv etc),
-    news (bbc etc), blog (unknown domain)
+    news (bbc etc), general (unknown domain)
   - build_quality_metrics(): empty input zeros, coverage calculation,
     mean confidence, contradiction count
   - write_provenance_file(): file creation, valid JSON output, correct
@@ -59,9 +59,9 @@ def test_classify_source_type_news_reuters():
 
 
 def test_classify_source_type_blog():
-    """An unrecognised domain is classified as blog."""
+    """An unrecognised domain is classified as general."""
     from output.provenance import classify_source_type
-    assert classify_source_type("https://someblog.com/post/fusion") == "blog"
+    assert classify_source_type("https://someblog.com/post/fusion") == "general"
 
 
 # ── build_quality_metrics() tests ─────────────────────────────────────────────
@@ -301,8 +301,8 @@ def test_score_confidence_academic_source_increases_score():
 def test_score_confidence_multiple_sources_corroboration_bonus():
     """Three sources add the corroboration bonus on top of per-source bonuses."""
     from output.provenance import score_confidence
-    two = [{"source_type": "blog"}, {"source_type": "blog"}]
-    three = [{"source_type": "blog"}, {"source_type": "blog"}, {"source_type": "blog"}]
+    two = [{"source_type": "general"}, {"source_type": "general"}]
+    three = [{"source_type": "general"}, {"source_type": "general"}, {"source_type": "general"}]
     assert score_confidence(three) > score_confidence(two)
 
 
@@ -559,18 +559,18 @@ def test_classify_custom_government_domain():
 
 
 def test_custom_domains_override_blog_default():
-    """Layer 4: without custom_domains, unknown domain falls through to blog."""
+    """Layer 4: without custom_domains, unknown domain falls through to general."""
     from output.provenance import classify_source_type
     url = "https://obscure-but-legit-org.net/paper"
-    assert classify_source_type(url) == "blog"
+    assert classify_source_type(url) == "general"
     custom = {"academic": ["obscure-but-legit-org.net"]}
     assert classify_source_type(url, custom_domains=custom) == "academic"
 
 
 def test_classify_unknown_domain_without_llm_returns_blog():
-    """Layer 5: no llm_client means unknown domain falls back to blog."""
+    """Layer 5: no llm_client means unknown domain falls back to general."""
     from output.provenance import classify_source_type
-    assert classify_source_type("https://randomsite12345.xyz/post") == "blog"
+    assert classify_source_type("https://randomsite12345.xyz/post") == "general"
 
 
 def test_classify_unknown_domain_with_llm_calls_llm():
@@ -585,7 +585,7 @@ def test_classify_unknown_domain_with_llm_calls_llm():
 def test_classify_llm_fallback_not_called_for_known_domain():
     """Layer 5: llm_client is NOT called when a pattern layer matches."""
     from output.provenance import classify_source_type
-    llm = _make_mock_llm("blog")
+    llm = _make_mock_llm("general")
     classify_source_type("https://arxiv.org/abs/1234.5678", llm_client=llm)
     assert llm.chat.call_count == 0
 
@@ -656,15 +656,15 @@ def test_custom_domains_none_handled_gracefully():
     """Layer 4: custom_domains=None does not raise."""
     from output.provenance import classify_source_type
     result = classify_source_type("https://example.com/page", custom_domains=None)
-    assert result == "blog"
+    assert result == "general"
 
 
 def test_llm_fallback_invalid_response_returns_blog():
-    """Layer 5: LLM returning an invalid type falls back to blog."""
+    """Layer 5: LLM returning an invalid type falls back to general."""
     from output.provenance import classify_source_type
     llm = _make_mock_llm("definitely_not_a_type")
     result = classify_source_type("https://unknownsite.xyz/paper", llm_client=llm)
-    assert result == "blog"
+    assert result == "general"
 
 
 def test_llm_fallback_response_stripped_and_lowercased():
@@ -680,3 +680,118 @@ def test_classify_source_type_works_with_url_only():
     from output.provenance import classify_source_type
     result = classify_source_type("https://iaea.org/news")
     assert result == "government"
+
+
+# ── classify_source_type() — new taxonomy types ───────────────────────────────
+
+def test_classify_youtube_as_video():
+    """Layer 2: youtube.com is classified as video."""
+    from output.provenance import classify_source_type
+    assert classify_source_type("https://www.youtube.com/watch?v=abc123") == "video"
+
+
+def test_classify_youtu_be_as_video():
+    """Layer 2: youtu.be short links are classified as video."""
+    from output.provenance import classify_source_type
+    assert classify_source_type("https://youtu.be/abc123") == "video"
+
+
+def test_classify_vimeo_as_video():
+    """Layer 2: vimeo.com is classified as video."""
+    from output.provenance import classify_source_type
+    assert classify_source_type("https://vimeo.com/123456789") == "video"
+
+
+def test_classify_reddit_as_forum():
+    """Layer 2: reddit.com is classified as forum."""
+    from output.provenance import classify_source_type
+    assert classify_source_type("https://www.reddit.com/r/fusion/comments/abc") == "forum"
+
+
+def test_classify_quora_as_forum():
+    """Layer 2: quora.com is classified as forum."""
+    from output.provenance import classify_source_type
+    assert classify_source_type("https://www.quora.com/What-is-nuclear-fusion") == "forum"
+
+
+def test_classify_stackoverflow_as_forum():
+    """Layer 2: stackoverflow.com is classified as forum."""
+    from output.provenance import classify_source_type
+    assert classify_source_type("https://stackoverflow.com/questions/12345") == "forum"
+
+
+def test_classify_weforum_as_institutional():
+    """Layer 3: weforum.org is classified as institutional."""
+    from output.provenance import classify_source_type
+    assert classify_source_type("https://www.weforum.org/stories/fusion-energy") == "institutional"
+
+
+def test_classify_rand_as_institutional():
+    """Layer 3: rand.org is classified as institutional."""
+    from output.provenance import classify_source_type
+    assert classify_source_type("https://www.rand.org/research/fusion") == "institutional"
+
+
+def test_classify_chathamhouse_as_institutional():
+    """Layer 3: chathamhouse.org is classified as institutional."""
+    from output.provenance import classify_source_type
+    assert classify_source_type("https://www.chathamhouse.org/research/energy") == "institutional"
+
+
+def test_classify_fusionindustryassociation_as_institutional():
+    """Layer 3: fusionindustryassociation.org is classified as institutional."""
+    from output.provenance import classify_source_type
+    assert classify_source_type("https://www.fusionindustryassociation.org/report") == "institutional"
+
+
+def test_classify_world_nuclear_as_institutional():
+    """Layer 3: world-nuclear.org is classified as institutional."""
+    from output.provenance import classify_source_type
+    assert classify_source_type("https://www.world-nuclear.org/information-library") == "institutional"
+
+
+# ── score_confidence() — new type weights ────────────────────────────────────
+
+def test_score_confidence_institutional_increases_score():
+    """An institutional source raises score above base."""
+    from output.provenance import score_confidence
+    sources = [{"source_type": "institutional"}]
+    assert score_confidence(sources) > 0.4
+
+
+def test_score_confidence_video_minimal_increase():
+    """A video source gives a minimal increase above base."""
+    from output.provenance import score_confidence
+    sources = [{"source_type": "video"}]
+    assert score_confidence(sources) > 0.4
+    assert score_confidence(sources) < score_confidence([{"source_type": "news"}])
+
+
+def test_score_confidence_forum_no_increase():
+    """A forum source gives no increase above base (same as general)."""
+    from output.provenance import score_confidence
+    forum = [{"source_type": "forum"}]
+    general = [{"source_type": "general"}]
+    assert score_confidence(forum) == score_confidence(general)
+
+
+def test_score_confidence_industry_minimal_increase():
+    """An industry source gives a small increase above base."""
+    from output.provenance import score_confidence
+    sources = [{"source_type": "industry"}]
+    assert score_confidence(sources) > 0.4
+    assert score_confidence(sources) < score_confidence([{"source_type": "institutional"}])
+
+
+# ── backward compatibility ────────────────────────────────────────────────────
+
+def test_classify_unknown_domain_still_returns_general():
+    """Unknown domains still fall through to general."""
+    from output.provenance import classify_source_type
+    assert classify_source_type("https://some-random-unknown-site.xyz/page") == "general"
+
+
+def test_score_confidence_general_no_increase():
+    """General sources give no increase above base score."""
+    from output.provenance import score_confidence
+    assert score_confidence([{"source_type": "general"}]) == pytest.approx(0.4)

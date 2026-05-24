@@ -11,7 +11,7 @@ arrive in Part 2.
 Public API:
   write_provenance_file()    — write .provenance.json next to the report
   build_quality_metrics()    — compute aggregate metrics from a claims list
-  classify_source_type()     — classify a URL into government/academic/news/blog
+  classify_source_type()     — classify a URL into government/academic/news/general
   build_placeholder_claims() — build minimal claims from raw results/sources
 """
 
@@ -117,15 +117,18 @@ def classify_source_type(
       5. LLM fallback      — only called when llm_client is provided
                              and layers 1-4 produce no match
 
-    Returns one of: government | academic | news | blog | reference
+    Returns one of: government | academic | news | reference |
+                    institutional | industry | video | forum | general
 
     Maintenance guide for layer 3 (hardcoded list):
       ADD a domain to layer 3 when:
-        - It appears in 3+ research runs misclassified as blog
+        - It appears in 3+ research runs misclassified as general
         - It is a well-known authoritative source
         - LLM fallback is unavailable or gives incorrect results for it
       DO NOT add speculatively — only add on evidence of misclassification
       DO NOT add domains that match existing TLD or stable patterns
+      industry type has no hardcoded list — too numerous and volatile;
+        use config.yaml source_classification for project-specific industry domains
 
     Args:
         url:            URL string to classify
@@ -167,6 +170,15 @@ def classify_source_type(
     if any(m in u for m in stable_reference):
         return "reference"
 
+    stable_video = ["youtube.com", "youtu.be", "vimeo.com"]
+    if any(m in u for m in stable_video):
+        return "video"
+
+    stable_forum = ["reddit.com", "quora.com", "stackoverflow.com",
+                    "stackexchange.com", "discourse."]
+    if any(m in u for m in stable_forum):
+        return "forum"
+
     # Layer 3 — hardcoded institutional domains
     # Only domains confirmed misclassified in 3+ real research runs.
 
@@ -206,6 +218,19 @@ def classify_source_type(
     if any(m in u for m in institutional_news):
         return "news"
 
+    # Think tanks, policy institutes, NGOs, and industry associations
+    # without government or academic TLD conventions
+    institutional_institutional = [
+        "weforum.org", "rand.org", "chathamhouse.org", "cfr.org",
+        "piie.com", "oxfordenergy.org", "belfercenter.org",
+        "wilsoncenter.org", "carnegieendowment.org",
+        "fusionindustryassociation.org", "world-nuclear.org",
+        "nuclearenergyinstitute.org", "ans.org",
+        "energyintel.com", "spglobal.com", "woodmac.com",
+    ]
+    if any(m in u for m in institutional_institutional):
+        return "institutional"
+
     # Layer 4 — custom domains from config.yaml source_classification
     if custom_domains:
         for source_type, domains in custom_domains.items():
@@ -217,12 +242,17 @@ def classify_source_type(
         prompt = (
             "Classify this URL into exactly one source type.\n"
             f"URL: {url}\n"
-            "Choose from: government, academic, news, blog, reference\n"
+            "Choose from: government, academic, news, reference, "
+            "institutional, industry, video, forum, general\n"
             "government = official government body or intergovernmental organisation\n"
             "academic = peer-reviewed journal, university research, conference proceedings\n"
             "news = established news publication or science news outlet\n"
             "reference = encyclopaedia or general reference resource\n"
-            "blog = everything else including industry sites, company pages, forums\n"
+            "institutional = think tank, policy institute, NGO, industry association\n"
+            "industry = company site, startup, commercial organisation\n"
+            "video = YouTube, Vimeo, or other video platform\n"
+            "forum = Reddit, Quora, Stack Exchange, or discussion site\n"
+            "general = personal blog, unclassified site\n"
             "Return only the single word. No explanation."
         )
         try:
@@ -231,12 +261,14 @@ def classify_source_type(
                 max_tokens=10,
             )
             result = (response.content or "").strip().lower()
-            if result in ("government", "academic", "news", "reference", "blog"):
+            valid = {"government", "academic", "news", "reference",
+                     "institutional", "industry", "video", "forum", "general"}
+            if result in valid:
                 return result
         except Exception:
             pass
 
-    return "blog"
+    return "general"
 
 
 def score_confidence(sources: list) -> float:
@@ -249,6 +281,11 @@ def score_confidence(sources: list) -> float:
       Per academic source:                   +0.12 (max +0.24)
       Per news source:                       +0.06 (max +0.12)
       Per reference source:                  +0.03 (max +0.06)
+      Per institutional source:              +0.08 (max +0.16)
+      Per industry source:                   +0.02 (max +0.04)
+      Per video source:                      +0.01 (max +0.02)
+      Per forum source:                      +0.00
+      Per general source:                    +0.00
       Corroboration bonus (2 sources):       +0.05
       Corroboration bonus (3+ sources):      +0.10
       Cap:                                    1.00
@@ -262,10 +299,13 @@ def score_confidence(sources: list) -> float:
     score = 0.40
 
     type_bonuses = {
-        "government": (0.15, 0.30),
-        "academic":   (0.12, 0.24),
-        "news":       (0.06, 0.12),
-        "reference":  (0.03, 0.06),
+        "government":   (0.15, 0.30),
+        "academic":     (0.12, 0.24),
+        "news":         (0.06, 0.12),
+        "reference":    (0.03, 0.06),
+        "institutional": (0.08, 0.16),
+        "industry":     (0.02, 0.04),
+        "video":        (0.01, 0.02),
     }
 
     for stype, (per_source, cap) in type_bonuses.items():
