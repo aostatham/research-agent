@@ -3,15 +3,18 @@ Research orchestration layer.
 
 Implements the full agentic research loop:
 
-    1. decompose()         — LLM breaks a topic into 4–5 focused sub-questions.
-    2. research_question() — Agentic loop per question: LLM calls web_search
-                             until it has enough information to write an answer.
-    3. reflect()           — Critic LLM identifies genuine gaps in the combined
-                             findings.
-    4. run()               — Ties all three together, optionally researching gaps
-                             identified by the critic.
+    1. decompose()                — LLM breaks a topic into 4–5 focused sub-questions.
+    2. _research_question_sync()  — Agentic loop per question: LLM calls web_search
+                                    until it has enough information to write an answer.
+    3. research_question_async()  — Async wrapper around _research_question_sync()
+                                    that gates concurrency via a semaphore.
+    4. research_all_async()       — Researches all questions in parallel using asyncio.
+    5. reflect()                  — Critic LLM identifies genuine gaps in the combined
+                                    findings.
+    6. run()                      — Ties all steps together; uses research_all_async()
+                                    for both initial questions and gap fill.
 
-Key robustness mechanisms in research_question():
+Key robustness mechanisms in _research_question_sync():
     - Repeated query detection: if the model issues the same search twice,
       a synthesis-forcing message is injected instead of executing another search.
     - Tool-call string detection: some smaller models return a literal "[Calling …]"
@@ -21,7 +24,9 @@ Key robustness mechanisms in research_question():
       than returning a failure message.
 """
 
+import asyncio
 import json
+import time
 from llm.base import LLMClient
 from agent.tools import ALL_TOOLS, execute_tool_with_sources
 from config import Config
@@ -82,7 +87,7 @@ class Orchestrator:
 
         Args:
             llm:    LLMClient instance to use for all orchestration calls
-                    (decompose, research_question, reflect).
+                    (decompose, _research_question_sync, reflect).
             config: Config instance; defaults to Config() if not provided.
         """
         self.llm = llm
@@ -135,9 +140,9 @@ class Orchestrator:
                     f"What are the key challenges in {topic}?",
                     f"Who are the key players in {topic}?"]
 
-    def research_question(self, question: str) -> tuple[str, list[dict]]:
+    def _research_question_sync(self, question: str) -> tuple[str, list[dict]]:
         """
-        Run the agentic research loop for a single sub-question.
+        Run the agentic research loop for a single sub-question (synchronous).
 
         The loop runs until:
           - The LLM returns a text response (answer found), or
@@ -159,13 +164,13 @@ class Orchestrator:
             is reached with no accumulated search results.
         """
         print(f"\n🔍 Researching: '{question}'")
+        start = time.time()
 
         messages = [{"role": "user", "content": question}]
         iteration = 0
         all_sources = []
-        last_query = None           # tracks the previous search query for repeat detection
-        repeated_query_count = 0
-        accumulated_results = []    # saves all search outputs for fallback synthesis
+        seen_queries: set[str] = set()   # detects both consecutive and oscillating repeats
+        accumulated_results = []         # saves all search outputs for fallback synthesis
 
         while iteration < self.config.max_iterations:
             iteration += 1
@@ -178,12 +183,10 @@ class Orchestrator:
             if response.type == "tool_call":
                 current_query = response.tool_input.get("query")
 
-                if current_query == last_query:
-                    # Same query as last time — the model already has these results.
-                    # Injecting a synthesis message here breaks the loop for smaller
-                    # models (e.g. llama3.1) that tend to keep re-searching.
-                    repeated_query_count += 1
-                    print(f"  ⚠️  Repeated query detected ({repeated_query_count}x), "
+                if current_query in seen_queries:
+                    # Query already executed — catches both consecutive (A→A) and
+                    # oscillating (A→B→A) patterns that would waste iterations.
+                    print(f"  ⚠️  Repeated query detected ('{current_query}'), "
                           f"prompting synthesis...")
                     messages.append({
                         "role": "assistant",
@@ -206,8 +209,7 @@ class Orchestrator:
                     response.tool_name, response.tool_input
                 )
                 all_sources.extend(sources)
-                last_query = current_query
-                repeated_query_count = 0
+                seen_queries.add(current_query)
                 # Save for fallback synthesis in case max_iterations is reached
                 accumulated_results.append(f"Search: '{current_query}'\n{tool_result}")
 
@@ -252,7 +254,8 @@ class Orchestrator:
                     continue
 
                 # Genuine text answer — deduplicate sources and return
-                print(f"  ✅ Answer found ({len(content)} chars)")
+                elapsed = time.time() - start
+                print(f"  ✅ Answer found ({len(content)} chars, {elapsed:.1f}s)")
                 seen = set()
                 unique_sources = []
                 for s in all_sources:
@@ -280,7 +283,8 @@ class Orchestrator:
                 max_tokens=self.config.max_tokens_research
             )
             if fallback_response.type == "text" and len(fallback_response.content.strip()) > 50:
-                print(f"  ✅ Fallback synthesis succeeded ({len(fallback_response.content)} chars)")
+                elapsed = time.time() - start
+                print(f"  ✅ Fallback synthesis succeeded ({len(fallback_response.content)} chars, {elapsed:.1f}s)")
                 seen = set()
                 unique_sources = []
                 for s in all_sources:
@@ -290,8 +294,55 @@ class Orchestrator:
                 return fallback_response.content, unique_sources
 
         # No accumulated results at all — genuine research failure
-        print(f"  ❌ Research failed for: '{question}'")
+        elapsed = time.time() - start
+        print(f"  ❌ Research failed for: '{question}' ({elapsed:.1f}s)")
         return f"Unable to retrieve information on: {question}", []
+
+    async def research_question_async(
+        self, question: str, semaphore: asyncio.Semaphore
+    ) -> tuple[str, list[dict]]:
+        """
+        Async wrapper around _research_question_sync().
+
+        Acquires the semaphore before running to cap the number of concurrent
+        workers at config.max_workers.  Uses asyncio.to_thread so the blocking
+        LLM calls do not stall the event loop.
+
+        Args:
+            question:  The sub-question to research.
+            semaphore: Shared semaphore limiting concurrent workers.
+
+        Returns:
+            Same (answer, sources) tuple as _research_question_sync().
+        """
+        async with semaphore:
+            return await asyncio.to_thread(self._research_question_sync, question)
+
+    async def research_all_async(
+        self, questions: list[str]
+    ) -> tuple[dict, dict]:
+        """
+        Research all questions in parallel, up to config.max_workers concurrently.
+
+        Uses asyncio.gather so all questions are submitted at once; the semaphore
+        inside research_question_async() limits actual concurrency.  Question
+        ordering in the returned dicts matches the input list.
+
+        Args:
+            questions: List of sub-question strings.
+
+        Returns:
+            Tuple of (results, sources) dicts keyed by question string.
+        """
+        semaphore = asyncio.Semaphore(self.config.max_workers)
+        tasks = [self.research_question_async(q, semaphore) for q in questions]
+        answers = await asyncio.gather(*tasks)
+        results: dict = {}
+        sources: dict = {}
+        for question, (answer, question_sources) in zip(questions, answers):
+            results[question] = answer
+            sources[question] = question_sources
+        return results, sources
 
     def reflect(self, topic: str, results: dict) -> tuple[bool, list[str]]:
         """
@@ -368,8 +419,8 @@ class Orchestrator:
 
         Steps:
           1. Decompose the topic into sub-questions.
-          2. Research each sub-question via the agentic loop.
-          3. Reflect on completeness; research any identified gaps.
+          2. Research all sub-questions in parallel via research_all_async().
+          3. Reflect on completeness; research any identified gaps in parallel.
 
         Args:
             topic: The research topic string.
@@ -380,22 +431,19 @@ class Orchestrator:
               - sources = {question: [{"title": str, "url": str}]} dict.
         """
         questions = self.decompose(topic)
-        results = {}
-        sources = {}
 
-        for question in questions:
-            answer, question_sources = self.research_question(question)
-            results[question] = answer
-            sources[question] = question_sources
+        print(f"\n🚀 Researching {len(questions)} questions "
+              f"(workers: {self.config.max_workers})...")
+        results, sources = asyncio.run(self.research_all_async(questions))
 
         sufficient, missing = self.reflect(topic, results)
 
         if not sufficient and missing:
-            print(f"\n🔄 Researching {len(missing)} gaps...")
-            for gap in missing:
-                answer, gap_sources = self.research_question(gap)
-                results[gap] = answer
-                sources[gap] = gap_sources
+            print(f"\n🔄 Researching {len(missing)} gaps "
+                  f"(workers: {self.config.max_workers})...")
+            gap_results, gap_sources = asyncio.run(self.research_all_async(missing))
+            results.update(gap_results)
+            sources.update(gap_sources)
 
         print(f"\n✅ Research complete — {len(results)} questions answered")
         return results, sources
