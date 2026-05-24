@@ -22,6 +22,23 @@ import pytest
 from unittest.mock import MagicMock, patch
 
 
+# ── Global state isolation ────────────────────────────────────────────────────
+
+@pytest.fixture(autouse=True)
+def _reset_search_globals():
+    """Snapshot and restore tools module globals after each test."""
+    from agent import tools
+    orig_provider = tools._search_provider
+    orig_key = tools._tavily_api_key
+    orig_max = tools._tavily_max_results
+    orig_client = tools._anthropic_client
+    yield
+    tools._search_provider = orig_provider
+    tools._tavily_api_key = orig_key
+    tools._tavily_max_results = orig_max
+    tools._anthropic_client = orig_client
+
+
 # ── configure_search() tests ──────────────────────────────────────────────────
 # Verify that configure_search() correctly sets all three module-level globals.
 
@@ -108,8 +125,9 @@ def test_anthropic_search_extracts_text():
     mock_response = MagicMock()
     mock_response.content = [mock_block]
 
-    with patch("agent.tools.anthropic.Anthropic") as mock_anthropic:
-        mock_anthropic.return_value.messages.create.return_value = mock_response
+    mock_client = MagicMock()
+    mock_client.messages.create.return_value = mock_response
+    with patch("agent.tools._get_anthropic_client", return_value=mock_client):
         result, sources = _anthropic_search_with_sources("nuclear fusion")
 
     assert "Fusion combines nuclei." in result
@@ -131,8 +149,9 @@ def test_anthropic_search_extracts_citations():
     mock_response = MagicMock()
     mock_response.content = [mock_block]
 
-    with patch("agent.tools.anthropic.Anthropic") as mock_anthropic:
-        mock_anthropic.return_value.messages.create.return_value = mock_response
+    mock_client = MagicMock()
+    mock_client.messages.create.return_value = mock_response
+    with patch("agent.tools._get_anthropic_client", return_value=mock_client):
         result, sources = _anthropic_search_with_sources("nuclear fusion")
 
     assert len(sources) == 1
@@ -159,8 +178,9 @@ def test_anthropic_search_deduplicates_citations():
     mock_response = MagicMock()
     mock_response.content = [mock_block1, mock_block2]
 
-    with patch("agent.tools.anthropic.Anthropic") as mock_anthropic:
-        mock_anthropic.return_value.messages.create.return_value = mock_response
+    mock_client = MagicMock()
+    mock_client.messages.create.return_value = mock_response
+    with patch("agent.tools._get_anthropic_client", return_value=mock_client):
         result, sources = _anthropic_search_with_sources("nuclear fusion")
 
     assert len(sources) == 1
@@ -173,8 +193,9 @@ def test_anthropic_search_returns_no_results_fallback():
     mock_response = MagicMock()
     mock_response.content = []
 
-    with patch("agent.tools.anthropic.Anthropic") as mock_anthropic:
-        mock_anthropic.return_value.messages.create.return_value = mock_response
+    mock_client = MagicMock()
+    mock_client.messages.create.return_value = mock_response
+    with patch("agent.tools._get_anthropic_client", return_value=mock_client):
         result, sources = _anthropic_search_with_sources("nuclear fusion")
 
     assert result == "No results found."
@@ -260,8 +281,8 @@ def test_tavily_search_handles_no_answer():
 def test_tavily_search_raises_without_import():
     """If TavilyClient is None (package not installed), an ImportError is raised."""
     from agent.tools import _tavily_search_with_sources
-    with patch.dict("sys.modules", {"tavily": None}):
-        with pytest.raises((ImportError, Exception)):
+    with patch("agent.tools.TavilyClient", new=None):
+        with pytest.raises(ImportError, match="tavily-python not installed"):
             _tavily_search_with_sources("fusion")
 
 

@@ -18,6 +18,7 @@ translate them to its own schema (Anthropic input_schema vs OpenAI function).
 import os
 import anthropic
 from dotenv import load_dotenv
+from llm.retry import with_retry
 
 load_dotenv()
 
@@ -60,6 +61,18 @@ _search_provider = "anthropic"
 _tavily_api_key = None
 _tavily_max_results = 5
 
+# Lazy singleton — created on first Anthropic search call, reused across
+# all subsequent calls within the same process to avoid repeated auth overhead.
+_anthropic_client = None
+
+
+def _get_anthropic_client() -> anthropic.Anthropic:
+    """Return the module-level Anthropic client, creating it on first call."""
+    global _anthropic_client
+    if _anthropic_client is None:
+        _anthropic_client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
+    return _anthropic_client
+
 
 def configure_search(provider: str, tavily_api_key: str = None,
                      tavily_max_results: int = 5):
@@ -80,16 +93,16 @@ def configure_search(provider: str, tavily_api_key: str = None,
     Raises:
         ValueError: If provider is "tavily" but no API key is provided.
     """
-    global _search_provider, _tavily_api_key, _tavily_max_results
-    _search_provider = provider
-    _tavily_api_key = tavily_api_key
-    _tavily_max_results = tavily_max_results
-
     if provider == "tavily" and not tavily_api_key:
         raise ValueError(
             "Tavily API key required. Set TAVILY_API_KEY in .env or "
             "tavily_api_key in config.yaml"
         )
+
+    global _search_provider, _tavily_api_key, _tavily_max_results
+    _search_provider = provider
+    _tavily_api_key = tavily_api_key
+    _tavily_max_results = tavily_max_results
 
 
 # ── Tool executor ─────────────────────────────────────────────────────────────
@@ -167,6 +180,7 @@ def _web_search_with_sources(query: str) -> tuple[str, list[dict]]:
 
 # ── Anthropic search ──────────────────────────────────────────────────────────
 
+@with_retry(max_attempts=3, base_delay=1.0, max_delay=30.0)
 def _anthropic_search_with_sources(query: str) -> tuple[str, list[dict]]:
     """
     Execute a web search using Anthropic's built-in web_search_20250305 tool.
@@ -184,8 +198,7 @@ def _anthropic_search_with_sources(query: str) -> tuple[str, list[dict]]:
     Returns:
         Tuple of (result_text, sources) where sources is deduplicated by URL.
     """
-    api_key = os.getenv("ANTHROPIC_API_KEY")
-    client = anthropic.Anthropic(api_key=api_key)
+    client = _get_anthropic_client()
 
     response = client.messages.create(
         model="claude-haiku-4-5-20251001",
