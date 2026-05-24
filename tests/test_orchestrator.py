@@ -509,6 +509,22 @@ def test_run_uses_config_question_bounds(orchestrator, mock_llm, config):
 # ── Async / parallel research tests (Phase D Part 1) ─────────────────────────
 # Verify research_question_async, research_all_async, and max_workers config.
 
+def test_run_async_returns_correct_tuple_shape(orchestrator, mock_llm):
+    """run_async() returns a (dict, dict) tuple from an async context."""
+    mock_llm.chat.side_effect = [
+        make_text_response('["Q1?", "Q2?", "Q3?", "Q4?"]'),
+        make_text_response("A1."),
+        make_text_response("A2."),
+        make_text_response("A3."),
+        make_text_response("A4."),
+        make_text_response('{"sufficient": true, "missing": []}'),
+    ]
+    with patch("agent.orchestrator.execute_tool_with_sources", return_value=("results", [])):
+        results, sources = asyncio.run(orchestrator.run_async("nuclear fusion"))
+    assert isinstance(results, dict)
+    assert isinstance(sources, dict)
+
+
 def test_config_max_workers_default():
     """Config defaults max_workers to 2 (safe ceiling for Ollama)."""
     assert Config().max_workers == 2

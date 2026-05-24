@@ -413,9 +413,9 @@ class Orchestrator:
             print("  ⚠️  Could not parse reflection, proceeding anyway")
             return True, []
 
-    def run(self, topic: str) -> tuple[dict, dict]:
+    async def run_async(self, topic: str) -> tuple[dict, dict]:
         """
-        Execute the full orchestration pipeline for a topic.
+        Async version of run(). Await this from async contexts (FastAPI, async tests).
 
         Steps:
           1. Decompose the topic into sub-questions.
@@ -434,16 +434,30 @@ class Orchestrator:
 
         print(f"\n🚀 Researching {len(questions)} questions "
               f"(workers: {self.config.max_workers})...")
-        results, sources = asyncio.run(self.research_all_async(questions))
+        results, sources = await self.research_all_async(questions)
 
         sufficient, missing = self.reflect(topic, results)
 
         if not sufficient and missing:
             print(f"\n🔄 Researching {len(missing)} gaps "
                   f"(workers: {self.config.max_workers})...")
-            gap_results, gap_sources = asyncio.run(self.research_all_async(missing))
+            gap_results, gap_sources = await self.research_all_async(missing)
             results.update(gap_results)
             sources.update(gap_sources)
 
         print(f"\n✅ Research complete — {len(results)} questions answered")
         return results, sources
+
+    def run(self, topic: str) -> tuple[dict, dict]:
+        """
+        Synchronous entry point for CLI use.
+        Do not call from inside an already-running event loop.
+        Use run_async() for async contexts (FastAPI, async tests).
+
+        Args:
+            topic: The research topic string.
+
+        Returns:
+            Tuple of (results, sources).
+        """
+        return asyncio.run(self.run_async(topic))
