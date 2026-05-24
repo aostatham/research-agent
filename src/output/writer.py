@@ -10,6 +10,8 @@ delegated to output.formatter.
 """
 
 import os
+import time
+from datetime import datetime
 
 from .formatter import convert_to_html, convert_to_pdf
 
@@ -37,20 +39,29 @@ def save_report(topic: str, metadata: str, report: str, fmt: str = "markdown") -
     filename = "".join(c if c.isalnum() or c == " " else "" for c in filename)
     filename = filename.strip().replace(" ", "_")[:50]
 
+    # Fallback for punctuation-only or empty topics that sanitise to nothing
+    if not filename:
+        filename = f"report_{int(time.time())}"
+
+    # Collision handling — append timestamp if file already exists
+    ext = ".html" if fmt == "html" else ".pdf" if fmt == "pdf" else ".md"
+    filepath = f"output/{filename}{ext}"
+    if os.path.exists(filepath):
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = f"{filename}_{timestamp}"
+        filepath = f"output/{filename}{ext}"
+
     if fmt == "html":
-        filepath = f"output/{filename}.html"
         html = convert_to_html(topic, metadata, report)
         with open(filepath, "w", encoding="utf-8") as f:
             f.write(html)
 
     elif fmt == "pdf":
-        filepath = f"output/{filename}.pdf"
         html = convert_to_html(topic, metadata, report)
         convert_to_pdf(html, filepath)
 
     else:
         # Default: markdown
-        filepath = f"output/{filename}.md"
         with open(filepath, "w", encoding="utf-8") as f:
             f.write(f"# {topic}\n\n")
             f.write(metadata + "\n")

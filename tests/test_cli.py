@@ -143,6 +143,25 @@ def test_save_report_pdf_not_md_or_html(tmp_path, monkeypatch):
     assert not path.endswith(".html")
 
 
+def test_save_report_handles_punctuation_only_topic(tmp_path, monkeypatch):
+    """Punctuation-only topic must not produce a hidden file (output/.md)."""
+    monkeypatch.chdir(tmp_path)
+    from output.writer import save_report
+    path = save_report("???", "| Field | Value |", "# Report")
+    filename = os.path.basename(path)
+    assert not filename.startswith(".")
+    assert os.path.exists(path)
+
+
+def test_save_report_handles_empty_sanitised_topic(tmp_path, monkeypatch):
+    """Topic that sanitises to empty string produces a valid fallback filename."""
+    monkeypatch.chdir(tmp_path)
+    from output.writer import save_report
+    path = save_report("!!!", "| Field | Value |", "# Report")
+    assert os.path.exists(path)
+    assert os.path.basename(path) != ".md"
+
+
 def test_save_report_default_is_markdown(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     from output.writer import save_report
