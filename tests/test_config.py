@@ -215,3 +215,36 @@ def test_orchestration_provider_configurable(tmp_path, monkeypatch):
     config = load_config("config.yaml")
     assert config.orchestration_provider == "ollama"
     assert config.synthesis_provider == "anthropic"
+
+
+# ── Editor agent config fields ────────────────────────────────────────────────
+
+def test_default_editor_provider_is_none():
+    config = Config()
+    assert config.editor_provider is None
+
+
+def test_default_anthropic_editor_model_is_none():
+    config = Config()
+    assert config.anthropic_editor_model is None
+
+
+def test_default_ollama_editor_model_is_none():
+    config = Config()
+    assert config.ollama_editor_model is None
+
+
+def test_editor_fields_load_from_config_dict(tmp_path, monkeypatch):
+    """Editor provider and model fields load correctly from config.yaml."""
+    monkeypatch.chdir(tmp_path)
+    config_data = {
+        "editor_provider": "anthropic",
+        "anthropic_editor_model": "claude-haiku-4-5-20251001",
+        "ollama_editor_model": "llama3.2",
+    }
+    with open(tmp_path / "config.yaml", "w") as f:
+        yaml.dump(config_data, f)
+    config = load_config("config.yaml")
+    assert config.editor_provider == "anthropic"
+    assert config.anthropic_editor_model == "claude-haiku-4-5-20251001"
+    assert config.ollama_editor_model == "llama3.2"

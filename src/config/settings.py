@@ -46,6 +46,14 @@ class Config:
     orchestration_provider: Optional[str] = None
     synthesis_provider: Optional[str] = None
 
+    # ── Editor agent ──────────────────────────────────────────────────────────
+
+    # Optional separate provider for the Editor agent; defaults to synthesis provider.
+    editor_provider: Optional[str] = None
+    # Per-provider model overrides for the Editor; defaults to synthesis model.
+    anthropic_editor_model: Optional[str] = None
+    ollama_editor_model: Optional[str] = None
+
     # ── Anthropic model tiering ───────────────────────────────────────────────
 
     # Haiku for orchestration (fast, cheap); Sonnet for synthesis (higher quality).

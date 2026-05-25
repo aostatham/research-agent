@@ -139,20 +139,12 @@ def _resolve_editor_llm(config, synth_llm: LLMClient) -> LLMClient:
     Returns synth_llm unless config.editor_provider is explicitly set,
     in which case a new client is built for that provider and model.
     """
-    editor_provider = getattr(config, "editor_provider", None)
-    if not editor_provider:
+    if not config.editor_provider:
         return synth_llm
 
-    synth_provider = getattr(config, "synthesis_provider", None) or getattr(config, "provider", "anthropic")
-    if editor_provider == "anthropic":
-        editor_model = (
-            getattr(config, "anthropic_editor_model", None)
-            or getattr(config, "anthropic_synthesis_model", "claude-sonnet-4-6")
-        )
+    if config.editor_provider == "anthropic":
+        editor_model = config.anthropic_editor_model or config.anthropic_synthesis_model
     else:
-        editor_model = (
-            getattr(config, "ollama_editor_model", None)
-            or getattr(config, "ollama_synthesis_model", "llama3.1")
-        )
+        editor_model = config.ollama_editor_model or config.ollama_synthesis_model
 
-    return build_client(editor_provider, editor_model, config)
+    return build_client(config.editor_provider, editor_model, config)

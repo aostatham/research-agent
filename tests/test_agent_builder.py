@@ -175,6 +175,15 @@ def test_build_agents_editor_uses_separate_llm_when_editor_provider_set(tmp_path
     mock_build.assert_called_once_with("anthropic", "claude-haiku-4-5-20251001", cfg)
 
 
+def test_build_agents_editor_uses_anthropic_editor_model_when_set(tmp_path):
+    """Editor uses anthropic_editor_model rather than synthesis model when explicitly configured."""
+    cfg = make_config(editor_provider="anthropic", anthropic_editor_model="claude-haiku-4-5-20251001")
+    with patch("agent.builder.build_client") as mock_build:
+        mock_build.return_value = make_mock_llm()
+        build_agents(cfg, make_mock_llm(), make_mock_llm(), prompt_dir=_make_prompt_dir(tmp_path))
+    mock_build.assert_called_once_with("anthropic", "claude-haiku-4-5-20251001", cfg)
+
+
 def test_build_agents_prompts_loaded_correctly(tmp_path):
     """Each agent's system_prompt matches its respective prompt file."""
     pool = build_agents(make_config(), make_mock_llm(), make_mock_llm(), prompt_dir=_make_prompt_dir(tmp_path))
