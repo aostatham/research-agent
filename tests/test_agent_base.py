@@ -106,6 +106,15 @@ def test_agent_chat_uses_own_system_prompt_not_kwarg():
     assert call_kwargs["system"] == "original prompt"
 
 
+def test_agent_chat_caller_system_kwarg_does_not_raise():
+    """Passing system= explicitly does not raise TypeError; agent system_prompt is used."""
+    llm = make_mock_llm()
+    agent = make_agent(llm=llm, system_prompt="original prompt")
+    agent.chat([{"role": "user", "content": "q"}], system="override attempt")
+    call_kwargs = llm.chat.call_args.kwargs
+    assert call_kwargs["system"] == "original prompt"
+
+
 # ── AgentPool frozen behaviour ────────────────────────────────────────────────
 
 def _make_pool():

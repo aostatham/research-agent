@@ -51,6 +51,7 @@ class Agent:
         Returns:
             LLMResponse from the underlying provider.
         """
+        kwargs.pop('system', None)
         return self.llm.chat(messages, system=self.system_prompt, **kwargs)
 
 
