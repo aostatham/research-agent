@@ -450,6 +450,9 @@ class Orchestrator:
               - results = {question: answer} dict (includes gap questions).
               - sources = {question: [{"title": str, "url": str}]} dict.
         """
+        # Reset here in addition to __init__ — a reused Orchestrator instance must not
+        # leak results across runs.
+        self._last_research_results = []
         questions = self.decompose(topic)
 
         print(f"\n🚀 Researching {len(questions)} questions "
