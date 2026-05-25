@@ -46,11 +46,11 @@ produces noticeably better reports than pure Ollama at ~$0.20 vs ~$0.80 per run.
 
 ### A006 — main.py refactor — thin entry point
 **Decision:** Extracted output formatting (formatter.py), file writing (writer.py),
-provenance (provenance.py stub), and LLM construction (builder.py) from main.py.
+provenance (provenance.py), and LLM construction (builder.py) from main.py.
 main.py is now a thin CLI entry point only.
-**Rationale:** main.py had six distinct responsibilities. As Phase C adds provenance
-generation, keeping all output logic in one file would become unmanageable. Clean
-module boundaries also make each concern independently testable.
+**Rationale:** main.py had six distinct responsibilities. Clean module boundaries
+make each concern independently testable and prevent provenance logic from
+being buried in the CLI entry point.
 **Date:** Pre-Phase C
 
 ---
@@ -183,7 +183,7 @@ that doesn't mutate evidence objects after creation.
 
 ### E002 — Confidence scoring approach
 **Decision:** Confidence scored per-claim based on source quality (government/academic
-> news > blog), corroboration (multiple sources), and recency.
+> news > general), corroboration (multiple sources), and recency.
 **Rationale:** Simple heuristic that doesn't require a separate LLM call per claim.
 Independent verification (separate model) is a Phase D item. Phase C confidence is
 a first-pass heuristic, not a verified score.
@@ -202,26 +202,17 @@ without the complexity of NLP claim extraction.
 academic journals, government bodies, news outlets, and added "reference" as a source
 type for Wikipedia. Implemented during Phase C Part 2.
 **Rationale:** The initial implementation classified any unrecognised domain as "blog",
-over-penalising legitimate academic and institutional sources. Observed on a nuclear
-fusion run where iaea.org and sciencedirect.com were classified as blog.
-**Superseded by:** E006 — the domain list approach requires ongoing maintenance as new
-domains appear. E006 replaces it with a layered hybrid approach.
+over-penalising legitimate academic and institutional sources.
+**Superseded by:** E006 — the domain list approach requires ongoing maintenance.
 **Date:** Phase C Part 2
 
 ### E005 — Contradiction detection deferred to Phase D
-**Decision:** Contradiction detection is not implemented in Phase C. It is deferred to
+**Decision:** Contradiction detection is not implemented in Phase C. Deferred to
 Phase D where the independent verifier agent handles it more robustly.
 **Rationale:** Shallow within-answer contradiction detection in Phase C would be replaced
-by the Phase D independent verifier anyway. Phase D's shared evidence store and
-independent verifier model are the right architectural home for contradiction detection.
-Implementing a weaker version now and replacing it in Phase D is waste.
+by the Phase D independent verifier anyway. Implementing a weaker version now and
+replacing it in Phase D is waste.
 **Date:** Phase C Part 2 scoping
-
-### E009 — Rename source type "blog" to "general"
-**Decision:** Rename the catch-all source type from "blog" to "general". "blog" implies a specific content format rather than an unclassified catch-all. "general" more accurately describes sources that didn't match any specific pattern. Confidence weight unchanged at +0.00. Pure rename — no logic change.
-
-### E008 — Source taxonomy expansion: blog is too broad
-**Decision:** The current "blog" classification catches institutional sources, industry sites, think tanks, videos, and forums alongside actual blogs. This undermines confidence scoring which weights source types. Recommended expansion: add institutional, industry, video, forum as distinct types. Implement as part of Phase C classifier refinement or Phase D evidence quality work.
 
 ### E006 — Source type classifier refactor: hybrid pattern + LLM fallback (supersedes E004)
 **Decision:** classify_source_type() uses five classification layers in order:
@@ -238,11 +229,186 @@ Version-controlled, no new dependencies, consistent with project config pattern.
 **Maintenance trigger for layer 3:** Domain appears in 3+ research runs and is
 consistently misclassified. Never add speculatively.
 **Phase F roadmap item:** Expose config UI for managing custom domain additions.
-**Rationale:** The flat domain list (E004) requires constant maintenance as new domains
-appear. The layered approach separates stable facts (TLDs) from institutional exceptions
-(layer 3) from user-specific overrides (config). LLM fallback handles novel domains
-without hard-coding them.
-**Date:** Phase C classifier refactor (post Part 2)
+**Date:** Phase C classifier refactor
+
+### E007 — Source deduplication in claim extraction
+**Decision:** Sources are deduplicated by URL within each claim in
+extract_claims_from_answer(). Each claim receives a deduped source list.
+**Rationale:** Without deduplication, sources from a research question were copied
+to every atomic claim extracted from that answer, inflating source counts and
+skewing classification statistics.
+**Note:** Full per-claim source attribution (only sources supporting that specific
+claim) is a Phase D item requiring LLM source attribution during extraction.
+**Date:** Phase C post-Part 2 fix
+
+### E008 — Source taxonomy expansion: nine types replacing general catch-all
+**Decision:** Expanded from five types to nine: government, academic, news, reference,
+institutional, industry, video, forum, general.
+institutional covers think tanks and industry associations (weforum.org, rand.org,
+world-nuclear.org). Video covers YouTube/Vimeo. Forum covers Reddit/Quora.
+Industry has no hardcoded list — too numerous and volatile, left as general catch-all
+with config.yaml override available.
+**Confidence scoring weights:** institutional +0.08, industry +0.02, video +0.01,
+forum +0.00, general +0.00.
+**Date:** Phase C classifier refinement
+
+### E009 — Rename source type "blog" to "general"
+**Decision:** Renamed the catch-all source type from "blog" to "general" throughout
+the codebase.
+**Rationale:** "blog" implies a specific content format rather than an unclassified
+catch-all. "general" more accurately describes sources that didn't match any specific
+pattern. Confidence weight unchanged at +0.00. Pure rename — no logic change.
+**Date:** Phase C classifier refinement
+
+---
+
+## Phase D — Multi-Agent Architecture
+
+### D001 — Parallel workers: provider-specific safe ceiling
+**Decision:** asyncio parallel research workers confirmed working. Ollama serialises
+LLM requests internally — concurrent requests queue and hit the 60s read timeout at
+max_workers=4. Safe ceiling: max_workers=2 for Ollama, max_workers=4+ for Anthropic.
+Default changed to 2.
+**Rationale:** Confirmed by timing tests: 4 questions in 58.4s with max_workers=4
+vs ~75s sequential. Ollama crash at gap phase with max_workers=4 confirmed the ceiling.
+Phase G will auto-detect safe ceiling based on configured provider.
+**Date:** Phase D Part 1
+
+### D002 — asyncio.run() wrapper pattern
+**Decision:** Orchestrator must not call asyncio.run() directly in run(). Pattern:
+run_async() is the core async implementation. run() is a synchronous wrapper for
+CLI use only calling asyncio.run(self.run_async(topic)). All async contexts
+(FastAPI Phase I, async tests) call run_async() directly.
+**Rationale:** asyncio.run() raises RuntimeError if called from inside an already-
+running event loop. Identified by Opus 4.7 codebase review as blocking Phase I.
+**Date:** Phase D Part 1 / Opus bug fix
+
+### D003 — Agent abstraction in src/agent/base.py
+**Decision:** Agent dataclass placed in src/agent/base.py, not src/llm/base.py.
+LLMClient knows how to talk to a model — it is infrastructure. Agent knows what it
+is and what it's for — it is a pipeline concept that wraps LLMClient with identity,
+persona, system prompt, and tool set.
+**Rationale:** Clean separation between llm/ layer (provider abstraction) and agent/
+layer (pipeline abstraction). Agent is base behaviour for the agent layer, not the
+LLM layer.
+**Date:** Phase D Part 2 design
+
+### D004 — Agent construction in src/agent/builder.py
+**Decision:** Agent factory functions build_agent() and build_agents() placed in
+src/agent/builder.py, mirroring src/llm/builder.py pattern. main.py calls both
+builders at startup and passes results into the pipeline.
+**Rationale:** Agent layer owns its construction logic. main.py stays thin.
+Consistent with the existing LLM builder pattern.
+**Date:** Phase D Part 2 design
+
+### D005 — AgentPool typed container replaces dict
+**Decision:** Typed AgentPool dataclass (frozen=True) replaces dict[str, Agent] for
+passing agents to Orchestrator. AgentPool fields: planner, researcher, verifier, editor.
+**Rationale:** dict[str, Agent] produces KeyError at runtime for missing agents and
+lacks IDE support. AgentPool is type-checked, IDE-friendly, and refactor-safe.
+Grows by field rather than expanding argument lists. Dynamic agent spawning (Phase G)
+will require a registry — defer that change to that phase.
+**Date:** Phase D Part 2 design
+
+### D006 — Agent dataclass fields
+**Decision:** Agent dataclass is frozen=True with fields:
+  name: str                          — identifier e.g. "planner", "verifier"
+  role: str                          — human-readable description
+  description: str                   — for future dynamic handoff routing
+  llm: LLMClient                     — underlying provider
+  system_prompt: str                 — persona and instructions (native parameter)
+  tools: tuple = ()                  — immutable per-agent tool subset
+  temperature: Optional[float] = None
+  max_iterations: int = 5            — per-agent loop budget, not global
+  output_schema: Optional[type] = None  — return contract for validation
+**Rationale:** output_schema and max_iterations added on Opus 4.7 recommendation —
+each agent needs its own output contract and loop budget. description added for
+future dynamic handoff at near-zero cost. frozen=True makes Agent hashable and
+prevents runtime mutation. tools is tuple not list to avoid shared-reference bugs.
+**Date:** Phase D Part 2 design
+
+### D007 — System prompt as native provider parameter
+**Decision:** Agent.chat() passes system_prompt as the native system parameter on
+each provider, not prepended to the messages list.
+Anthropic: top-level system= parameter on client.messages.create().
+Ollama: prepend {"role": "system", "content": system_prompt} to messages list
+(idiomatic for Ollama /api/chat).
+LLMClient.chat() gains an optional system: Optional[str] = None parameter.
+**Rationale:** Anthropic ignores role: system inside the messages list and emits a
+warning. Native parameter is the correct approach. Provider-specific assembly
+handled by a _build_messages(messages, system) helper on each client.
+**Date:** Phase D Part 2 design
+
+### D008 — ResearchResult replaces (answer, sources) tuple
+**Decision:** Researcher returns a ResearchResult dataclass containing:
+  question: str
+  answer: str
+  claims: list[EvidenceClaim]
+  sources: list[EvidenceSource]
+  message_history: list[dict]
+  verified: bool = False
+**Rationale:** Unblocks per-claim source attribution (E007). Provides Verifier
+structured input without re-parsing prose. Preserves researcher message history
+so Verifier can see what the researcher considered before concluding.
+**Date:** Phase D Part 2 design
+
+### D009 — Researcher Agent owns its loop
+**Decision:** _research_question_sync() loop logic moves into the Researcher Agent,
+not wrapped by it. Orchestrator becomes a thin coordinator. The Agent owns its loop
+semantics, budget (max_iterations), and fallback behaviour.
+**Rationale:** Consistent with 2026 agent patterns where agents are autonomous within
+their scope. "Wrapping" _research_question_sync() would make Researcher a config
+bundle, not a real agent.
+**Date:** Phase D Part 2 design
+
+### D010 — Verifier has web_search, runs per-Researcher in parallel
+**Decision:** Verifier runs after each Researcher completes (not after all research).
+Verifier has web_search access. Targets top 3 suspicious claims per heuristic:
+contains a number, contains a named entity not in the original question, uses
+absolute terms (first, only, always, never). Cheap first pass flags; optional
+expensive second pass verifies. Runs in parallel with subsequent research questions.
+**Rationale:** A Verifier with no tools is self-critique by another name — Princeton
+NLP findings confirm same-model maker-checker rarely catches new errors. Per-Researcher
+parallelism provides early focused verification without adding serial latency.
+**Date:** Phase D Part 2 design
+
+### D011 — Editor Agent scope is coherence only, configurable model
+**Decision:** Three editor types identified:
+  1. Mechanical — clean_report() post-process function in formatter.py, no LLM.
+  2. Coherence — Editor Agent, Phase D scope.
+  3. Substantive restructuring — Analyst Agent, Phase E scope (see D013).
+Editor Agent targets type 2 only. System prompt biased heavily toward no edit:
+"only edit when a specific identifiable defect exists; if in doubt, leave it alone;
+never add new information."
+Model: configurable via editor_provider / editor_model, defaults to synthesis model.
+At Sonnet capability, over-editing is a bigger risk than under-editing.
+**Rationale:** Clear separation prevents drift. Mechanical cleanup is a function.
+Coherence editing needs synthesis-equivalent capability. Substantive restructuring
+needs evidence graph access (Phase E).
+**Date:** Phase D Part 2 design
+
+### D012 — Editor model configurable, defaults to Synthesiser model
+**Decision:** Editor inherits synthesis provider and model by default. Configurable
+via editor_provider, anthropic_editor_model, ollama_editor_model — same three-layer
+resolution as synthesis tier.
+Resolution:
+  editor_provider = config.editor_provider or synth_provider
+  editor_model = config.anthropic_editor_model or synth_model  (if anthropic)
+              or config.ollama_editor_model or synth_model     (if ollama)
+**Rationale:** Default behaviour (Editor = Synthesiser model) is correct for 90% of
+users. Power users can set a cheaper mechanical editor (Haiku/llama3.1) or a stronger
+substantive editor (Opus) without changing the pipeline.
+**Date:** Phase D Part 2 design
+
+### D013 — Analyst Agent deferred to Phase E
+**Decision:** Type 3 editing (substantive restructuring) requires knowledge graph
+access to be meaningful. Implemented as a distinct Analyst Agent in Phase E, not
+a configuration of the Editor Agent.
+**Rationale:** Analyst reads claim confidence, coverage metrics, and evidence
+relationships to decide what to restructure, drop, or strengthen. This requires
+Phase E's Kuzu knowledge store. The Editor Agent (Phase D) targets prose coherence
+only. Analyst Agent (Phase E) targets evidence-informed restructuring.
+**Date:** Phase D Part 2 design
 
 ---
 
@@ -252,8 +418,7 @@ without hard-coding them.
 **Decision:** Integration tests default to Ollama + Tavily. Anthropic-specific tests
 are marked @pytest.mark.anthropic_integration and excluded from default integration runs.
 **Rationale:** Running Anthropic tests costs money and hits rate limits. The pipeline
-behaviour being tested (does it produce a report, does the index update) is provider-
-agnostic. Anthropic-specific behaviour (citation format, tool call structure) warrants
+behaviour being tested is provider-agnostic. Anthropic-specific behaviour warrants
 its own explicitly-run test suite.
 **Date:** test_integration_smoke.py rewrite
 
@@ -261,17 +426,15 @@ its own explicitly-run test suite.
 **Decision:** Always patch at the module where the name is looked up.
 patch("llm.builder.AnthropicClient") not patch("llm.anthropic_client.AnthropicClient")
 **Rationale:** Python's unittest.mock patches the name in the namespace where it is used,
-not where it is defined. Patching at the definition site has no effect on already-imported
-references. This is a common source of tests that appear to pass but don't actually mock
-anything.
+not where it is defined. Patching at the definition site has no effect on
+already-imported references.
 **Date:** Established during Phase A testing
 
 ### T003 — Growing test count as commit gate
 **Decision:** pytest tests/ -m "not integration" -v must pass all existing tests before
 every commit. Count grows with each phase — treat any reduction as a regression signal.
-Started at 199, currently 221+.
-**Rationale:** Prevents regressions from accumulating. Each phase adds tests alongside
-code so the count grows over time.
+Started at 199, currently 307+.
+**Rationale:** Prevents regressions from accumulating.
 **Date:** Ongoing
 
 ---
@@ -283,26 +446,22 @@ code so the count grows over time.
 synthesis-forcing message instead of executing the search again.
 **Rationale:** Smaller models (llama3.1) sometimes loop on the same query when they
 can't synthesise from the results. Without detection, this exhausts max_iterations
-and produces a poor fallback. Forcing synthesis earlier produces a better answer
-from the accumulated results.
+and produces a poor fallback.
 **Date:** Phase A debugging
 
 ### P002 — Fallback synthesis on max iterations
 **Decision:** If a question hits max_iterations with accumulated results, attempt
 a standalone synthesis call rather than returning a failure string.
 **Rationale:** A question that searched multiple times likely has useful content
-accumulated even if no single answer was found. Fallback synthesis rescues these
-questions and produces shorter but usable answers. Pure failure messages degrade
-the final report significantly.
+accumulated even if no clean answer was found. Fallback synthesis rescues these
+questions and produces shorter but usable answers.
 **Date:** Phase A
 
 ### P003 — Comparative questions are harder for smaller models
 **Decision:** Documented as a known issue. Phase G will add prompt variants that
 rephrase comparative questions into two simpler questions for weaker models.
 **Rationale:** "How does X compare to Y" requires holding two concepts simultaneously.
-Llama3.1 hits max iterations on these more often than on factual questions. Splitting
-into "What are the strengths of X" and "What are the strengths of Y" produces better
-results and lets the synthesiser do the comparison.
+Llama3.1 hits max iterations on these more often than on factual questions.
 **Date:** Phase A observation
 
 ---
@@ -315,28 +474,36 @@ Claude Code. Architectural decisions, design discussions, and quality assessment
 stay in this conversation.
 **Rationale:** Claude Code is better at mechanical multi-file changes with immediate
 feedback loops. This conversation is better at holding architectural context and
-making tradeoffs. Mixing the two leads to architectural drift.
+making tradeoffs.
 **Date:** Ongoing
 
 ### M002 — Roadmap as living document
 **Decision:** Roadmap is regenerated after every significant architectural decision,
 not just at phase boundaries.
-**Rationale:** A static roadmap diverges from reality quickly. Keeping it current
-ensures the next phase prompt reflects actual project state rather than original plans.
+**Rationale:** A static roadmap diverges from reality quickly.
 **Date:** Ongoing
 
 ### M003 — CLAUDE.md as Claude Code briefing
 **Decision:** CLAUDE.md in project root contains architecture, commands, conventions,
 and current phase context for Claude Code.
 **Rationale:** Claude Code starts each session without conversation context. CLAUDE.md
-is read automatically and provides the persistent briefing that would otherwise need
-to be repeated every session.
+is read automatically and provides the persistent briefing.
 **Date:** Pre-Phase C
 
 ### M004 — Decision log maintained throughout development
 **Decision:** DECISIONS.md records all significant architectural and design decisions
-with rationale. Updated whenever a significant decision is made, not just at phase end.
+with rationale. Updated whenever a significant decision is made.
 **Rationale:** Decisions made mid-session are easily forgotten. The log provides
-context for future contributors (human or AI) and prevents re-litigating settled
-decisions. Also useful for onboarding Claude Code to project history.
+context for future contributors and prevents re-litigating settled decisions.
 **Date:** Mid-project retrospective
+
+### M005 — Strategic goal: build a thing people use while learning
+**Decision:** Project goal confirmed as building a genuinely usable tool, not purely
+a learning exercise. Roadmap rebalanced: HTML provenance viewer and read_url tool
+moved up to immediately after Phase D Part 2. Dockerfile/pipx packaging added before
+Phase H. One concrete user story (journalist/analyst/paralegal workflow) to be
+identified to guide Phase D Part 2 and viewer design.
+**Rationale:** The provenance pipeline is the primary differentiator — making it
+visible to evaluators is the highest priority user-facing work. Generic "research"
+is what everyone else does; "auditable research" is the defensible position.
+**Date:** Mid-project strategic review
