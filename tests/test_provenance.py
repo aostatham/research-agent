@@ -1,6 +1,6 @@
 """
 Tests for output/provenance.py — classify_source_type(), build_quality_metrics(),
-write_provenance_file(), and build_placeholder_claims().
+write_provenance_file(), extract_claims_from_answer(), build_claims_from_results().
 
 Verifies:
   - classify_source_type(): government (.gov/.mil), academic (arxiv etc),
@@ -9,8 +9,8 @@ Verifies:
     mean confidence, contradiction count
   - write_provenance_file(): file creation, valid JSON output, correct
     .provenance.json path, quality_metrics embedded in output
-  - build_placeholder_claims(): one claim per question, correct defaults
-    (confidence=0.5, unverified, qualitative, report_line=None)
+  - extract_claims_from_answer(): verified=True sets verification_status="verified";
+    verified=False sets verification_status="unverified"
 
 All tests are unit tests — no external API calls.
 """
@@ -199,58 +199,44 @@ def test_write_provenance_file_html_path(tmp_path, monkeypatch):
     assert prov_path == "output/nuclear_fusion.provenance.json"
 
 
-# ── build_placeholder_claims() tests ─────────────────────────────────────────
+# ── extract_claims_from_answer() — verified propagation ──────────────────────
 
-def test_build_placeholder_claims_count():
-    """One claim is created per question."""
-    from output.provenance import build_placeholder_claims
-    results = {"Q1": "Answer 1", "Q2": "Answer 2", "Q3": "Answer 3"}
-    claims = build_placeholder_claims(results, {})
-    assert len(claims) == 3
-
-
-def test_build_placeholder_claims_defaults():
-    """Placeholder claims have correct default values."""
-    from output.provenance import build_placeholder_claims
-    results = {"What is fusion?": "Fusion combines nuclei."}
-    claims = build_placeholder_claims(results, {})
-    c = claims[0]
-    assert c["confidence"] == 0.5
-    assert c["verification_status"] == "unverified"
-    assert c["evidence_type"] == "qualitative"
-    assert c["report_line"] is None
+def test_extract_claims_verified_true_sets_status_verified():
+    """extract_claims_from_answer(verified=True) produces claims with verification_status='verified'."""
+    from output.provenance import extract_claims_from_answer
+    llm = _make_mock_llm('["Fusion is hot.", "Plasma is ionised gas."]')
+    claims = extract_claims_from_answer("What is fusion?", "Fusion is hot.", [], llm, verified=True)
+    assert all(c["verification_status"] == "verified" for c in claims)
 
 
-def test_build_placeholder_claims_ids_sequential():
-    """Claims are numbered sequentially from 1."""
-    from output.provenance import build_placeholder_claims
-    results = {"Q1": "A1", "Q2": "A2"}
-    claims = build_placeholder_claims(results, {})
-    assert claims[0]["id"] == 1
-    assert claims[1]["id"] == 2
+def test_extract_claims_verified_false_sets_status_unverified():
+    """extract_claims_from_answer(verified=False) produces claims with verification_status='unverified'."""
+    from output.provenance import extract_claims_from_answer
+    llm = _make_mock_llm('["Fusion is hot.", "Plasma is ionised gas."]')
+    claims = extract_claims_from_answer("What is fusion?", "Fusion is hot.", [], llm, verified=False)
+    assert all(c["verification_status"] == "unverified" for c in claims)
 
 
-def test_build_placeholder_claims_sources_attached():
-    """Sources from the sources dict are attached to the corresponding claim."""
-    from output.provenance import build_placeholder_claims
-    results = {"What is fusion?": "Answer."}
-    sources = {
-        "What is fusion?": [
-            {"title": "Fusion Basics", "url": "https://example.com/fusion"}
-        ]
-    }
-    claims = build_placeholder_claims(results, sources)
-    assert len(claims[0]["sources"]) == 1
-    assert claims[0]["source"] == "https://example.com/fusion"
+def test_extract_claims_default_verified_is_false():
+    """extract_claims_from_answer() defaults to verified=False (unverified status)."""
+    from output.provenance import extract_claims_from_answer
+    llm = _make_mock_llm('["Fact one."]')
+    claims = extract_claims_from_answer("Q?", "Answer.", [], llm)
+    assert claims[0]["verification_status"] == "unverified"
 
 
-def test_build_placeholder_claims_empty_sources():
-    """Claims with no sources have an empty sources list and empty primary URL."""
-    from output.provenance import build_placeholder_claims
-    results = {"Q1": "Answer."}
-    claims = build_placeholder_claims(results, {})
-    assert claims[0]["sources"] == []
-    assert claims[0]["source"] == ""
+def test_build_quality_metrics_counts_verified_from_mixed_statuses():
+    """build_quality_metrics() counts verified_claims correctly from mixed verification statuses."""
+    from output.provenance import build_quality_metrics
+    claims = [
+        {"verification_status": "verified", "confidence": 0.9, "contradictions": []},
+        {"verification_status": "verified", "confidence": 0.8, "contradictions": []},
+        {"verification_status": "unverified", "confidence": 0.5, "contradictions": []},
+    ]
+    metrics = build_quality_metrics(claims)
+    assert metrics["verified_claims"] == 2
+    assert metrics["unverified_claims"] == 1
+    assert metrics["coverage"] == pytest.approx(2 / 3)
 
 
 # ── classify_source_type() — expanded domains ────────────────────────────────

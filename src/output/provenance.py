@@ -12,7 +12,6 @@ Public API:
   write_provenance_file()    — write .provenance.json next to the report
   build_quality_metrics()    — compute aggregate metrics from a claims list
   classify_source_type()     — classify a URL into government/academic/news/general
-  build_placeholder_claims() — build minimal claims from raw results/sources
 """
 
 import json
@@ -344,7 +343,8 @@ def extract_claims_from_answer(
     sources: list,
     llm_client,
     claim_id_start: int = 1,
-    custom_domains: dict = None
+    custom_domains: dict = None,
+    verified: bool = False
 ) -> list:
     """
     Use an LLM to extract atomic claims from a research answer.
@@ -362,6 +362,8 @@ def extract_claims_from_answer(
         llm_client:     LLMClient instance for extraction
         claim_id_start: Starting ID for claim numbering
         custom_domains: Optional dict from config source_classification
+        verified:       When True, sets verification_status="verified" on all
+                        emitted claims; defaults to "unverified"
 
     Returns:
         List of EvidenceClaim TypedDicts
@@ -425,7 +427,7 @@ def extract_claims_from_answer(
             confidence=score_confidence(deduped_sources),
             contradictions=[],
             evidence_type="qualitative",
-            verification_status="unverified",
+            verification_status="verified" if verified else "unverified",
             timestamp=now,
             sources=deduped_sources,
             report_line=None,
@@ -466,6 +468,7 @@ def build_claims_from_results(
             llm_client=llm_client,
             claim_id_start=next_id,
             custom_domains=custom_domains,
+            verified=rr.verified,
         )
         all_claims.extend(new_claims)
         next_id += len(new_claims)
@@ -525,55 +528,3 @@ def annotate_report_lines(report: str, claims: list) -> tuple:
     return annotated_prose, claims
 
 
-def build_placeholder_claims(results: dict, sources: dict) -> list:
-    """
-    Build minimal EvidenceClaim objects from existing results and sources.
-
-    Used in Part 1 before full claim extraction is implemented.
-    Each question/answer pair becomes one placeholder claim.
-
-    Defaults:
-      confidence          = 0.5  (unscored)
-      verification_status = "unverified"
-      evidence_type       = "qualitative"
-      report_line         = None
-
-    Args:
-        results: {question: answer} dict from orchestrator.run()
-        sources: {question: [{"title": str, "url": str}]} from orchestrator.run()
-
-    Returns:
-        List of EvidenceClaim dicts (one per question)
-    """
-    now = datetime.now(timezone.utc).isoformat()
-    claims = []
-
-    for i, (question, answer) in enumerate(results.items(), start=1):
-        question_sources = sources.get(question, [])
-        primary_url = question_sources[0]["url"] if question_sources else ""
-
-        evidence_sources = [
-            EvidenceSource(
-                title=s.get("title", ""),
-                url=s.get("url", ""),
-                source_type=classify_source_type(s.get("url", "")),
-                retrieved=now,
-            )
-            for s in question_sources
-        ]
-
-        claim = EvidenceClaim(
-            id=i,
-            claim=answer,
-            source=primary_url,
-            confidence=0.5,
-            contradictions=[],
-            evidence_type="qualitative",
-            verification_status="unverified",
-            timestamp=now,
-            sources=evidence_sources,
-            report_line=None,
-        )
-        claims.append(claim)
-
-    return claims
