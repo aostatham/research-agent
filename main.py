@@ -217,7 +217,7 @@ def main():
     prov_path = None
     if config.provenance in ("file", "graph"):
         claims = build_claims_from_results(
-            results, sources, synth_llm,
+            orchestrator._last_research_results, synth_llm,
             custom_domains=config.source_classification,
         )
         if config.output_mode != "data":

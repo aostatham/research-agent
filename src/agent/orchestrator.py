@@ -31,6 +31,7 @@ from typing import Optional
 from llm.base import LLMClient
 from agent.tools import ALL_TOOLS, execute_tool_with_sources
 from config import Config
+from evidence.schema import ResearchResult
 
 
 DECOMPOSE_PROMPT = """You are a research planning assistant.
@@ -96,6 +97,7 @@ class Orchestrator:
         self.llm = llm
         self.config = config or Config()
         self.agent_pool = agent_pool
+        self._last_research_results: list = []
 
     def decompose(self, topic: str) -> list[str]:
         """
@@ -144,29 +146,30 @@ class Orchestrator:
                     f"What are the key challenges in {topic}?",
                     f"Who are the key players in {topic}?"]
 
-    def _research_question_sync(self, question: str) -> tuple[str, list[dict]]:
+    def _research_question_sync(self, question: str) -> ResearchResult:
         """
         Run the agentic research loop for a single sub-question (synchronous).
 
-        The loop runs until:
-          - The LLM returns a text response (answer found), or
-          - max_iterations is reached (fallback synthesis attempted), or
-          - A repeated query is detected and synthesis is forced.
-
-        Message history is built manually as a list of role/content dicts.
-        After each search, a forceful "do not call any tools" instruction is
-        appended so smaller models don't loop indefinitely.
+        When agent_pool is set, delegates entirely to the Researcher Agent's
+        research() function (D009). When agent_pool is None (tests without a
+        pool, or legacy call sites), runs the equivalent loop inline.
 
         Args:
             question: The sub-question to research.
 
         Returns:
-            Tuple of (answer, sources) where:
-              - answer is the synthesised text answer string.
-              - sources is a deduplicated list of {"title", "url"} dicts.
-            Returns a failure string and empty sources only if max_iterations
-            is reached with no accumulated search results.
+            ResearchResult with answer, sources, and message_history.
         """
+        if self.agent_pool is not None:
+            from agent.researcher import research
+            return research(
+                self.agent_pool.researcher,
+                question,
+                max_tokens=self.config.max_tokens_research,
+            )
+
+        # ── Fallback inline loop (no agent_pool) ─────────────────────────────
+        # Preserves identical behaviour for tests and legacy call sites.
         print(f"\n🔍 Researching: '{question}'")
         start = time.time()
 
@@ -188,8 +191,6 @@ class Orchestrator:
                 current_query = response.tool_input.get("query")
 
                 if current_query in seen_queries:
-                    # Query already executed — catches both consecutive (A→A) and
-                    # oscillating (A→B→A) patterns that would waste iterations.
                     print(f"  ⚠️  Repeated query detected ('{current_query}'), "
                           f"prompting synthesis...")
                     messages.append({
@@ -207,18 +208,14 @@ class Orchestrator:
                     })
                     continue
 
-                # New query — execute the actual search
                 print(f"  🌐 Searching: '{current_query}'")
                 tool_result, sources = execute_tool_with_sources(
                     response.tool_name, response.tool_input
                 )
                 all_sources.extend(sources)
                 seen_queries.add(current_query)
-                # Save for fallback synthesis in case max_iterations is reached
                 accumulated_results.append(f"Search: '{current_query}'\n{tool_result}")
 
-                # Build assistant turn first (required by the message format),
-                # then inject results as a user turn with a synthesis instruction.
                 messages.append({
                     "role": "assistant",
                     "content": (
@@ -243,9 +240,6 @@ class Orchestrator:
             elif response.type == "text":
                 content = response.content.strip()
                 if content.startswith("[Calling") or content.startswith("I'll search"):
-                    # Some models (notably llama3.1) return a literal tool-call
-                    # representation as text instead of a proper tool_call response.
-                    # Detect this and redirect the model toward answering directly.
                     print(f"  ⚠️  Detected tool call string, forcing summary...")
                     messages.append({"role": "assistant", "content": content})
                     messages.append({
@@ -257,7 +251,6 @@ class Orchestrator:
                     })
                     continue
 
-                # Genuine text answer — deduplicate sources and return
                 elapsed = time.time() - start
                 print(f"  ✅ Answer found ({len(content)} chars, {elapsed:.1f}s)")
                 seen = set()
@@ -266,11 +259,11 @@ class Orchestrator:
                     if s["url"] not in seen:
                         seen.add(s["url"])
                         unique_sources.append(s)
-                return content, unique_sources
+                return ResearchResult(
+                    question=question, answer=content,
+                    sources=unique_sources, message_history=messages,
+                )
 
-        # Max iterations reached — attempt fallback synthesis from accumulated results.
-        # This rescues questions where the model kept searching without answering,
-        # producing a shorter but usable answer from whatever was gathered.
         if accumulated_results:
             print(f"  ⚠️  Max iterations reached, attempting fallback synthesis...")
             combined = "\n\n".join(accumulated_results)
@@ -295,16 +288,22 @@ class Orchestrator:
                     if s["url"] not in seen:
                         seen.add(s["url"])
                         unique_sources.append(s)
-                return fallback_response.content, unique_sources
+                return ResearchResult(
+                    question=question, answer=fallback_response.content,
+                    sources=unique_sources, message_history=messages,
+                )
 
-        # No accumulated results at all — genuine research failure
         elapsed = time.time() - start
         print(f"  ❌ Research failed for: '{question}' ({elapsed:.1f}s)")
-        return f"Unable to retrieve information on: {question}", []
+        return ResearchResult(
+            question=question,
+            answer=f"Unable to retrieve information on: {question}",
+            sources=[], message_history=messages,
+        )
 
     async def research_question_async(
         self, question: str, semaphore: asyncio.Semaphore
-    ) -> tuple[str, list[dict]]:
+    ) -> ResearchResult:
         """
         Async wrapper around _research_question_sync().
 
@@ -317,7 +316,7 @@ class Orchestrator:
             semaphore: Shared semaphore limiting concurrent workers.
 
         Returns:
-            Same (answer, sources) tuple as _research_question_sync().
+            Same ResearchResult as _research_question_sync().
         """
         async with semaphore:
             return await asyncio.to_thread(self._research_question_sync, question)
@@ -332,6 +331,10 @@ class Orchestrator:
         inside research_question_async() limits actual concurrency.  Question
         ordering in the returned dicts matches the input list.
 
+        Sets self._last_research_results to the list of ResearchResult objects
+        produced by this call (overwritten on each call; run_async() accumulates
+        across initial + gap rounds into a final self._last_research_results).
+
         Args:
             questions: List of sub-question strings.
 
@@ -340,12 +343,14 @@ class Orchestrator:
         """
         semaphore = asyncio.Semaphore(self.config.max_workers)
         tasks = [self.research_question_async(q, semaphore) for q in questions]
-        answers = await asyncio.gather(*tasks)
+        raw_results = await asyncio.gather(*tasks)
         results: dict = {}
         sources: dict = {}
-        for question, (answer, question_sources) in zip(questions, answers):
-            results[question] = answer
-            sources[question] = question_sources
+        self._last_research_results = []
+        for question, rr in zip(questions, raw_results):
+            results[question] = rr.answer
+            sources[question] = rr.sources
+            self._last_research_results.append(rr)
         return results, sources
 
     def reflect(self, topic: str, results: dict) -> tuple[bool, list[str]]:
@@ -439,6 +444,7 @@ class Orchestrator:
         print(f"\n🚀 Researching {len(questions)} questions "
               f"(workers: {self.config.max_workers})...")
         results, sources = await self.research_all_async(questions)
+        all_rr = list(self._last_research_results)
 
         sufficient, missing = self.reflect(topic, results)
 
@@ -446,9 +452,11 @@ class Orchestrator:
             print(f"\n🔄 Researching {len(missing)} gaps "
                   f"(workers: {self.config.max_workers})...")
             gap_results, gap_sources = await self.research_all_async(missing)
+            all_rr.extend(self._last_research_results)
             results.update(gap_results)
             sources.update(gap_sources)
 
+        self._last_research_results = all_rr
         print(f"\n✅ Research complete — {len(results)} questions answered")
         return results, sources
 

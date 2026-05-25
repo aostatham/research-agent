@@ -21,6 +21,7 @@ import asyncio
 import pytest
 from unittest.mock import MagicMock, patch
 from agent.orchestrator import Orchestrator
+from evidence.schema import ResearchResult
 from llm.base import LLMResponse
 from config import Config
 
@@ -133,9 +134,9 @@ def test_research_question_returns_text_directly(orchestrator, mock_llm):
     """If the first response is text, it is returned immediately."""
     mock_llm.chat.return_value = make_text_response("Fusion is the process of combining atoms.")
     with patch("agent.orchestrator.execute_tool_with_sources", return_value=("results", [])):
-        result, sources = orchestrator._research_question_sync("What is fusion?")
-    assert result == "Fusion is the process of combining atoms."
-    assert isinstance(sources, list)
+        rr = orchestrator._research_question_sync("What is fusion?")
+    assert rr.answer == "Fusion is the process of combining atoms."
+    assert isinstance(rr.sources, list)
 
 
 def test_research_question_returns_sources(orchestrator, mock_llm):
@@ -147,8 +148,8 @@ def test_research_question_returns_sources(orchestrator, mock_llm):
     mock_sources = [{"title": "Fusion News", "url": "https://example.com/fusion"}]
     with patch("agent.orchestrator.execute_tool_with_sources",
                return_value=("results", mock_sources)):
-        result, sources = orchestrator._research_question_sync("What is fusion?")
-    assert sources == mock_sources
+        rr = orchestrator._research_question_sync("What is fusion?")
+    assert rr.sources == mock_sources
 
 
 def test_research_question_handles_tool_call_then_text(orchestrator, mock_llm):
@@ -159,8 +160,8 @@ def test_research_question_handles_tool_call_then_text(orchestrator, mock_llm):
     ]
     with patch("agent.orchestrator.execute_tool_with_sources",
                return_value=("search results here", [])):
-        result, sources = orchestrator._research_question_sync("What is nuclear fusion?")
-    assert result == "Fusion combines light atomic nuclei."
+        rr = orchestrator._research_question_sync("What is nuclear fusion?")
+    assert rr.answer == "Fusion combines light atomic nuclei."
     assert mock_llm.chat.call_count == 2
 
 
@@ -214,8 +215,8 @@ def test_research_question_detects_tool_call_string_and_retries(orchestrator, mo
         LLMResponse(type="text", content="Fusion is the process of combining atomic nuclei.")
     ]
     with patch("agent.orchestrator.execute_tool_with_sources", return_value=("results", [])):
-        result, sources = orchestrator._research_question_sync("What is fusion?")
-    assert result == "Fusion is the process of combining atomic nuclei."
+        rr = orchestrator._research_question_sync("What is fusion?")
+    assert rr.answer == "Fusion is the process of combining atomic nuclei."
     assert mock_llm.chat.call_count == 2
 
 
@@ -252,8 +253,8 @@ def test_research_question_deduplicates_sources(orchestrator, mock_llm):
     duplicate_sources = [{"title": "Same Page", "url": "https://example.com"}]
     with patch("agent.orchestrator.execute_tool_with_sources",
                return_value=("results", duplicate_sources)):
-        result, sources = orchestrator._research_question_sync("What is fusion?")
-    urls = [s["url"] for s in sources]
+        rr = orchestrator._research_question_sync("What is fusion?")
+    urls = [s["url"] for s in rr.sources]
     assert urls.count("https://example.com") == 1
 
 
@@ -261,8 +262,8 @@ def test_research_question_exits_loop_at_max_iterations(orchestrator, mock_llm):
     """Loop exits at max_iterations; fallback synthesis attempted; returns 'unable to retrieve'."""
     mock_llm.chat.return_value = make_tool_response("web_search", {"query": "fusion"})
     with patch("agent.orchestrator.execute_tool_with_sources", return_value=("results", [])):
-        result, sources = orchestrator._research_question_sync("What is fusion?")
-    assert "unable to retrieve" in result.lower()
+        rr = orchestrator._research_question_sync("What is fusion?")
+    assert "unable to retrieve" in rr.answer.lower()
     assert mock_llm.chat.call_count == 6
 
 
@@ -275,8 +276,8 @@ def test_research_question_handles_repeated_query(orchestrator, mock_llm):
     ]
     with patch("agent.orchestrator.execute_tool_with_sources",
                return_value=("search results", [])):
-        result, sources = orchestrator._research_question_sync("What is fusion?")
-    assert result == "Fusion combines nuclei releasing energy."
+        rr = orchestrator._research_question_sync("What is fusion?")
+    assert rr.answer == "Fusion combines nuclei releasing energy."
     assert mock_llm.chat.call_count == 3
 
 
@@ -316,9 +317,9 @@ def test_research_question_detects_oscillating_queries(orchestrator, mock_llm):
     ]
     with patch("agent.orchestrator.execute_tool_with_sources",
                return_value=("results", [])) as mock_execute:
-        result, sources = orchestrator._research_question_sync("test question")
+        rr = orchestrator._research_question_sync("test question")
     assert mock_execute.call_count == 2
-    assert result == "Final answer after synthesis forced."
+    assert rr.answer == "Final answer after synthesis forced."
 
 
 def test_research_question_fallback_synthesis_succeeds(orchestrator, mock_llm):
@@ -329,8 +330,8 @@ def test_research_question_fallback_synthesis_succeeds(orchestrator, mock_llm):
     ] + [make_text_response(fallback_text)]
     with patch("agent.orchestrator.execute_tool_with_sources",
                return_value=("search results", [])):
-        result, sources = orchestrator._research_question_sync("What is fusion?")
-    assert result == fallback_text
+        rr = orchestrator._research_question_sync("What is fusion?")
+    assert rr.answer == fallback_text
     assert mock_llm.chat.call_count == 6
 
 
@@ -532,21 +533,24 @@ def test_config_max_workers_default():
 
 def test_research_all_async_results_have_all_questions(orchestrator):
     """research_all_async returns one result entry per input question."""
-    with patch.object(orchestrator, '_research_question_sync', return_value=("answer", [])):
+    rr = ResearchResult(question="Q", answer="answer")
+    with patch.object(orchestrator, '_research_question_sync', return_value=rr):
         results, _ = asyncio.run(orchestrator.research_all_async(["Q1?", "Q2?", "Q3?"]))
     assert set(results.keys()) == {"Q1?", "Q2?", "Q3?"}
 
 
 def test_research_all_async_sources_have_all_questions(orchestrator):
     """research_all_async returns one sources entry per input question."""
-    with patch.object(orchestrator, '_research_question_sync', return_value=("answer", [])):
+    rr = ResearchResult(question="Q", answer="answer")
+    with patch.object(orchestrator, '_research_question_sync', return_value=rr):
         _, sources = asyncio.run(orchestrator.research_all_async(["Q1?", "Q2?"]))
     assert set(sources.keys()) == {"Q1?", "Q2?"}
 
 
 def test_research_all_async_calls_sync_per_question(orchestrator):
     """_research_question_sync is invoked once per input question."""
-    with patch.object(orchestrator, '_research_question_sync', return_value=("a", [])) as m:
+    rr = ResearchResult(question="Q", answer="a")
+    with patch.object(orchestrator, '_research_question_sync', return_value=rr) as m:
         asyncio.run(orchestrator.research_all_async(["Q1?", "Q2?", "Q3?"]))
     assert m.call_count == 3
 
@@ -561,7 +565,7 @@ def test_research_all_async_empty_questions(orchestrator):
 def test_research_all_async_preserves_answers(orchestrator):
     """research_all_async passes through each answer from _research_question_sync."""
     def fake_sync(q):
-        return (f"Answer for {q}", [])
+        return ResearchResult(question=q, answer=f"Answer for {q}")
     with patch.object(orchestrator, '_research_question_sync', side_effect=fake_sync):
         results, _ = asyncio.run(orchestrator.research_all_async(["Q1?", "Q2?"]))
     assert results["Q1?"] == "Answer for Q1?"
@@ -571,11 +575,11 @@ def test_research_all_async_preserves_answers(orchestrator):
 def test_research_question_async_calls_sync(orchestrator):
     """research_question_async delegates to _research_question_sync."""
     sem = asyncio.Semaphore(4)
-    with patch.object(orchestrator, '_research_question_sync',
-                      return_value=("ans", [{"title": "T", "url": "u"}])) as m:
-        result, srcs = asyncio.run(orchestrator.research_question_async("Q?", sem))
+    rr = ResearchResult(question="Q?", answer="ans", sources=[{"title": "T", "url": "u"}])
+    with patch.object(orchestrator, '_research_question_sync', return_value=rr) as m:
+        result_rr = asyncio.run(orchestrator.research_question_async("Q?", sem))
     m.assert_called_once_with("Q?")
-    assert result == "ans"
+    assert result_rr.answer == "ans"
 
 
 def test_run_max_workers_respected(orchestrator, mock_llm, config):

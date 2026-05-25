@@ -499,18 +499,24 @@ def test_annotate_report_lines_no_match_leaves_report_unchanged():
 def test_build_claims_from_results_returns_list():
     """build_claims_from_results() returns a list."""
     from output.provenance import build_claims_from_results
+    from evidence.schema import ResearchResult
     llm = _make_mock_llm('["Fact one.", "Fact two."]')
-    results = {"Q1": "Answer one."}
-    claims = build_claims_from_results(results, {}, llm)
+    research_results = [ResearchResult(question="Q1", answer="Answer one.")]
+    claims = build_claims_from_results(research_results, llm)
     assert isinstance(claims, list)
 
 
 def test_build_claims_from_results_calls_extraction_per_question():
     """One LLM call is made per question in results."""
     from output.provenance import build_claims_from_results
+    from evidence.schema import ResearchResult
     llm = _make_mock_llm('["Fact."]')
-    results = {"Q1": "A1", "Q2": "A2", "Q3": "A3"}
-    build_claims_from_results(results, {}, llm)
+    research_results = [
+        ResearchResult(question="Q1", answer="A1"),
+        ResearchResult(question="Q2", answer="A2"),
+        ResearchResult(question="Q3", answer="A3"),
+    ]
+    build_claims_from_results(research_results, llm)
     assert llm.chat.call_count == 3
 
 

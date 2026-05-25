@@ -436,23 +436,21 @@ def extract_claims_from_answer(
 
 
 def build_claims_from_results(
-    results: dict,
-    sources: dict,
+    research_results: list,
     llm_client,
     custom_domains: dict = None
 ) -> list:
     """
-    Build EvidenceClaim objects from orchestrator results and sources.
+    Build EvidenceClaim objects from a list of ResearchResult objects.
 
-    Calls extract_claims_from_answer() for each question/answer pair and
-    assigns sequential IDs across all questions. Returns a flat list of all
+    Calls extract_claims_from_answer() for each ResearchResult and assigns
+    sequential IDs across all questions. Returns a flat list of all
     EvidenceClaim objects.
 
     Args:
-        results:        {question: answer} dict from orchestrator.run()
-        sources:        {question: [{"title": str, "url": str}]} from orchestrator.run()
-        llm_client:     LLMClient instance passed to extract_claims_from_answer()
-        custom_domains: Optional dict from config source_classification
+        research_results: list[ResearchResult] from orchestrator._last_research_results
+        llm_client:       LLMClient instance passed to extract_claims_from_answer()
+        custom_domains:   Optional dict from config source_classification
 
     Returns:
         Flat list of EvidenceClaim TypedDicts
@@ -460,12 +458,11 @@ def build_claims_from_results(
     all_claims = []
     next_id = 1
 
-    for question, answer in results.items():
-        question_sources = sources.get(question, [])
+    for rr in research_results:
         new_claims = extract_claims_from_answer(
-            question=question,
-            answer=answer,
-            sources=question_sources,
+            question=rr.question,
+            answer=rr.answer,
+            sources=rr.sources,
             llm_client=llm_client,
             claim_id_start=next_id,
             custom_domains=custom_domains,
