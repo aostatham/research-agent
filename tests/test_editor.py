@@ -152,6 +152,52 @@ def test_edit_default_max_tokens_is_8192():
     assert mock_llm.chat.call_args[1]["max_tokens"] == 8192
 
 
+def test_edit_rejects_response_shorter_than_half_original():
+    """A response shorter than 50% of the original is rejected; original returned."""
+    original = "A" * 200
+    short = "B" * 99  # 99 < 100 = 50% of 200
+    mock_llm = MagicMock()
+    mock_llm.chat.return_value = make_text_response(short)
+    agent = make_editor_agent(mock_llm)
+    result = edit(agent, original)
+    assert result == original
+
+
+def test_edit_accepts_response_at_least_half_original():
+    """Response >= 50% of original length is accepted (90 chars for 150-char original)."""
+    original = "A" * 150
+    response = "B" * 90  # 90 >= 75 = 50% of 150
+    mock_llm = MagicMock()
+    mock_llm.chat.return_value = make_text_response(response)
+    agent = make_editor_agent(mock_llm)
+    result = edit(agent, original)
+    assert result == "B" * 90
+
+
+def test_edit_rejects_276_char_response_against_5000_char_report():
+    """A 276-char response against a 5000-char report fails the proportional check."""
+    original = "A" * 5000
+    short_response = "B" * 276  # 276 < 2500 = 50% of 5000
+    mock_llm = MagicMock()
+    mock_llm.chat.return_value = make_text_response(short_response)
+    agent = make_editor_agent(mock_llm)
+    result = edit(agent, original)
+    assert result == original
+
+
+def test_edit_rejects_refusal_phrase_in_first_60_chars():
+    """Response starting with a refusal phrase is rejected even if proportionally long enough."""
+    original = "X" * 100
+    # 62 chars starting with "sorry" — passes proportional check (62 >= 50) but is a refusal
+    refusal = "Sorry, I cannot edit this report as it falls outside my scope."
+    assert len(refusal) >= 50
+    mock_llm = MagicMock()
+    mock_llm.chat.return_value = make_text_response(refusal)
+    agent = make_editor_agent(mock_llm)
+    result = edit(agent, original)
+    assert result == original
+
+
 def test_edit_uses_agent_system_prompt():
     """agent.chat is called, which routes through the agent's system_prompt."""
     mock_llm = MagicMock()
