@@ -307,19 +307,26 @@ class Orchestrator:
         """
         Async wrapper around _research_question_sync().
 
-        Acquires the semaphore before running to cap the number of concurrent
-        workers at config.max_workers.  Uses asyncio.to_thread so the blocking
-        LLM calls do not stall the event loop.
+        Acquires the semaphore before running the researcher to cap concurrent
+        workers at config.max_workers.  The Verifier runs outside the semaphore
+        so subsequent researchers can start while the verifier runs (D010).
 
         Args:
             question:  The sub-question to research.
             semaphore: Shared semaphore limiting concurrent workers.
 
         Returns:
-            Same ResearchResult as _research_question_sync().
+            ResearchResult with verified field set when agent_pool is active.
         """
         async with semaphore:
-            return await asyncio.to_thread(self._research_question_sync, question)
+            rr = await asyncio.to_thread(self._research_question_sync, question)
+        if self.agent_pool is not None:
+            from agent.verifier import verify
+            rr = await asyncio.to_thread(
+                verify, self.agent_pool.verifier, rr,
+                self.config.max_tokens_research,
+            )
+        return rr
 
     async def research_all_async(
         self, questions: list[str]
