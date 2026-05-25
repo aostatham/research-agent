@@ -230,6 +230,31 @@ def test_research_uses_agent_max_iterations():
     assert mock_llm.chat.call_count == 4
 
 
+def test_research_main_loop_uses_agent_system_prompt():
+    """research() main loop calls agent.chat, injecting system=agent.system_prompt."""
+    mock_llm = MagicMock()
+    mock_llm.chat.return_value = make_text_response("Answer.")
+    agent = make_agent(mock_llm)
+    with patch("agent.researcher.execute_tool_with_sources", return_value=("results", [])):
+        research(agent, "What is fusion?")
+    call_kwargs = mock_llm.chat.call_args.kwargs
+    assert call_kwargs["system"] == agent.system_prompt
+
+
+def test_research_fallback_synthesis_uses_agent_system_prompt():
+    """research() fallback synthesis calls agent.chat, injecting system=agent.system_prompt."""
+    fallback_text = "This is a comprehensive fallback answer with more than fifty characters here."
+    mock_llm = MagicMock()
+    mock_llm.chat.side_effect = [
+        make_tool_response("web_search", {"query": f"query {i}"}) for i in range(5)
+    ] + [make_text_response(fallback_text)]
+    agent = make_agent(mock_llm, max_iterations=5)
+    with patch("agent.researcher.execute_tool_with_sources", return_value=("results", [])):
+        research(agent, "What is fusion?")
+    fallback_call_kwargs = mock_llm.chat.call_args.kwargs
+    assert fallback_call_kwargs["system"] == agent.system_prompt
+
+
 def test_research_uses_agent_llm():
     """research() calls the agent's LLM, not a global one."""
     mock_llm_a = MagicMock()

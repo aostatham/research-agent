@@ -43,7 +43,7 @@ def research(agent: Agent, question: str, max_tokens: int = 2048) -> ResearchRes
 
     while iteration < agent.max_iterations:
         iteration += 1
-        response = agent.llm.chat(
+        response = agent.chat(
             messages=messages,
             tools=ALL_TOOLS,
             max_tokens=max_tokens
@@ -127,7 +127,7 @@ def research(agent: Agent, question: str, max_tokens: int = 2048) -> ResearchRes
     if accumulated_results:
         print(f"  ⚠️  Max iterations reached, attempting fallback synthesis...")
         combined = "\n\n".join(accumulated_results)
-        fallback_response = agent.llm.chat(
+        fallback_response = agent.chat(
             messages=[{
                 "role": "user",
                 "content": (
