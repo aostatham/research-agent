@@ -210,6 +210,12 @@ def main():
         short=args.short
     )
 
+    # Editor Agent pass — coherence only, biased toward no-edit (D011)
+    if agent_pool is not None:
+        from agent.editor import edit
+        print("  ✍️  Running Editor Agent pass...")
+        report = edit(agent_pool.editor, report, max_tokens=config.max_tokens_synthesis)
+
     elapsed = time.time() - start_time
 
     # Build provenance claims before saving so annotated report is written to disk
