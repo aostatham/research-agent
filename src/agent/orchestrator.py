@@ -26,6 +26,7 @@ Key robustness mechanisms in _research_question_sync():
 
 import asyncio
 import json
+import logging
 import time
 from typing import Optional
 from llm.base import LLMClient
@@ -350,11 +351,14 @@ class Orchestrator:
         """
         semaphore = asyncio.Semaphore(self.config.max_workers)
         tasks = [self.research_question_async(q, semaphore) for q in questions]
-        raw_results = await asyncio.gather(*tasks)
+        raw_results = await asyncio.gather(*tasks, return_exceptions=True)
         results: dict = {}
         sources: dict = {}
         self._last_research_results = []
         for question, rr in zip(questions, raw_results):
+            if isinstance(rr, BaseException):
+                logging.warning(f"Worker failed for '{question}': {rr}")
+                continue
             results[question] = rr.answer
             sources[question] = rr.sources
             self._last_research_results.append(rr)

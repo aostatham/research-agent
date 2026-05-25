@@ -555,6 +555,19 @@ def test_research_all_async_calls_sync_per_question(orchestrator):
     assert m.call_count == 3
 
 
+def test_research_all_async_one_worker_failure_continues(orchestrator):
+    """Single worker exception does not abort pipeline; remaining results are returned."""
+    def fake_sync(q):
+        if q == "Q2?":
+            raise RuntimeError("worker failure")
+        return ResearchResult(question=q, answer=f"Answer for {q}")
+    with patch.object(orchestrator, '_research_question_sync', side_effect=fake_sync):
+        results, sources = asyncio.run(orchestrator.research_all_async(["Q1?", "Q2?", "Q3?"]))
+    assert "Q1?" in results
+    assert "Q3?" in results
+    assert "Q2?" not in results
+
+
 def test_research_all_async_empty_questions(orchestrator):
     """research_all_async with an empty list returns empty dicts."""
     results, sources = asyncio.run(orchestrator.research_all_async([]))
