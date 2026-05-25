@@ -359,6 +359,17 @@ def test_extract_claims_handles_json_parse_error_gracefully():
     assert "extraction failed" in claims[0]["claim"] or claims[0]["claim"].startswith("Some")
 
 
+def test_extract_claims_handles_fenced_json_response():
+    """LLM response wrapped in ```json ... ``` fences is parsed correctly."""
+    from output.provenance import extract_claims_from_answer
+    fenced = '```json\n["Claim one.", "Claim two."]\n```'
+    llm = _make_mock_llm(fenced)
+    claims = extract_claims_from_answer("Q?", "Some answer text.", [], llm)
+    assert len(claims) == 2
+    assert claims[0]["claim"] == "Claim one."
+    assert claims[1]["claim"] == "Claim two."
+
+
 def test_extract_claims_assigns_sequential_ids():
     """IDs start at claim_id_start and increment."""
     from output.provenance import extract_claims_from_answer

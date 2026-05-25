@@ -23,6 +23,18 @@ from datetime import datetime, timezone
 from evidence.schema import EvidenceSource, EvidenceClaim, ProvenanceReport
 
 
+def _strip_code_fence(text: str) -> str:
+    """Strip markdown code fences (```json ... ```) from an LLM response."""
+    text = text.strip()
+    if not text.startswith("```"):
+        return text
+    lines = text.splitlines()
+    lines = lines[1:]  # drop opening fence line (```json, ```, etc.)
+    if lines and lines[-1].strip() == "```":
+        lines = lines[:-1]
+    return "\n".join(lines)
+
+
 def write_provenance_file(
     output_path: str,
     claims: list,
@@ -384,12 +396,7 @@ def extract_claims_from_answer(
             messages=[{"role": "user", "content": prompt}],
             max_tokens=1024,
         )
-        raw = response.content.strip() if response.content else "[]"
-        # Strip markdown code fences if present
-        if raw.startswith("```"):
-            raw = raw.split("```")[1]
-            if raw.startswith("json"):
-                raw = raw[4:]
+        raw = _strip_code_fence(response.content or "[]")
         claim_texts = json.loads(raw)
         if not isinstance(claim_texts, list) or not claim_texts:
             raise ValueError("empty or non-list response")
@@ -484,7 +491,14 @@ def annotate_report_lines(report: str, claims: list) -> tuple:
     Returns:
         (annotated_report: str, claims_with_lines: list)
     """
-    lines = report.split("\n")
+    # Only annotate prose — markers must not land in the References section
+    ref_marker = "\n## References"
+    if ref_marker in report:
+        prose, references = report.split(ref_marker, 1)
+    else:
+        prose, references = report, None
+
+    lines = prose.split("\n")
     annotated_lines = list(lines)
     annotated_line_indices: set = set()
 
@@ -504,7 +518,10 @@ def annotate_report_lines(report: str, claims: list) -> tuple:
                 annotated_line_indices.add(line_idx)
                 break
 
-    return "\n".join(annotated_lines), claims
+    annotated_prose = "\n".join(annotated_lines)
+    if references is not None:
+        return annotated_prose + ref_marker + references, claims
+    return annotated_prose, claims
 
 
 def build_placeholder_claims(results: dict, sources: dict) -> list:
