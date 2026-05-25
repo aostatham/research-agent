@@ -827,3 +827,50 @@ def test_score_confidence_general_no_increase():
     """General sources give no increase above base score."""
     from output.provenance import score_confidence
     assert score_confidence([{"source_type": "general"}]) == pytest.approx(0.4)
+
+
+# ── ResearchResult ────────────────────────────────────────────────────────────
+
+def test_research_result_default_verified_false():
+    """ResearchResult.verified defaults to False."""
+    from evidence.schema import ResearchResult
+    result = ResearchResult(question="Q?", answer="A.")
+    assert result.verified is False
+
+
+def test_research_result_fields_are_mutable():
+    """ResearchResult is not frozen — fields can be reassigned."""
+    from evidence.schema import ResearchResult
+    result = ResearchResult(question="Q?", answer="A.")
+    result.verified = True
+    assert result.verified is True
+
+
+def test_research_result_stores_question():
+    from evidence.schema import ResearchResult
+    result = ResearchResult(question="What is X?", answer="X is Y.")
+    assert result.question == "What is X?"
+
+
+def test_research_result_stores_answer():
+    from evidence.schema import ResearchResult
+    result = ResearchResult(question="Q?", answer="The answer.")
+    assert result.answer == "The answer."
+
+
+def test_research_result_claims_defaults_to_empty_list():
+    from evidence.schema import ResearchResult
+    result = ResearchResult(question="Q?", answer="A.")
+    assert result.claims == []
+
+
+def test_research_result_sources_defaults_to_empty_list():
+    from evidence.schema import ResearchResult
+    result = ResearchResult(question="Q?", answer="A.")
+    assert result.sources == []
+
+
+def test_research_result_message_history_defaults_to_empty_list():
+    from evidence.schema import ResearchResult
+    result = ResearchResult(question="Q?", answer="A.")
+    assert result.message_history == []

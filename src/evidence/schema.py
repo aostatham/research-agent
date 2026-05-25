@@ -1,14 +1,17 @@
 """
-TypedDict schemas for the evidence layer.
+TypedDict schemas and dataclasses for the evidence layer.
 
-All types are TypedDicts (not dataclasses or Pydantic) so they serialise
-directly to/from JSON without a custom encoder.
+TypedDicts serialise directly to/from JSON without a custom encoder.
+ResearchResult is a dataclass (mutable) — it is an in-flight pipeline
+object, not a serialisable report artefact.
 
   EvidenceSource    — a single cited source for a claim
   EvidenceClaim     — a single research claim with provenance metadata
   ProvenanceReport  — full provenance file written alongside a report
+  ResearchResult    — structured output from a single Researcher run
 """
 
+from dataclasses import dataclass, field
 from typing import TypedDict, Optional
 
 
@@ -46,3 +49,22 @@ class ProvenanceReport(TypedDict):
     generated: str
     quality_metrics: dict
     claims: list                 # list of EvidenceClaim
+
+
+@dataclass
+class ResearchResult:
+    """
+    Structured output from a single Researcher agent run.
+
+    Replaces the bare (answer, sources) tuple so downstream stages
+    (Verifier, provenance pipeline) receive structured, typed data.
+    message_history preserves the full researcher dialogue for the
+    Verifier to inspect before concluding — see DECISIONS.md D008.
+    """
+
+    question: str
+    answer: str
+    claims: list = field(default_factory=list)    # list[EvidenceClaim]
+    sources: list = field(default_factory=list)   # list[EvidenceSource]
+    message_history: list = field(default_factory=list)  # list[dict]
+    verified: bool = False
