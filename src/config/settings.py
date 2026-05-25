@@ -72,6 +72,7 @@ class Config:
     min_questions: int = 4    # minimum sub-questions generated per topic
     max_questions: int = 5    # hard cap; LLM output sliced to this length
     max_iterations: int = 5   # agentic loop cap per question
+    max_workers: int = 2      # parallel research workers; 2 is safe for Ollama, 4+ for Anthropic
 
     # ── Token limits ──────────────────────────────────────────────────────────
 
@@ -90,7 +91,7 @@ class Config:
     # Add custom domains here rather than modifying the hardcoded list.
     # Format: {"academic": ["mycustomjournal.org"], "government": ["specialagency.int"]}
     # Trigger: domain misclassified in 3+ real research runs.
-    source_classification: dict = None
+    source_classification: Optional[dict] = None
 
     # ── Output mode ───────────────────────────────────────────────────────────
 

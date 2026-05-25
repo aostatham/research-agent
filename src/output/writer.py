@@ -70,9 +70,10 @@ def save_report(topic: str, metadata: str, report: str, fmt: str = "markdown") -
     return filepath
 
 
-def update_index(topic, output_path, started_at, orch_provider, orch_model,
-                 synth_provider, synth_model, search_provider, question_count,
-                 search_count, short, provenance: str = "none"):
+def update_index(topic: str, output_path: str, started_at, orch_provider: str,
+                 orch_model: str, synth_provider: str, synth_model: str,
+                 search_provider: str, question_count: int, search_count: int,
+                 short: bool, provenance: str = "none") -> None:
     """
     Append a row to output/index.md tracking all reports generated.
     Creates the index file with header if it doesn't exist.

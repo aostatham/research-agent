@@ -27,6 +27,10 @@ from config import load_config
 from llm.builder import build_llms
 from output.formatter import build_metadata
 from output.writer import save_report, update_index
+from output.provenance import (
+    build_claims_from_results, build_quality_metrics,
+    write_provenance_file, annotate_report_lines,
+)
 
 load_dotenv()
 
@@ -210,10 +214,6 @@ def main():
     claims = []
     prov_path = None
     if config.provenance in ("file", "graph"):
-        from output.provenance import (
-            build_claims_from_results, build_quality_metrics,
-            write_provenance_file, annotate_report_lines,
-        )
         claims = build_claims_from_results(
             results, sources, synth_llm,
             custom_domains=config.source_classification,

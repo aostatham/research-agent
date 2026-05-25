@@ -11,9 +11,10 @@ See output.writer for save_report() and update_index().
 """
 
 
-def build_metadata(topic, config, orch_provider, orch_model, synth_provider,
-                   synth_model, started_at, elapsed, question_count,
-                   search_count, report_chars, short):
+def build_metadata(topic: str, config, orch_provider: str, orch_model: str,
+                   synth_provider: str, synth_model: str, started_at,
+                   elapsed: float, question_count: int, search_count: int,
+                   report_chars: int, short: bool) -> str:
     """
     Build a markdown metadata table for the top of the report.
 
@@ -124,54 +125,53 @@ def convert_to_pdf(html: str, filepath: str):
     try:
         from weasyprint import HTML, CSS
         from weasyprint.text.fonts import FontConfiguration
-
-        font_config = FontConfiguration()
-
-        # Print-specific CSS — overrides screen CSS for PDF rendering
-        print_css = CSS(string="""
-            @page {
-                size: A4;
-                margin: 2cm;
-            }
-            body {
-                font-size: 11pt;
-                max-width: none;
-                margin: 0;
-                padding: 0;
-            }
-            h1 { font-size: 20pt; }
-            h2 { font-size: 15pt; }
-            h3 { font-size: 13pt; }
-            pre, code {
-                font-size: 9pt;
-                white-space: pre-wrap;
-                word-break: break-all;
-            }
-            table {
-                font-size: 9pt;
-                width: 100%;
-            }
-            a::after {
-                content: " (" attr(href) ")";
-                font-size: 8pt;
-                color: #666;
-            }
-            .metadata {
-                border: 1pt solid #ccc;
-                padding: 10pt;
-                margin-bottom: 15pt;
-                font-size: 9pt;
-            }
-        """, font_config=font_config)
-
-        HTML(string=html).write_pdf(
-            filepath,
-            stylesheets=[print_css],
-            font_config=font_config
-        )
-
     except ImportError:
         raise ImportError(
             "weasyprint not installed. Run: pip install weasyprint\n"
             "On macOS also run: brew install pango"
         )
+
+    font_config = FontConfiguration()
+
+    # Print-specific CSS — overrides screen CSS for PDF rendering
+    print_css = CSS(string="""
+        @page {
+            size: A4;
+            margin: 2cm;
+        }
+        body {
+            font-size: 11pt;
+            max-width: none;
+            margin: 0;
+            padding: 0;
+        }
+        h1 { font-size: 20pt; }
+        h2 { font-size: 15pt; }
+        h3 { font-size: 13pt; }
+        pre, code {
+            font-size: 9pt;
+            white-space: pre-wrap;
+            word-break: break-all;
+        }
+        table {
+            font-size: 9pt;
+            width: 100%;
+        }
+        a::after {
+            content: " (" attr(href) ")";
+            font-size: 8pt;
+            color: #666;
+        }
+        .metadata {
+            border: 1pt solid #ccc;
+            padding: 10pt;
+            margin-bottom: 15pt;
+            font-size: 9pt;
+        }
+    """, font_config=font_config)
+
+    HTML(string=html).write_pdf(
+        filepath,
+        stylesheets=[print_css],
+        font_config=font_config
+    )

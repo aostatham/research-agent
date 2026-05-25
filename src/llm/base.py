@@ -41,7 +41,8 @@ class LLMResponse:
 
     def __repr__(self):
         if self.type == "text":
-            return f"LLMResponse(type=text, content={self.content[:80]}...)"
+            content_preview = (self.content or "")[:80]
+            return f"LLMResponse(type=text, content={content_preview}...)"
         return f"LLMResponse(type=tool_call, tool={self.tool_name}, input={self.tool_input})"
 
 
