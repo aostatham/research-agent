@@ -77,11 +77,12 @@ def build_quality_metrics(claims: list) -> dict:
     Compute quality metrics from a list of EvidenceClaim objects.
 
     Returns a dict with:
-      coverage         — verified_claims / total_claims (0.0 if no claims)
-      confidence       — mean of all claim confidence scores (0.0 if no claims)
-      contradictions   — total count across all claims
-      verified_claims  — count where verification_status == "verified"
+      coverage          — verified_claims / total_claims (0.0 if no claims)
+      confidence        — mean of all claim confidence scores (0.0 if no claims)
+      contradictions    — total count across all claims
+      verified_claims   — count where verification_status == "verified"
       unverified_claims — count where verification_status == "unverified"
+      disputed_claims   — count where verification_status == "disputed"
     """
     if not claims:
         return {
@@ -90,10 +91,12 @@ def build_quality_metrics(claims: list) -> dict:
             "contradictions": 0,
             "verified_claims": 0,
             "unverified_claims": 0,
+            "disputed_claims": 0,
         }
 
     verified = sum(1 for c in claims if c["verification_status"] == "verified")
     unverified = sum(1 for c in claims if c["verification_status"] == "unverified")
+    disputed = sum(1 for c in claims if c["verification_status"] == "disputed")
     total = len(claims)
     contradictions = sum(len(c["contradictions"]) for c in claims)
     confidence = sum(c["confidence"] for c in claims) / total
@@ -105,6 +108,7 @@ def build_quality_metrics(claims: list) -> dict:
         "contradictions": contradictions,
         "verified_claims": verified,
         "unverified_claims": unverified,
+        "disputed_claims": disputed,
     }
 
 

@@ -124,6 +124,27 @@ def test_build_quality_metrics_partial_verified():
     assert metrics["unverified_claims"] == 2
 
 
+def test_build_quality_metrics_counts_disputed():
+    """disputed_claims counts claims with verification_status == 'disputed'."""
+    from output.provenance import build_quality_metrics
+    claims = [
+        {"verification_status": "verified", "confidence": 0.8, "contradictions": []},
+        {"verification_status": "disputed", "confidence": 0.4, "contradictions": []},
+        {"verification_status": "disputed", "confidence": 0.3, "contradictions": []},
+    ]
+    metrics = build_quality_metrics(claims)
+    assert metrics["disputed_claims"] == 2
+    assert metrics["verified_claims"] == 1
+
+
+def test_build_quality_metrics_empty_has_disputed_key():
+    """build_quality_metrics([]) includes disputed_claims key set to 0."""
+    from output.provenance import build_quality_metrics
+    metrics = build_quality_metrics([])
+    assert "disputed_claims" in metrics
+    assert metrics["disputed_claims"] == 0
+
+
 # ── write_provenance_file() tests ─────────────────────────────────────────────
 
 def test_write_provenance_file_creates_file(tmp_path, monkeypatch):
