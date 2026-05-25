@@ -116,6 +116,38 @@ def test_raw_response_stored(client):
     assert response.raw == mock_response
 
 
+# ── system prompt routing ─────────────────────────────────────────────────────
+
+def test_chat_passes_system_to_api_when_provided(client):
+    """When system= is given, it must appear as a top-level kwarg in the API call."""
+    mock_block = MagicMock()
+    mock_block.type = "text"
+    mock_block.text = "ok"
+    mock_response = MagicMock()
+    mock_response.content = [mock_block]
+    client.client.messages.create.return_value = mock_response
+
+    client.chat([{"role": "user", "content": "hi"}], system="be concise")
+
+    call_kwargs = client.client.messages.create.call_args.kwargs
+    assert call_kwargs.get("system") == "be concise"
+
+
+def test_chat_does_not_pass_system_when_none(client):
+    """When system= is None (default), the system key must not appear in the API call."""
+    mock_block = MagicMock()
+    mock_block.type = "text"
+    mock_block.text = "ok"
+    mock_response = MagicMock()
+    mock_response.content = [mock_block]
+    client.client.messages.create.return_value = mock_response
+
+    client.chat([{"role": "user", "content": "hi"}])
+
+    call_kwargs = client.client.messages.create.call_args.kwargs
+    assert "system" not in call_kwargs
+
+
 # ── Integration tests ─────────────────────────────────────────────────────────
 
 @pytest.mark.integration

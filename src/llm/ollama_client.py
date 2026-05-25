@@ -13,6 +13,7 @@ Retries are applied automatically via the @with_retry decorator for
 transient HTTP errors.
 """
 
+from typing import Optional
 import requests
 from .base import LLMClient, LLMResponse
 from .retry import with_retry
@@ -47,8 +48,28 @@ class OllamaClient(LLMClient):
         self.model = model
         self.base_url = base_url.rstrip("/")
 
+    def _build_messages(self, messages: list, system: Optional[str]) -> list:
+        """
+        Prepend a system message when system is not None.
+
+        Ollama uses the OpenAI-compatible messages format where system
+        instructions are passed as a {"role": "system", "content": ...}
+        message at the start of the list.
+
+        Args:
+            messages: Original conversation history.
+            system:   System prompt string, or None to leave messages unchanged.
+
+        Returns:
+            New list with system message prepended, or the original list.
+        """
+        if system is None:
+            return messages
+        return [{"role": "system", "content": system}] + messages
+
     @with_retry(max_attempts=3, base_delay=1.0, max_delay=30.0)
-    def chat(self, messages: list, tools: list = None, max_tokens: int = 2048) -> LLMResponse:
+    def chat(self, messages: list, tools: list = None, max_tokens: int = 2048,
+             system: Optional[str] = None) -> LLMResponse:
         """
         Send a conversation to the Ollama /api/chat endpoint.
 
@@ -58,6 +79,8 @@ class OllamaClient(LLMClient):
                         Converted to OpenAI function format via _convert_tools().
             max_tokens: Maximum tokens to generate, passed as num_predict in
                         the Ollama options block.
+            system:     Optional system prompt prepended as a system-role message
+                        (idiomatic for Ollama /api/chat — see DECISIONS.md D007).
 
         Returns:
             LLMResponse with type "tool_call" if the model chose a tool,
@@ -68,7 +91,7 @@ class OllamaClient(LLMClient):
         """
         payload = {
             "model": self.model,
-            "messages": messages,
+            "messages": self._build_messages(messages, system),
             "stream": False,             # disable streaming; we want a single JSON response
             "options": {"num_predict": max_tokens}
         }

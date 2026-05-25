@@ -114,6 +114,53 @@ def test_chat_with_no_tools_succeeds(client):
     assert response.type == "text"
 
 
+# ── system prompt routing ─────────────────────────────────────────────────────
+
+def test_chat_prepends_system_message_when_provided(client):
+    """When system= is given, the messages list sent to Ollama starts with a system role."""
+    mock_response = MagicMock()
+    mock_response.json.return_value = {"message": {"content": "ok"}}
+    mock_response.raise_for_status = MagicMock()
+
+    with patch("llm.ollama_client.requests.post", return_value=mock_response) as mock_post:
+        client.chat([{"role": "user", "content": "hi"}], system="be brief")
+
+    payload = mock_post.call_args.kwargs["json"]
+    messages = payload["messages"]
+    assert messages[0] == {"role": "system", "content": "be brief"}
+    assert messages[1] == {"role": "user", "content": "hi"}
+
+
+def test_chat_messages_unchanged_when_system_is_none(client):
+    """When system= is None (default), messages are sent unchanged."""
+    mock_response = MagicMock()
+    mock_response.json.return_value = {"message": {"content": "ok"}}
+    mock_response.raise_for_status = MagicMock()
+
+    original = [{"role": "user", "content": "hello"}]
+    with patch("llm.ollama_client.requests.post", return_value=mock_response) as mock_post:
+        client.chat(original)
+
+    payload = mock_post.call_args.kwargs["json"]
+    assert payload["messages"] == original
+
+
+def test_build_messages_with_system():
+    """_build_messages prepends a system dict when system is not None."""
+    client = OllamaClient()
+    msgs = [{"role": "user", "content": "q"}]
+    result = client._build_messages(msgs, "my system")
+    assert result == [{"role": "system", "content": "my system"}, {"role": "user", "content": "q"}]
+
+
+def test_build_messages_without_system():
+    """_build_messages returns the original list when system is None."""
+    client = OllamaClient()
+    msgs = [{"role": "user", "content": "q"}]
+    result = client._build_messages(msgs, None)
+    assert result == msgs
+
+
 # ── Integration tests ─────────────────────────────────────────────────────────
 
 @pytest.mark.integration

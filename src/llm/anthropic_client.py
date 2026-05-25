@@ -10,6 +10,7 @@ transient API errors (rate limits, server errors).
 """
 
 import os
+from typing import Optional
 import anthropic
 from dotenv import load_dotenv
 from .base import LLMClient, LLMResponse
@@ -48,7 +49,8 @@ class AnthropicClient(LLMClient):
         self.model = model
 
     @with_retry(max_attempts=3, base_delay=1.0, max_delay=30.0)
-    def chat(self, messages: list, tools: list = None, max_tokens: int = 2048) -> LLMResponse:
+    def chat(self, messages: list, tools: list = None, max_tokens: int = 2048,
+             system: Optional[str] = None) -> LLMResponse:
         """
         Send a conversation to the Anthropic Messages API.
 
@@ -60,6 +62,9 @@ class AnthropicClient(LLMClient):
             tools:      Optional list of provider-agnostic tool definitions.
                         Converted to Anthropic format via _convert_tools().
             max_tokens: Maximum tokens to generate.
+            system:     Optional system prompt passed as the top-level system=
+                        parameter to the Anthropic API (not in the messages list —
+                        Anthropic ignores role:system inside messages).
 
         Returns:
             LLMResponse with type "tool_call" if the model chose a tool,
@@ -72,6 +77,8 @@ class AnthropicClient(LLMClient):
         }
         if tools:
             kwargs["tools"] = self._convert_tools(tools)
+        if system is not None:
+            kwargs["system"] = system
 
         response = self.client.messages.create(**kwargs)
         return self._normalise(response)

@@ -56,7 +56,8 @@ class LLMClient(ABC):
     """
 
     @abstractmethod
-    def chat(self, messages: list, tools: Optional[list] = None, max_tokens: int = 2048) -> LLMResponse:
+    def chat(self, messages: list, tools: Optional[list] = None, max_tokens: int = 2048,
+             system: Optional[str] = None) -> LLMResponse:
         """
         Send a conversation to the LLM and return a normalised response.
 
@@ -67,6 +68,9 @@ class LLMClient(ABC):
                         format defined in agent/tools.py.  If provided, the model
                         may respond with a tool_call instead of text.
             max_tokens: Maximum number of tokens to generate.
+            system:     Optional system prompt passed via the provider's native
+                        system parameter (Anthropic top-level kwarg; Ollama
+                        prepended message).  See DECISIONS.md D007.
 
         Returns:
             LLMResponse with type "text" or "tool_call".
