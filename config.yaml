@@ -21,6 +21,11 @@ search_provider: anthropic
 min_questions: 4
 max_questions: 5
 max_iterations: 5
+# Parallel research workers
+# max_workers: 2 is safe for Ollama (serialises LLM requests internally)
+# max_workers: 4+ is safe for Anthropic (separate API servers)
+# Reduce to 1 to disable parallelism entirely
+max_workers: 2
 
 # Token limits
 max_tokens_research: 2048
