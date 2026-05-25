@@ -24,6 +24,21 @@ from unittest.mock import MagicMock, patch
 from llm.base import LLMResponse
 
 
+# ── Fixtures ─────────────────────────────────────────────────────────────────
+
+@pytest.fixture(autouse=True)
+def patch_build_agents():
+    """Patch build_agents in main for every test in this file.
+
+    All test_main_* tests call main() which now calls build_agents() to load
+    prompt files from disk. In tests the prompts/ directory does not exist,
+    so we always replace build_agents with a no-op mock. Tests that verify
+    agent construction use test_agent_builder.py instead.
+    """
+    with patch("main.build_agents"):
+        yield
+
+
 # ── Sample data ───────────────────────────────────────────────────────────────
 
 SAMPLE_RESULTS = {

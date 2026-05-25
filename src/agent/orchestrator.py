@@ -27,6 +27,7 @@ Key robustness mechanisms in _research_question_sync():
 import asyncio
 import json
 import time
+from typing import Optional
 from llm.base import LLMClient
 from agent.tools import ALL_TOOLS, execute_tool_with_sources
 from config import Config
@@ -81,17 +82,20 @@ class Orchestrator:
     uses a separate client that may be a different model or provider.
     """
 
-    def __init__(self, llm: LLMClient, config: Config = None):
+    def __init__(self, llm: LLMClient, config: Config = None, agent_pool=None):
         """
         Initialise the orchestrator.
 
         Args:
-            llm:    LLMClient instance to use for all orchestration calls
-                    (decompose, _research_question_sync, reflect).
-            config: Config instance; defaults to Config() if not provided.
+            llm:        LLMClient instance to use for all orchestration calls
+                        (decompose, _research_question_sync, reflect).
+            config:     Config instance; defaults to Config() if not provided.
+            agent_pool: Optional AgentPool for Phase D Part 2 multi-agent pipeline.
+                        When None the existing single-LLM loop runs unchanged.
         """
         self.llm = llm
         self.config = config or Config()
+        self.agent_pool = agent_pool
 
     def decompose(self, topic: str) -> list[str]:
         """

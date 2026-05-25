@@ -614,6 +614,27 @@ def test_run_gap_research_also_parallel(orchestrator, mock_llm):
     assert "gap2" in sources
 
 
+# ── AgentPool wiring ─────────────────────────────────────────────────────────
+
+def test_orchestrator_accepts_agent_pool_none(mock_llm, config):
+    """Orchestrator constructs without agent_pool (existing behaviour preserved)."""
+    orch = Orchestrator(llm=mock_llm, config=config, agent_pool=None)
+    assert orch.agent_pool is None
+
+
+def test_orchestrator_accepts_no_agent_pool_kwarg(mock_llm, config):
+    """Orchestrator constructs without passing agent_pool at all."""
+    orch = Orchestrator(llm=mock_llm, config=config)
+    assert orch.agent_pool is None
+
+
+def test_orchestrator_stores_agent_pool(mock_llm, config):
+    """Provided AgentPool is stored on self.agent_pool."""
+    mock_pool = MagicMock()
+    orch = Orchestrator(llm=mock_llm, config=config, agent_pool=mock_pool)
+    assert orch.agent_pool is mock_pool
+
+
 # ── Integration tests ─────────────────────────────────────────────────────────
 
 @pytest.mark.integration

@@ -22,6 +22,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "src"))
 
 from dotenv import load_dotenv
 from agent import Orchestrator, Synthesiser
+from agent.builder import build_agents
 from agent.tools import configure_search
 from config import load_config
 from llm.builder import build_llms
@@ -190,8 +191,9 @@ def main():
         print(f"Output mode:        {config.output_mode}")
     print(f"{'─' * 50}")
 
-    # Run research pipeline
-    orchestrator = Orchestrator(llm=orch_llm, config=config)
+    # Build agent pool and run research pipeline
+    agent_pool = build_agents(config, orch_llm, synth_llm)
+    orchestrator = Orchestrator(llm=orch_llm, config=config, agent_pool=agent_pool)
     synthesiser = Synthesiser(llm=synth_llm, config=config)
 
     # orchestrator.run() returns ({question: answer}, {question: [sources]})
