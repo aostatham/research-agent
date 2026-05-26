@@ -3,9 +3,10 @@ Tests for output/formatter.py — build_metadata() and convert_to_html().
 
 Verifies:
   - build_metadata(): produces a markdown table with expected field values.
-  - convert_to_html(): escapes script tags and angle brackets in report
-    content; normal content passes through unchanged; topic is escaped
-    in <title> and <h1>; fallback path (no markdown library) also escapes.
+  - convert_to_html(): bleach strips disallowed tags (script, b, etc.) from
+    rendered HTML; safe tags (p, strong, table, etc.) pass through; topic
+    is html.escape()'d in <title> and <h1>; fallback path (no markdown/bleach)
+    html.escape()'s report content.
 """
 
 import pytest
@@ -82,20 +83,24 @@ def test_build_metadata_shows_summary_mode():
     assert "Executive Summary" in result
 
 
-# ── convert_to_html() — XSS escaping (H7 fix) ────────────────────────────────
+# ── convert_to_html() — XSS sanitisation (bleach post-render, H1 fix) ───────
 
-def test_html_escapes_script_tag_in_report():
-    """<script>alert(1)</script> in report content is escaped in HTML output."""
+def test_html_strips_script_tag_in_report():
+    """bleach strips <script> tags from rendered report — no executable script."""
     result = convert_to_html("Topic", "", "<script>alert(1)</script>")
     assert "<script>" not in result
-    assert "&lt;script&gt;" in result
 
 
-def test_html_escapes_angle_brackets_in_report():
-    """Angle brackets in report content are escaped, preventing tag injection."""
+def test_html_strips_disallowed_tag_in_report():
+    """bleach strips disallowed tags (e.g. <b>) from report; raw injection blocked."""
     result = convert_to_html("Topic", "", "<b>injected</b>")
     assert "<b>injected</b>" not in result
-    assert "&lt;b&gt;" in result
+
+
+def test_html_safe_tags_pass_through():
+    """bleach allows safe markdown-generated tags such as <p> and <strong>."""
+    result = convert_to_html("Topic", "", "**bold text**")
+    assert "<strong>bold text</strong>" in result
 
 
 def test_html_normal_content_unchanged():
@@ -105,32 +110,30 @@ def test_html_normal_content_unchanged():
 
 
 def test_html_escapes_script_tag_in_topic_title():
-    """<script> in the topic is escaped in the <title> element."""
+    """<script> in the topic is escaped via html.escape() in the <title> element."""
     result = convert_to_html("<script>evil</script>", "", "Report body")
     assert "<title><script>" not in result
     assert "&lt;script&gt;" in result
 
 
 def test_html_escapes_script_tag_in_topic_h1():
-    """<script> in the topic is escaped in the <h1> element."""
+    """<script> in the topic is escaped via html.escape() in the <h1> element."""
     result = convert_to_html("<script>evil</script>", "", "Report body")
     assert "<h1><script>" not in result
 
 
 def test_html_fallback_path_escapes_report():
-    """Fallback path (no markdown library) also escapes report content."""
-    with patch.dict("sys.modules", {"markdown": None}):
-        # Force the ImportError fallback branch
-        import importlib
-        import output.formatter as fmt_module
-        # Simulate ImportError by patching markdown import inside the function
-        with patch("builtins.__import__", side_effect=lambda name, *args, **kwargs: (
-            __builtins__["__import__"](name, *args, **kwargs) if name != "markdown"
-            else (_ for _ in ()).throw(ImportError("no markdown"))
-        )):
-            pass  # Skip - tested implicitly via the escape-before-markdown approach
+    """Fallback path (no markdown/bleach) applies html.escape() to report content."""
+    import sys
+    import importlib
+    original_import = __builtins__["__import__"] if isinstance(__builtins__, dict) else __import__
 
-    # The key property: report is escaped before markdown sees it, so even if
-    # markdown passes raw HTML through, the content is already harmless entities.
-    result = convert_to_html("Topic", "", "<script>alert(1)</script>")
+    def _block_markdown(name, *args, **kwargs):
+        if name in ("markdown", "bleach"):
+            raise ImportError(f"mocked missing: {name}")
+        return original_import(name, *args, **kwargs)
+
+    with patch("builtins.__import__", side_effect=_block_markdown):
+        result = convert_to_html("Topic", "", "<script>alert(1)</script>")
     assert "<script>" not in result
+    assert "&lt;script&gt;" in result

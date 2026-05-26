@@ -13,6 +13,13 @@ See output.writer for save_report() and update_index().
 import html
 
 
+_SAFE_TAGS = [
+    "p", "h1", "h2", "h3", "h4", "h5", "h6",
+    "a", "ul", "ol", "li", "strong", "em", "code", "pre",
+    "blockquote", "hr", "br", "table", "thead", "tbody", "tr", "th", "td",
+]
+
+
 def build_metadata(topic: str, config, orch_provider: str, orch_model: str,
                    synth_provider: str, synth_model: str, started_at,
                    elapsed: float, question_count: int, search_count: int,
@@ -61,17 +68,26 @@ def convert_to_html(topic: str, metadata: str, report: str) -> str:
         Complete HTML document as a string
     """
     safe_topic = html.escape(topic)
-    escaped_metadata = html.escape(metadata)
-    escaped_report = html.escape(report)
 
     try:
         import markdown
-        meta_html = markdown.markdown(escaped_metadata, extensions=["tables"])
-        report_html = markdown.markdown(escaped_report, extensions=["tables", "fenced_code"])
+        import bleach
+        meta_html = bleach.clean(
+            markdown.markdown(metadata, extensions=["tables"]),
+            tags=_SAFE_TAGS,
+            attributes={"a": ["href"]},
+            strip=True,
+        )
+        report_html = bleach.clean(
+            markdown.markdown(report, extensions=["tables", "fenced_code"]),
+            tags=_SAFE_TAGS,
+            attributes={"a": ["href"]},
+            strip=True,
+        )
     except ImportError:
-        # Fallback if markdown library not installed
-        meta_html = f"<pre>{escaped_metadata}</pre>"
-        report_html = f"<pre>{escaped_report}</pre>"
+        # Fallback if markdown or bleach not installed
+        meta_html = f"<pre>{html.escape(metadata)}</pre>"
+        report_html = f"<pre>{html.escape(report)}</pre>"
 
     return f"""<!DOCTYPE html>
 <html lang="en">
