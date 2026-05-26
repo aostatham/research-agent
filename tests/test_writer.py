@@ -5,9 +5,12 @@ Verifies:
   - First call creates the index file with header + one row.
   - Second call appends a second row without duplicating the header.
   - os.replace() is called for atomicity (not direct open-and-write).
+  - Concurrent calls from multiple threads produce the correct row count
+    without interleaving or data loss.
 """
 
 import os
+import threading
 import pytest
 from datetime import datetime
 from unittest.mock import patch
@@ -93,7 +96,29 @@ def test_update_index_uses_os_replace(tmp_path, monkeypatch):
     with patch("output.writer.os.replace", wraps=os.replace) as mock_replace:
         _call_update_index()
     mock_replace.assert_called_once()
-    # First arg should be the temp file path, second should be the index path
     tmp_arg, dst_arg = mock_replace.call_args[0]
     assert dst_arg.endswith("index.md")
-    assert ".tmp." in tmp_arg
+    assert dst_arg != tmp_arg
+
+
+# ── Concurrency ────────────────────────────────────────────────────────────────
+
+def test_update_index_concurrent_threads_produce_correct_row_count(tmp_path, monkeypatch):
+    """Concurrent calls from multiple threads each append exactly one row."""
+    monkeypatch.chdir(tmp_path)
+    n_threads = 8
+    barrier = threading.Barrier(n_threads)
+
+    def _worker(i):
+        barrier.wait()  # release all threads simultaneously
+        _call_update_index(topic=f"Topic {i}")
+
+    threads = [threading.Thread(target=_worker, args=(i,)) for i in range(n_threads)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+
+    index = (tmp_path / "output" / "index.md").read_text()
+    data_rows = [l for l in index.splitlines() if l.startswith("| 20") or l.startswith("| 19")]
+    assert len(data_rows) == n_threads

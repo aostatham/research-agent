@@ -10,10 +10,20 @@ delegated to output.formatter.
 """
 
 import os
+import tempfile
+import threading
 import time
 from datetime import datetime
 
 from .formatter import convert_to_html, convert_to_pdf
+
+try:
+    import fcntl
+    _USE_FLOCK = True
+except ImportError:
+    _USE_FLOCK = False
+
+_INDEX_LOCK = threading.Lock()
 
 
 def save_report(topic: str, metadata: str, report: str, fmt: str = "markdown") -> str:
@@ -84,12 +94,14 @@ def update_index(topic: str, output_path: str, started_at, orch_provider: str,
     """
     Append a row to output/index.md tracking all reports generated.
 
-    Uses an atomic write (read → modify in memory → write to temp file →
-    os.replace) to eliminate the TOCTOU race on the header check and
-    prevent interleaved rows from concurrent workers.
+    Uses fcntl.flock (POSIX) with a threading.Lock fallback to serialise
+    concurrent writers across threads and processes. The full read-modify-write
+    sequence is protected by the lock, and the write uses NamedTemporaryFile +
+    os.replace() for atomicity so a crash mid-write leaves the index intact.
     """
     os.makedirs("output", exist_ok=True)
     index_path = "output/index.md"
+    index_dir = os.path.dirname(os.path.abspath(index_path))
 
     mode = "Summary" if short else "Full"
     date = started_at.strftime("%Y-%m-%d %H:%M")
@@ -99,7 +111,22 @@ def update_index(topic: str, output_path: str, started_at, orch_provider: str,
     link = f"[{filename}]({filename})"
     row = f"| {date} | {topic} | {orch} | {synth} | {search_provider} | {question_count} | {search_count} | {mode} | {provenance} | {link} |\n"
 
-    # Read existing content into memory; fall back to header for a new file.
+    with _INDEX_LOCK:
+        if _USE_FLOCK:
+            # Open (or create) a dedicated lock file — never written to, just locked.
+            lock_fd = open(index_path + ".lock", "a")
+            try:
+                fcntl.flock(lock_fd, fcntl.LOCK_EX)
+                _write_index_row(index_path, index_dir, row)
+            finally:
+                fcntl.flock(lock_fd, fcntl.LOCK_UN)
+                lock_fd.close()
+        else:
+            _write_index_row(index_path, index_dir, row)
+
+
+def _write_index_row(index_path: str, index_dir: str, row: str) -> None:
+    """Read current index (or create header), append row, atomically replace."""
     try:
         with open(index_path, "r", encoding="utf-8") as f:
             content = f.read()
@@ -108,9 +135,14 @@ def update_index(topic: str, output_path: str, started_at, orch_provider: str,
 
     new_content = content + row
 
-    # Write to a temp file in the same directory, then atomically replace.
-    # os.replace() is atomic on POSIX; as close to atomic as Windows allows.
-    tmp_path = f"{index_path}.tmp.{os.getpid()}"
-    with open(tmp_path, "w", encoding="utf-8") as f:
-        f.write(new_content)
-    os.replace(tmp_path, index_path)
+    tmp_fd, tmp_path = tempfile.mkstemp(dir=index_dir, suffix=".tmp")
+    try:
+        with os.fdopen(tmp_fd, "w", encoding="utf-8") as f:
+            f.write(new_content)
+        os.replace(tmp_path, index_path)
+    except Exception:
+        try:
+            os.unlink(tmp_path)
+        except OSError:
+            pass
+        raise
