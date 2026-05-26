@@ -344,7 +344,7 @@ def extract_claims_from_answer(
     llm_client,
     claim_id_start: int = 1,
     custom_domains: dict = None,
-    verified: bool = False
+    verification: str = "unverified"
 ) -> list:
     """
     Use an LLM to extract atomic claims from a research answer.
@@ -362,8 +362,9 @@ def extract_claims_from_answer(
         llm_client:     LLMClient instance for extraction
         claim_id_start: Starting ID for claim numbering
         custom_domains: Optional dict from config source_classification
-        verified:       When True, sets verification_status="verified" on all
-                        emitted claims; defaults to "unverified"
+        verification:   ResearchResult.verification value — "verified",
+                        "refuted", or "unverified". "refuted" maps to
+                        verification_status="disputed" on the claim.
 
     Returns:
         List of EvidenceClaim TypedDicts
@@ -427,7 +428,11 @@ def extract_claims_from_answer(
             confidence=score_confidence(deduped_sources),
             contradictions=[],
             evidence_type="qualitative",
-            verification_status="verified" if verified else "unverified",
+            verification_status=(
+                "verified" if verification == "verified"
+                else "disputed" if verification == "refuted"
+                else "unverified"
+            ),
             timestamp=now,
             sources=deduped_sources,
             report_line=None,
@@ -468,7 +473,7 @@ def build_claims_from_results(
             llm_client=llm_client,
             claim_id_start=next_id,
             custom_domains=custom_domains,
-            verified=rr.verified,
+            verification=rr.verification,
         )
         all_claims.extend(new_claims)
         next_id += len(new_claims)

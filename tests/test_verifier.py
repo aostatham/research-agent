@@ -5,11 +5,11 @@ Verifies:
   - _extract_suspicious_claims(): detects numbers, absolute terms, named
     entities; ranks multi-criteria sentences first; respects max_claims;
     returns empty list when no suspicious markers found.
-  - verify(): returns ResearchResult; sets verified=True when no suspicious
-    claims; sets verified=True when all claims pass; sets verified=False
-    when a claim is refuted; handles tool calls; handles JSON parse failure
-    gracefully (conservative: verified=True); handles max_iterations with no
-    text response (conservative: verified=True).
+  - verify(): returns ResearchResult; sets verification="verified" when no
+    suspicious claims; sets verification="verified" when all claims pass;
+    sets verification="refuted" when a claim is refuted; handles tool calls;
+    handles JSON parse failure (leaves verification="unverified", M1);
+    handles max_iterations with no text response (leaves verification="unverified", M1).
 
 All tests mock the LLM and execute_tool_with_sources.
 """
@@ -136,25 +136,24 @@ def test_verify_returns_research_result():
     assert isinstance(result, ResearchResult)
 
 
-def test_verify_sets_verified_true_when_no_suspicious_claims():
-    """When no suspicious claims are found, verified is set True without any LLM call."""
+def test_verify_sets_verified_when_no_suspicious_claims():
+    """When no suspicious claims are found, verification is set to 'verified' without any LLM call."""
     mock_llm = MagicMock()
     agent = make_verifier_agent(mock_llm)
     rr = ResearchResult(
         question="What is fusion?",
         answer="Fusion is a nuclear reaction where light nuclei combine and release energy.",
     )
-    # Patch _extract_suspicious_claims to return empty list
     with patch("agent.verifier._extract_suspicious_claims", return_value=[]):
         result = verify(agent, rr)
-    assert result.verified is True
+    assert result.verification == "verified"
     assert mock_llm.chat.call_count == 0
 
 
 # ── verify() — verification paths ────────────────────────────────────────────
 
-def test_verify_sets_verified_true_when_all_pass():
-    """verified=True when agent returns JSON with all verified/unverified statuses."""
+def test_verify_sets_verified_when_all_pass():
+    """verification='verified' when agent returns JSON with confirmed status."""
     mock_llm = MagicMock()
     mock_llm.chat.return_value = make_text_response(
         '[{"claim": "Fusion produces 500 MW.", "status": "verified", "confidence": 0.9}]'
@@ -163,11 +162,11 @@ def test_verify_sets_verified_true_when_all_pass():
     rr = ResearchResult(question="What is fusion?", answer="Fusion produces 500 MW.")
     with patch("agent.verifier.execute_tool_with_sources", return_value=("r", [])):
         result = verify(agent, rr)
-    assert result.verified is True
+    assert result.verification == "verified"
 
 
-def test_verify_sets_verified_false_when_claim_refuted():
-    """verified=False when agent returns JSON containing a refuted claim."""
+def test_verify_sets_refuted_when_claim_refuted():
+    """verification='refuted' when agent returns JSON containing a refuted claim."""
     mock_llm = MagicMock()
     mock_llm.chat.return_value = make_text_response(
         '[{"claim": "Fusion produces 500 MW.", "status": "refuted", "confidence": 0.2}]'
@@ -176,7 +175,7 @@ def test_verify_sets_verified_false_when_claim_refuted():
     rr = ResearchResult(question="What is fusion?", answer="Fusion produces 500 MW.")
     with patch("agent.verifier.execute_tool_with_sources", return_value=("r", [])):
         result = verify(agent, rr)
-    assert result.verified is False
+    assert result.verification == "refuted"
 
 
 def test_verify_handles_tool_call_before_json():
@@ -190,12 +189,12 @@ def test_verify_handles_tool_call_before_json():
     rr = ResearchResult(question="What is ITER?", answer="ITER produces 500 MW.")
     with patch("agent.verifier.execute_tool_with_sources", return_value=("results", [])):
         result = verify(agent, rr)
-    assert result.verified is True
+    assert result.verification == "verified"
     assert mock_llm.chat.call_count == 2
 
 
-def test_verify_json_parse_failure_defaults_to_verified_true():
-    """When JSON parsing fails, verified defaults to True (conservative)."""
+def test_verify_json_parse_failure_leaves_unverified():
+    """When JSON parsing fails, verification stays 'unverified' (M1: not silently promoted)."""
     mock_llm = MagicMock()
     mock_llm.chat.return_value = make_text_response("This is not JSON at all.")
     agent = make_verifier_agent(mock_llm)
@@ -205,18 +204,18 @@ def test_verify_json_parse_failure_defaults_to_verified_true():
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
             result = verify(agent, rr)
-    assert result.verified is True
+    assert result.verification == "unverified"
 
 
-def test_verify_max_iterations_defaults_to_verified_true():
-    """When max_iterations exhausted with no text response, verified defaults to True."""
+def test_verify_max_iterations_leaves_unverified():
+    """When max_iterations exhausted with no text response, verification stays 'unverified' (M1)."""
     mock_llm = MagicMock()
     mock_llm.chat.return_value = make_tool_response("web_search", {"query": "fusion"})
     agent = make_verifier_agent(mock_llm, max_iterations=3)
     rr = ResearchResult(question="What is fusion?", answer="Fusion produces 500 MW.")
     with patch("agent.verifier.execute_tool_with_sources", return_value=("results", [])):
         result = verify(agent, rr)
-    assert result.verified is True
+    assert result.verification == "unverified"
     assert mock_llm.chat.call_count == 3
 
 
@@ -230,7 +229,7 @@ def test_verify_fenced_json_is_parsed():
     rr = ResearchResult(question="What is fusion?", answer="Fusion produces 500 MW.")
     with patch("agent.verifier.execute_tool_with_sources", return_value=("r", [])):
         result = verify(agent, rr)
-    assert result.verified is True
+    assert result.verification == "verified"
 
 
 def test_verify_uses_agent_llm():
@@ -266,8 +265,8 @@ def test_verify_malformed_tool_input_does_not_raise():
 
 # ── M4: Three-outcome verification ───────────────────────────────────────────
 
-def test_verify_ambiguous_result_leaves_verified_false():
-    """An 'unverified' status from the agent leaves rr.verified=False (not True)."""
+def test_verify_ambiguous_result_leaves_unverified():
+    """An 'unverified' status from the agent leaves verification='unverified' (not 'verified')."""
     mock_llm = MagicMock()
     mock_llm.chat.return_value = make_text_response(
         '[{"claim": "Fusion produces 500 MW.", "status": "unverified", "confidence": 0.5}]'
@@ -276,7 +275,7 @@ def test_verify_ambiguous_result_leaves_verified_false():
     rr = make_rr(answer="Fusion produces 500 MW.")
     with patch("agent.verifier.execute_tool_with_sources", return_value=("r", [])):
         result = verify(agent, rr)
-    assert result.verified is False
+    assert result.verification == "unverified"
 
 
 # ── M6: Verifier citation retention ──────────────────────────────────────────
@@ -295,6 +294,26 @@ def test_verify_attaches_verifier_sources_to_rr():
                return_value=("results", verifier_sources)):
         result = verify(agent, rr)
     assert any(s["url"] == "https://iter.org" for s in result.sources)
+
+
+# ── M2: URL deduplication of verifier sources ─────────────────────────────────
+
+def test_verify_deduplicates_sources_by_url():
+    """Verifier sources already in rr.sources (same URL) are not duplicated (M2)."""
+    mock_llm = MagicMock()
+    mock_llm.chat.side_effect = [
+        make_tool_response("web_search", {"query": "ITER output"}),
+        make_text_response('[{"status": "verified"}]'),
+    ]
+    agent = make_verifier_agent(mock_llm)
+    rr = make_rr(answer="ITER produces 500 MW.")
+    existing = {"title": "ITER site", "url": "https://iter.org"}
+    rr.sources.append(existing)
+    verifier_sources = [{"title": "ITER site", "url": "https://iter.org"}]
+    with patch("agent.verifier.execute_tool_with_sources",
+               return_value=("results", verifier_sources)):
+        result = verify(agent, rr)
+    assert result.sources.count(existing) == 1
 
 
 # ── M7: _is_refuted status-field precision ────────────────────────────────────

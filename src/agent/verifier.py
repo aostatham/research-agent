@@ -130,16 +130,16 @@ def verify(
     """
     Run the Verifier Agent on a ResearchResult to check suspicious claims.
 
-    If no suspicious claims are found, marks rr.verified = True and returns
-    immediately (no LLM calls).  Otherwise runs an agentic loop:
+    If no suspicious claims are found, sets rr.verification = "verified" and
+    returns immediately (no LLM calls).  Otherwise runs an agentic loop:
 
       1. The agent receives the question, answer, and flagged claims.
       2. The agent may call web_search (once per claim at most).
       3. When the agent returns a text response it is parsed as JSON.
-      4. If any result has status "refuted", verified is set to False.
-      5. On JSON parse failure, verified defaults to True (conservative).
-      6. If max_iterations is exhausted without a text response, verified
-         defaults to True (conservative).
+      4. If any result has status "refuted", verification is set to "refuted".
+      5. On JSON parse failure, verification stays "unverified" (M1).
+      6. If max_iterations is exhausted without a text response, verification
+         stays "unverified" (M1).
 
     Args:
         agent:      Verifier Agent with llm and max_iterations configured.
@@ -151,7 +151,7 @@ def verify(
     """
     suspicious = _extract_suspicious_claims(rr.answer, rr.question)
     if not suspicious:
-        rr.verified = True
+        rr.verification = "verified"
         return rr
 
     claims_list = "\n".join(f"- {c}" for c in suspicious)
@@ -192,9 +192,11 @@ def verify(
                 tool_result, verifier_sources = execute_tool_with_sources(
                     response.tool_name, response.tool_input
                 )
-                # M6: attach verifier citations to the ResearchResult so they
-                # are not discarded and flow into the provenance pipeline.
-                rr.sources.extend(verifier_sources)
+                # M6: attach verifier citations; M2: deduplicate by URL.
+                existing_urls = {s.get("url") for s in rr.sources}
+                rr.sources.extend(
+                    s for s in verifier_sources if s.get("url") not in existing_urls
+                )
             except (ValueError, KeyError, Exception) as e:
                 logging.warning("Verifier: tool execution failed: %s", e)
                 tool_result = "Search failed."
@@ -226,17 +228,16 @@ def verify(
                 if refuted:
                     print(f"  ⚠️  Verifier: {len(refuted)} refuted claim(s) "
                           f"in '{rr.question}'")
-                    rr.verified = False
+                    rr.verification = "refuted"
                 elif confirmed:
                     # M4: only mark verified on explicit confirmation;
-                    # ambiguous results (unverified status) leave verified=False.
-                    rr.verified = True
-                # else: no confirmation and no refutation — leave verified=False
+                    # ambiguous results (unverified status) leave verification="unverified".
+                    rr.verification = "verified"
+                # else: no confirmation and no refutation — leave "unverified"
             except (json.JSONDecodeError, TypeError, AttributeError) as e:
                 warnings.warn(f"Verifier JSON parse failed: {e}", stacklevel=2)
-                rr.verified = True  # conservative: don't penalise on parse failure
+                # M1: parse failure leaves verification="unverified" — not verified
             return rr
 
-    # Max iterations reached without a text response
-    rr.verified = True  # conservative default
+    # Max iterations reached without a text response — leave "unverified"
     return rr

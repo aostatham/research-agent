@@ -67,4 +67,5 @@ class ResearchResult:
     claims: list = field(default_factory=list)    # list[EvidenceClaim]
     sources: list = field(default_factory=list)   # list[EvidenceSource]
     message_history: list = field(default_factory=list)  # list[dict]
-    verified: bool = False
+    # "verified" | "refuted" | "unverified"
+    verification: str = "unverified"

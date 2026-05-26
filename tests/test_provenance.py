@@ -9,8 +9,9 @@ Verifies:
     mean confidence, contradiction count
   - write_provenance_file(): file creation, valid JSON output, correct
     .provenance.json path, quality_metrics embedded in output
-  - extract_claims_from_answer(): verified=True sets verification_status="verified";
-    verified=False sets verification_status="unverified"
+  - extract_claims_from_answer(): verification="verified" sets verification_status="verified";
+    verification="refuted" sets verification_status="disputed";
+    default (verification="unverified") sets verification_status="unverified"
 
 All tests are unit tests — no external API calls.
 """
@@ -199,26 +200,34 @@ def test_write_provenance_file_html_path(tmp_path, monkeypatch):
     assert prov_path == "output/nuclear_fusion.provenance.json"
 
 
-# ── extract_claims_from_answer() — verified propagation ──────────────────────
+# ── extract_claims_from_answer() — verification propagation ──────────────────
 
-def test_extract_claims_verified_true_sets_status_verified():
-    """extract_claims_from_answer(verified=True) produces claims with verification_status='verified'."""
+def test_extract_claims_verification_verified_sets_status_verified():
+    """extract_claims_from_answer(verification='verified') produces claims with verification_status='verified'."""
     from output.provenance import extract_claims_from_answer
     llm = _make_mock_llm('["Fusion is hot.", "Plasma is ionised gas."]')
-    claims = extract_claims_from_answer("What is fusion?", "Fusion is hot.", [], llm, verified=True)
+    claims = extract_claims_from_answer("What is fusion?", "Fusion is hot.", [], llm, verification="verified")
     assert all(c["verification_status"] == "verified" for c in claims)
 
 
-def test_extract_claims_verified_false_sets_status_unverified():
-    """extract_claims_from_answer(verified=False) produces claims with verification_status='unverified'."""
+def test_extract_claims_verification_unverified_sets_status_unverified():
+    """extract_claims_from_answer(verification='unverified') produces claims with verification_status='unverified'."""
     from output.provenance import extract_claims_from_answer
     llm = _make_mock_llm('["Fusion is hot.", "Plasma is ionised gas."]')
-    claims = extract_claims_from_answer("What is fusion?", "Fusion is hot.", [], llm, verified=False)
+    claims = extract_claims_from_answer("What is fusion?", "Fusion is hot.", [], llm, verification="unverified")
     assert all(c["verification_status"] == "unverified" for c in claims)
 
 
-def test_extract_claims_default_verified_is_false():
-    """extract_claims_from_answer() defaults to verified=False (unverified status)."""
+def test_extract_claims_verification_refuted_sets_status_disputed():
+    """extract_claims_from_answer(verification='refuted') produces claims with verification_status='disputed'."""
+    from output.provenance import extract_claims_from_answer
+    llm = _make_mock_llm('["Fusion is hot."]')
+    claims = extract_claims_from_answer("What is fusion?", "Fusion is hot.", [], llm, verification="refuted")
+    assert all(c["verification_status"] == "disputed" for c in claims)
+
+
+def test_extract_claims_default_verification_is_unverified():
+    """extract_claims_from_answer() defaults to verification='unverified'."""
     from output.provenance import extract_claims_from_answer
     llm = _make_mock_llm('["Fact one."]')
     claims = extract_claims_from_answer("Q?", "Answer.", [], llm)
@@ -823,19 +832,19 @@ def test_score_confidence_general_no_increase():
 
 # ── ResearchResult ────────────────────────────────────────────────────────────
 
-def test_research_result_default_verified_false():
-    """ResearchResult.verified defaults to False."""
+def test_research_result_default_verification_unverified():
+    """ResearchResult.verification defaults to 'unverified'."""
     from evidence.schema import ResearchResult
     result = ResearchResult(question="Q?", answer="A.")
-    assert result.verified is False
+    assert result.verification == "unverified"
 
 
 def test_research_result_fields_are_mutable():
     """ResearchResult is not frozen — fields can be reassigned."""
     from evidence.schema import ResearchResult
     result = ResearchResult(question="Q?", answer="A.")
-    result.verified = True
-    assert result.verified is True
+    result.verification = "verified"
+    assert result.verification == "verified"
 
 
 def test_research_result_stores_question():
