@@ -234,6 +234,22 @@ def test_default_ollama_editor_model_is_none():
     assert config.ollama_editor_model is None
 
 
+def test_default_anthropic_search_model():
+    """anthropic_search_model defaults to Haiku."""
+    config = Config()
+    assert config.anthropic_search_model == "claude-haiku-4-5-20251001"
+
+
+def test_anthropic_search_model_loads_from_config(tmp_path, monkeypatch):
+    """anthropic_search_model loads from config.yaml when present."""
+    monkeypatch.chdir(tmp_path)
+    config_data = {"anthropic_search_model": "claude-sonnet-4-6"}
+    with open(tmp_path / "config.yaml", "w") as f:
+        yaml.dump(config_data, f)
+    config = load_config("config.yaml")
+    assert config.anthropic_search_model == "claude-sonnet-4-6"
+
+
 def test_editor_fields_load_from_config_dict(tmp_path, monkeypatch):
     """Editor provider and model fields load correctly from config.yaml."""
     monkeypatch.chdir(tmp_path)

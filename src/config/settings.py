@@ -74,6 +74,10 @@ class Config:
     search_provider: str = "anthropic"  # anthropic | tavily
     tavily_api_key: Optional[str] = None   # loaded from env if not in config
     tavily_max_results: int = 5
+    # Model used for Anthropic web search calls — independent of orchestration model.
+    # Defaults to Haiku for cost efficiency; configurable so deprecations can be handled
+    # without code changes.
+    anthropic_search_model: str = "claude-haiku-4-5-20251001"
 
     # ── Research behaviour ────────────────────────────────────────────────────
 

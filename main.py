@@ -157,7 +157,8 @@ def main():
     configure_search(
         provider=config.search_provider,
         tavily_api_key=config.tavily_api_key,
-        tavily_max_results=config.tavily_max_results
+        tavily_max_results=config.tavily_max_results,
+        search_model=config.anthropic_search_model,
     )
 
     topic = " ".join(args.topic)

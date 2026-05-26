@@ -60,6 +60,7 @@ ALL_TOOLS = [WEB_SEARCH_TOOL]
 _search_provider = "anthropic"
 _tavily_api_key = None
 _tavily_max_results = 5
+_search_model = "claude-haiku-4-5-20251001"
 
 # Lazy singleton — created on first Anthropic search call, reused across
 # all subsequent calls within the same process to avoid repeated auth overhead.
@@ -75,7 +76,8 @@ def _get_anthropic_client() -> anthropic.Anthropic:
 
 
 def configure_search(provider: str, tavily_api_key: str = None,
-                     tavily_max_results: int = 5):
+                     tavily_max_results: int = 5,
+                     search_model: str = "claude-haiku-4-5-20251001"):
     """
     Configure the search backend used by all execute_tool* calls.
 
@@ -89,6 +91,9 @@ def configure_search(provider: str, tavily_api_key: str = None,
                             set via TAVILY_API_KEY environment variable
                             (load_config handles the env fallback).
         tavily_max_results: Number of results to return per Tavily search.
+        search_model:       Model used for Anthropic web search calls.
+                            Defaults to Haiku; configurable so model
+                            deprecations can be handled without code changes.
 
     Raises:
         ValueError: If provider is "tavily" but no API key is provided.
@@ -99,10 +104,11 @@ def configure_search(provider: str, tavily_api_key: str = None,
             "tavily_api_key in config.yaml"
         )
 
-    global _search_provider, _tavily_api_key, _tavily_max_results
+    global _search_provider, _tavily_api_key, _tavily_max_results, _search_model
     _search_provider = provider
     _tavily_api_key = tavily_api_key
     _tavily_max_results = tavily_max_results
+    _search_model = search_model
 
 
 # ── Tool executor ─────────────────────────────────────────────────────────────
@@ -201,7 +207,7 @@ def _anthropic_search_with_sources(query: str) -> tuple[str, list[dict]]:
     client = _get_anthropic_client()
 
     response = client.messages.create(
-        model="claude-haiku-4-5-20251001",
+        model=_search_model,
         max_tokens=2048,
         tools=[{"type": "web_search_20250305", "name": "web_search"}],
         messages=[{"role": "user", "content": f"Search for: {query}"}]

@@ -32,11 +32,13 @@ def _reset_search_globals():
     orig_key = tools._tavily_api_key
     orig_max = tools._tavily_max_results
     orig_client = tools._anthropic_client
+    orig_model = tools._search_model
     yield
     tools._search_provider = orig_provider
     tools._tavily_api_key = orig_key
     tools._tavily_max_results = orig_max
     tools._anthropic_client = orig_client
+    tools._search_model = orig_model
 
 
 # ── configure_search() tests ──────────────────────────────────────────────────
@@ -72,6 +74,56 @@ def test_configure_search_sets_max_results():
     from agent import tools
     configure_search("tavily", tavily_api_key="tvly-test", tavily_max_results=10)
     assert tools._tavily_max_results == 10
+
+
+def test_configure_search_stores_search_model():
+    """configure_search() stores the search_model global correctly."""
+    from agent.tools import configure_search
+    from agent import tools
+    configure_search("anthropic", search_model="claude-sonnet-4-6")
+    assert tools._search_model == "claude-sonnet-4-6"
+
+
+def test_configure_search_search_model_default():
+    """configure_search() defaults search_model to Haiku when not specified."""
+    from agent.tools import configure_search
+    from agent import tools
+    configure_search("anthropic")
+    assert tools._search_model == "claude-haiku-4-5-20251001"
+
+
+def test_anthropic_search_uses_configured_model():
+    """_anthropic_search_with_sources() passes _search_model to the API, not a hardcoded string."""
+    from agent.tools import configure_search, _anthropic_search_with_sources
+    configure_search("anthropic", search_model="claude-sonnet-4-6")
+
+    mock_response = MagicMock()
+    mock_response.content = []
+    mock_client = MagicMock()
+    mock_client.messages.create.return_value = mock_response
+
+    with patch("agent.tools._get_anthropic_client", return_value=mock_client):
+        _anthropic_search_with_sources("test query")
+
+    call_kwargs = mock_client.messages.create.call_args[1]
+    assert call_kwargs["model"] == "claude-sonnet-4-6"
+
+
+def test_anthropic_search_does_not_hardcode_model():
+    """Changing the configured model changes what the API receives."""
+    from agent.tools import configure_search, _anthropic_search_with_sources
+    configure_search("anthropic", search_model="claude-haiku-4-5-20251001")
+
+    mock_response = MagicMock()
+    mock_response.content = []
+    mock_client = MagicMock()
+    mock_client.messages.create.return_value = mock_response
+
+    with patch("agent.tools._get_anthropic_client", return_value=mock_client):
+        _anthropic_search_with_sources("test query")
+
+    call_kwargs = mock_client.messages.create.call_args[1]
+    assert call_kwargs["model"] == "claude-haiku-4-5-20251001"
 
 
 # ── execute_tool() tests ──────────────────────────────────────────────────────

@@ -16,6 +16,7 @@ ollama_base_url: http://localhost:11434
 # Options: anthropic | tavily
 search_provider: anthropic
 # tavily_api_key: tvly-...   # or set TAVILY_API_KEY env var
+# anthropic_search_model: claude-haiku-4-5-20251001
 
 # Research behaviour
 min_questions: 4
