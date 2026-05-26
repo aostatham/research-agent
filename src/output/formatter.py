@@ -10,6 +10,8 @@ These functions are format-only; they do not touch the filesystem.
 See output.writer for save_report() and update_index().
 """
 
+import html
+
 
 def build_metadata(topic: str, config, orch_provider: str, orch_model: str,
                    synth_provider: str, synth_model: str, started_at,
@@ -58,21 +60,25 @@ def convert_to_html(topic: str, metadata: str, report: str) -> str:
     Returns:
         Complete HTML document as a string
     """
+    safe_topic = html.escape(topic)
+    escaped_metadata = html.escape(metadata)
+    escaped_report = html.escape(report)
+
     try:
         import markdown
-        meta_html = markdown.markdown(metadata, extensions=["tables"])
-        report_html = markdown.markdown(report, extensions=["tables", "fenced_code"])
+        meta_html = markdown.markdown(escaped_metadata, extensions=["tables"])
+        report_html = markdown.markdown(escaped_report, extensions=["tables", "fenced_code"])
     except ImportError:
         # Fallback if markdown library not installed
-        meta_html = f"<pre>{metadata}</pre>"
-        report_html = f"<pre>{report}</pre>"
+        meta_html = f"<pre>{escaped_metadata}</pre>"
+        report_html = f"<pre>{escaped_report}</pre>"
 
     return f"""<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{topic}</title>
+    <title>{safe_topic}</title>
     <style>
         body {{ font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
                 max-width: 860px; margin: 40px auto; padding: 0 20px;
@@ -96,7 +102,7 @@ def convert_to_html(topic: str, metadata: str, report: str) -> str:
     </style>
 </head>
 <body>
-    <h1>{topic}</h1>
+    <h1>{safe_topic}</h1>
     <div class="metadata">{meta_html}</div>
     {report_html}
 </body>
