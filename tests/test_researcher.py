@@ -305,3 +305,31 @@ def test_dedup_sources_no_duplicates_unchanged():
     ]
     result = _dedup_sources(sources)
     assert len(result) == 2
+
+
+# ── H5: malformed tool input guard ───────────────────────────────────────────
+
+def test_research_malformed_tool_input_does_not_raise():
+    """Malformed tool_input (None) is skipped without raising AttributeError."""
+    mock_llm = MagicMock()
+    mock_llm.chat.side_effect = [
+        LLMResponse(type="tool_call", tool_name="web_search", tool_input=None),
+        make_text_response("Fusion is a nuclear reaction."),
+    ]
+    agent = make_agent(mock_llm, max_iterations=5)
+    with patch("agent.researcher.execute_tool_with_sources", return_value=("r", [])):
+        result = research(agent, "What is fusion?")
+    assert isinstance(result, ResearchResult)
+
+
+def test_research_non_dict_tool_input_does_not_raise():
+    """Non-dict tool_input (int) is skipped without raising AttributeError."""
+    mock_llm = MagicMock()
+    mock_llm.chat.side_effect = [
+        LLMResponse(type="tool_call", tool_name="web_search", tool_input=42),
+        make_text_response("Fusion is a nuclear reaction."),
+    ]
+    agent = make_agent(mock_llm, max_iterations=5)
+    with patch("agent.researcher.execute_tool_with_sources", return_value=("r", [])):
+        result = research(agent, "What is fusion?")
+    assert isinstance(result, ResearchResult)

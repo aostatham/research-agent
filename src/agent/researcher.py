@@ -8,8 +8,10 @@ owns its loop semantics rather than delegating to the Orchestrator.
 See DECISIONS.md D009 for rationale.
 """
 
+import logging
 import time
 from agent.base import Agent
+from agent.tool_utils import _validate_tool_input
 from agent.tools import ALL_TOOLS, execute_tool_with_sources
 from evidence.schema import ResearchResult
 
@@ -50,7 +52,11 @@ def research(agent: Agent, question: str, max_tokens: int = 2048) -> ResearchRes
         )
 
         if response.type == "tool_call":
-            current_query = response.tool_input.get("query")
+            current_query = _validate_tool_input(response.tool_input)
+            if current_query is None:
+                logging.warning("Researcher: malformed tool input %r, skipping",
+                                response.tool_input)
+                continue
 
             if current_query in seen_queries:
                 print(f"  ⚠️  Repeated query detected ('{current_query}'), "

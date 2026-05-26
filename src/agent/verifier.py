@@ -16,6 +16,7 @@ import warnings
 from typing import Optional
 
 from agent.base import Agent
+from agent.tool_utils import _validate_tool_input
 from agent.tools import ALL_TOOLS, execute_tool_with_sources
 from evidence.schema import ResearchResult
 
@@ -180,11 +181,9 @@ def verify(
 
         if response.type == "tool_call":
             # M3: malformed tool_input must not crash the verifier loop.
-            try:
-                query = response.tool_input.get("query", "")
-            except (AttributeError, TypeError) as e:
-                logging.warning("Verifier: malformed tool input %r: %s",
-                                response.tool_input, e)
+            query = _validate_tool_input(response.tool_input)
+            if query is None:
+                logging.warning("Verifier: malformed tool input %r", response.tool_input)
                 messages.append({
                     "role": "assistant",
                     "content": "Tool call had malformed input.",
@@ -205,7 +204,7 @@ def verify(
                 rr.sources.extend(
                     s for s in verifier_sources if s.get("url") not in existing_urls
                 )
-            except (ValueError, KeyError, Exception) as e:
+            except (ValueError, KeyError, AttributeError) as e:
                 logging.warning("Verifier: tool execution failed: %s", e)
                 tool_result = "Search failed."
 
