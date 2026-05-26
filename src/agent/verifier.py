@@ -10,6 +10,7 @@ Public API:
 """
 
 import json
+import logging
 import re
 import warnings
 from typing import Optional
@@ -80,13 +81,45 @@ def _extract_suspicious_claims(
 
 
 def _is_refuted(result_item) -> bool:
-    """Return True if any value in a verification result dict contains 'refuted'."""
+    """Return True if the verification result indicates a refuted claim.
+
+    Checks status/summary fields first (M7). Falls back to a full-value
+    scan only when no recognised field is present, logging at DEBUG level.
+    """
     if not isinstance(result_item, dict):
         return False
+    for field in ("status", "verification_status", "verdict", "summary"):
+        val = result_item.get(field)
+        if val is not None:
+            return isinstance(val, str) and "refuted" in val.lower()
+    # No recognised status/summary field — fall back to scanning all values
+    logging.debug("_is_refuted: no status/summary field found, scanning all values")
     return any(
         isinstance(v, str) and "refuted" in v.lower()
         for v in result_item.values()
     )
+
+
+# Exact status strings that represent an explicit confirmation.
+# Uses a frozenset to avoid "verified" in "unverified" false-positive.
+_CONFIRMED_STATUSES = frozenset({
+    "verified", "confirmed", "true", "yes", "supported", "correct",
+})
+
+
+def _is_confirmed(result_item) -> bool:
+    """Return True if the verification result explicitly confirms a claim (M4).
+
+    Uses exact-match against _CONFIRMED_STATUSES to avoid the false-positive
+    where 'verified' appears as a substring of 'unverified'.
+    """
+    if not isinstance(result_item, dict):
+        return False
+    for field in ("status", "verification_status", "verdict", "summary"):
+        val = result_item.get(field)
+        if val is not None:
+            return isinstance(val, str) and val.lower().strip() in _CONFIRMED_STATUSES
+    return False
 
 
 def verify(
@@ -138,11 +171,34 @@ def verify(
         response = agent.chat(messages=messages, tools=ALL_TOOLS, max_tokens=max_tokens)
 
         if response.type == "tool_call":
-            query = response.tool_input.get("query", "")
+            # M3: malformed tool_input must not crash the verifier loop.
+            try:
+                query = response.tool_input.get("query", "")
+            except (AttributeError, TypeError) as e:
+                logging.warning("Verifier: malformed tool input %r: %s",
+                                response.tool_input, e)
+                messages.append({
+                    "role": "assistant",
+                    "content": "Tool call had malformed input.",
+                })
+                messages.append({
+                    "role": "user",
+                    "content": "Return your verification results as a JSON array.",
+                })
+                continue
+
             print(f"  🔍 Verifier searching: '{query}'")
-            tool_result, _ = execute_tool_with_sources(
-                response.tool_name, response.tool_input
-            )
+            try:
+                tool_result, verifier_sources = execute_tool_with_sources(
+                    response.tool_name, response.tool_input
+                )
+                # M6: attach verifier citations to the ResearchResult so they
+                # are not discarded and flow into the provenance pipeline.
+                rr.sources.extend(verifier_sources)
+            except (ValueError, KeyError, Exception) as e:
+                logging.warning("Verifier: tool execution failed: %s", e)
+                tool_result = "Search failed."
+
             messages.append({
                 "role": "assistant",
                 "content": f"I will search for: {query}",
@@ -166,12 +222,16 @@ def verify(
             try:
                 results = json.loads(content)
                 refuted = [r for r in results if _is_refuted(r)]
+                confirmed = [r for r in results if _is_confirmed(r)]
                 if refuted:
                     print(f"  ⚠️  Verifier: {len(refuted)} refuted claim(s) "
                           f"in '{rr.question}'")
                     rr.verified = False
-                else:
+                elif confirmed:
+                    # M4: only mark verified on explicit confirmation;
+                    # ambiguous results (unverified status) leave verified=False.
                     rr.verified = True
+                # else: no confirmation and no refutation — leave verified=False
             except (json.JSONDecodeError, TypeError, AttributeError) as e:
                 warnings.warn(f"Verifier JSON parse failed: {e}", stacklevel=2)
                 rr.verified = True  # conservative: don't penalise on parse failure

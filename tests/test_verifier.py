@@ -246,6 +246,77 @@ def test_verify_uses_agent_llm():
     assert not mock_llm_b.chat.called
 
 
+# ── M3: Malformed tool input ──────────────────────────────────────────────────
+
+def test_verify_malformed_tool_input_does_not_raise():
+    """Malformed tool input (None) is handled without raising KeyError/AttributeError."""
+    mock_llm = MagicMock()
+    mock_llm.chat.side_effect = [
+        LLMResponse(type="tool_call", tool_name="web_search", tool_input=None),
+        make_text_response('[{"status": "verified"}]'),
+    ]
+    agent = make_verifier_agent(mock_llm)
+    rr = make_rr(answer="Fusion produces 500 MW.")
+    import warnings
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        result = verify(agent, rr)
+    assert isinstance(result, ResearchResult)
+
+
+# ── M4: Three-outcome verification ───────────────────────────────────────────
+
+def test_verify_ambiguous_result_leaves_verified_false():
+    """An 'unverified' status from the agent leaves rr.verified=False (not True)."""
+    mock_llm = MagicMock()
+    mock_llm.chat.return_value = make_text_response(
+        '[{"claim": "Fusion produces 500 MW.", "status": "unverified", "confidence": 0.5}]'
+    )
+    agent = make_verifier_agent(mock_llm)
+    rr = make_rr(answer="Fusion produces 500 MW.")
+    with patch("agent.verifier.execute_tool_with_sources", return_value=("r", [])):
+        result = verify(agent, rr)
+    assert result.verified is False
+
+
+# ── M6: Verifier citation retention ──────────────────────────────────────────
+
+def test_verify_attaches_verifier_sources_to_rr():
+    """Sources returned by verifier web searches are appended to rr.sources."""
+    mock_llm = MagicMock()
+    mock_llm.chat.side_effect = [
+        make_tool_response("web_search", {"query": "ITER output"}),
+        make_text_response('[{"status": "verified"}]'),
+    ]
+    agent = make_verifier_agent(mock_llm)
+    rr = make_rr(answer="ITER produces 500 MW.")
+    verifier_sources = [{"title": "ITER site", "url": "https://iter.org"}]
+    with patch("agent.verifier.execute_tool_with_sources",
+               return_value=("results", verifier_sources)):
+        result = verify(agent, rr)
+    assert any(s["url"] == "https://iter.org" for s in result.sources)
+
+
+# ── M7: _is_refuted status-field precision ────────────────────────────────────
+
+def test_is_refuted_checks_status_field_first():
+    """_is_refuted() returns True only when the status field says refuted."""
+    from agent.verifier import _is_refuted
+    assert _is_refuted({"status": "refuted", "note": "something else"}) is True
+
+
+def test_is_refuted_ignores_refuted_in_non_status_field_when_status_present():
+    """When status field is present, _is_refuted() ignores 'refuted' in other fields."""
+    from agent.verifier import _is_refuted
+    assert _is_refuted({"status": "verified", "note": "claim was refuted initially"}) is False
+
+
+def test_is_refuted_falls_back_to_full_scan_when_no_status_field():
+    """Without a status field, _is_refuted() scans all values as fallback."""
+    from agent.verifier import _is_refuted
+    assert _is_refuted({"note": "this claim is refuted by evidence"}) is True
+
+
 # ── Orchestrator verifier integration ────────────────────────────────────────
 
 def test_research_question_async_calls_verifier_unconditionally():
