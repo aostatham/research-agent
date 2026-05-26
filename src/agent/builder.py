@@ -70,10 +70,9 @@ def build_agents(
     prompt_dir: Union[str, Path, None] = None,
 ) -> AgentPool:
     """
-    Build all four pipeline agents and return them as a frozen AgentPool.
+    Build the three pipeline agents and return them as a frozen AgentPool.
 
     Agent LLM assignments:
-      Planner   — orch_llm (no tools)
       Researcher — orch_llm + web_search, max_iterations from config
       Verifier  — synth_llm + web_search
       Editor    — synth_llm by default; separate client if config.editor_provider set
@@ -90,20 +89,13 @@ def build_agents(
         prompt_dir: Directory containing .md prompt files (default: Path("prompts")).
 
     Returns:
-        Frozen AgentPool with planner, researcher, verifier, editor.
+        Frozen AgentPool with researcher, verifier, editor.
     """
     if prompt_dir is None:
         prompt_dir = Path("prompts")
 
     editor_llm = _resolve_editor_llm(config, synth_llm)
 
-    planner = build_agent(
-        name="planner",
-        role="Research planner",
-        description="Decomposes a research topic into focused, independently researchable sub-questions",
-        llm=orch_llm,
-        prompt_dir=prompt_dir,
-    )
     researcher = build_agent(
         name="researcher",
         role="Research agent",
@@ -129,7 +121,7 @@ def build_agents(
         prompt_dir=prompt_dir,
     )
 
-    return AgentPool(planner=planner, researcher=researcher, verifier=verifier, editor=editor)
+    return AgentPool(researcher=researcher, verifier=verifier, editor=editor)
 
 
 def _resolve_editor_llm(config, synth_llm: LLMClient) -> LLMClient:

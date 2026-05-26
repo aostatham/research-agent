@@ -193,7 +193,7 @@ def main():
 
     # Build agent pool and run research pipeline
     agent_pool = build_agents(config, orch_llm, synth_llm)
-    orchestrator = Orchestrator(llm=orch_llm, config=config, agent_pool=agent_pool)
+    orchestrator = Orchestrator(llm=orch_llm, agent_pool=agent_pool, config=config)
     synthesiser = Synthesiser(llm=synth_llm, config=config)
 
     # orchestrator.run() returns ({question: answer}, {question: [sources]})
@@ -211,10 +211,9 @@ def main():
     )
 
     # Editor Agent pass — coherence only, biased toward no-edit (D011)
-    if agent_pool is not None:
-        from agent.editor import edit
-        print("  ✍️  Running Editor Agent pass...")
-        report = edit(agent_pool.editor, report, max_tokens=config.max_tokens_synthesis)
+    from agent.editor import edit
+    print("  ✍️  Running Editor Agent pass...")
+    report = edit(agent_pool.editor, report, max_tokens=config.max_tokens_synthesis)
 
     elapsed = time.time() - start_time
 

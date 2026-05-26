@@ -4,7 +4,8 @@ Tests for agent/builder.py — build_agent() and build_agents().
 Verifies:
   - build_agent() loads system prompt from prompt_dir/{name}.md
   - build_agent() raises FileNotFoundError with correct message when prompt missing
-  - build_agents() returns AgentPool with correct llm assignments per agent
+  - build_agents() returns AgentPool with three agents (no planner — D015)
+  - build_agents() assigns correct llm per agent
   - Editor inherits synth_llm when config.editor_provider is not set
   - Editor uses a separately constructed LLM when config.editor_provider is set
 
@@ -93,8 +94,8 @@ def test_build_agent_prompt_path_uses_name_and_dir(tmp_path):
 # ── build_agents() ────────────────────────────────────────────────────────────
 
 def _make_prompt_dir(tmp_path):
-    """Write all four prompt files needed by build_agents()."""
-    for name in ("planner", "researcher", "verifier", "editor"):
+    """Write the three prompt files needed by build_agents()."""
+    for name in ("researcher", "verifier", "editor"):
         (tmp_path / f"{name}.md").write_text(f"{name} prompt")
     return tmp_path
 
@@ -105,11 +106,10 @@ def test_build_agents_returns_agentpool(tmp_path):
     assert isinstance(pool, AgentPool)
 
 
-def test_build_agents_planner_uses_orch_llm(tmp_path):
-    orch_llm = make_mock_llm()
-    synth_llm = make_mock_llm()
-    pool = build_agents(make_config(), orch_llm, synth_llm, prompt_dir=_make_prompt_dir(tmp_path))
-    assert pool.planner.llm is orch_llm
+def test_build_agents_has_no_planner(tmp_path):
+    """build_agents() does not build a planner agent — planner deferred to Phase E (D015)."""
+    pool = build_agents(make_config(), make_mock_llm(), make_mock_llm(), prompt_dir=_make_prompt_dir(tmp_path))
+    assert not hasattr(pool, "planner")
 
 
 def test_build_agents_researcher_uses_orch_llm(tmp_path):
@@ -134,11 +134,6 @@ def test_build_agents_researcher_has_web_search_tool(tmp_path):
 def test_build_agents_verifier_has_web_search_tool(tmp_path):
     pool = build_agents(make_config(), make_mock_llm(), make_mock_llm(), prompt_dir=_make_prompt_dir(tmp_path))
     assert "web_search" in pool.verifier.tools
-
-
-def test_build_agents_planner_has_no_tools(tmp_path):
-    pool = build_agents(make_config(), make_mock_llm(), make_mock_llm(), prompt_dir=_make_prompt_dir(tmp_path))
-    assert pool.planner.tools == ()
 
 
 def test_build_agents_editor_has_no_tools(tmp_path):
@@ -187,7 +182,6 @@ def test_build_agents_editor_uses_anthropic_editor_model_when_set(tmp_path):
 def test_build_agents_prompts_loaded_correctly(tmp_path):
     """Each agent's system_prompt matches its respective prompt file."""
     pool = build_agents(make_config(), make_mock_llm(), make_mock_llm(), prompt_dir=_make_prompt_dir(tmp_path))
-    assert pool.planner.system_prompt == "planner prompt"
     assert pool.researcher.system_prompt == "researcher prompt"
     assert pool.verifier.system_prompt == "verifier prompt"
     assert pool.editor.system_prompt == "editor prompt"

@@ -248,8 +248,8 @@ def test_verify_uses_agent_llm():
 
 # ── Orchestrator verifier integration ────────────────────────────────────────
 
-def test_research_question_async_calls_verifier_when_pool_set():
-    """research_question_async() invokes verify() when agent_pool is set."""
+def test_research_question_async_calls_verifier_unconditionally():
+    """research_question_async() always invokes verify() — no conditional on agent_pool."""
     import asyncio
     from agent.orchestrator import Orchestrator
     from config import Config
@@ -257,12 +257,10 @@ def test_research_question_async_calls_verifier_when_pool_set():
     mock_llm = MagicMock()
     config = Config(max_iterations=5, max_tokens_research=2048)
     mock_pool = MagicMock()
-    orch = Orchestrator(llm=mock_llm, config=config, agent_pool=mock_pool)
+    orch = Orchestrator(llm=mock_llm, agent_pool=mock_pool, config=config)
 
     expected_rr = ResearchResult(question="Q?", answer="Answer.")
 
-    # Patch researcher.research so the pool-delegate path returns cleanly,
-    # then check that verify() is called on the result.
     with patch("agent.researcher.research", return_value=expected_rr), \
          patch("agent.verifier.verify", return_value=expected_rr) as mock_verify:
         sem = asyncio.Semaphore(4)
@@ -270,23 +268,3 @@ def test_research_question_async_calls_verifier_when_pool_set():
 
     mock_verify.assert_called_once()
     assert isinstance(result, ResearchResult)
-
-
-def test_research_question_async_skips_verifier_when_pool_none():
-    """research_question_async() does NOT invoke verify() when agent_pool is None."""
-    import asyncio
-    from agent.orchestrator import Orchestrator
-    from config import Config
-    from llm.base import LLMResponse
-
-    mock_llm = MagicMock()
-    mock_llm.chat.return_value = LLMResponse(type="text", content="Answer.")
-    config = Config(max_iterations=5, max_tokens_research=2048)
-    orch = Orchestrator(llm=mock_llm, config=config)
-
-    with patch("agent.orchestrator.execute_tool_with_sources", return_value=("r", [])), \
-         patch("agent.verifier.verify") as mock_verify:
-        sem = asyncio.Semaphore(4)
-        asyncio.run(orch.research_question_async("Q?", sem))
-
-    mock_verify.assert_not_called()

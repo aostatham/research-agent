@@ -2,7 +2,7 @@
 Agent and AgentPool abstractions for the multi-agent pipeline.
 
 Agent wraps an LLMClient with identity, persona, system prompt, and tool set.
-AgentPool is a typed container of the four pipeline agents (planner, researcher,
+AgentPool is a typed container of the three pipeline agents (researcher,
 verifier, editor).  Both dataclasses are frozen — agents are immutable once built.
 
 See DECISIONS.md D003–D006 for design rationale.
@@ -58,13 +58,13 @@ class Agent:
 @dataclass(frozen=True)
 class AgentPool:
     """
-    Typed container for the four pipeline agents.
+    Typed container for the three pipeline agents.
 
     Frozen to prevent accidental reassignment after construction.
     Grows by field rather than expanding argument lists — see D005.
+    Planner deferred to Phase E — see DECISIONS.md D015.
     """
 
-    planner: Agent
     researcher: Agent
     verifier: Agent
     editor: Agent

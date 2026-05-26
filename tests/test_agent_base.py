@@ -7,6 +7,7 @@ Verifies:
   - Agent.chat() passes additional kwargs through to llm.chat()
   - Agent.chat() returns the LLMResponse from llm.chat()
   - AgentPool is frozen (FrozenInstanceError on field assignment)
+  - AgentPool has exactly three fields: researcher, verifier, editor
   - AgentPool fields return the correct agent instances
 
 All tests use a mock LLMClient — no real API calls.
@@ -118,24 +119,33 @@ def test_agent_chat_caller_system_kwarg_does_not_raise():
 # ── AgentPool frozen behaviour ────────────────────────────────────────────────
 
 def _make_pool():
-    """Build an AgentPool with four distinct mock agents."""
-    planner = Agent("planner", "plans", "planner desc", make_mock_llm(), "plan prompt")
+    """Build an AgentPool with three distinct mock agents."""
     researcher = Agent("researcher", "researches", "researcher desc", make_mock_llm(), "research prompt")
     verifier = Agent("verifier", "verifies", "verifier desc", make_mock_llm(), "verify prompt")
     editor = Agent("editor", "edits", "editor desc", make_mock_llm(), "edit prompt")
-    return AgentPool(planner=planner, researcher=researcher, verifier=verifier, editor=editor)
+    return AgentPool(researcher=researcher, verifier=verifier, editor=editor)
 
 
 def test_agentpool_is_frozen():
     """Assigning to any AgentPool field raises FrozenInstanceError."""
     pool = _make_pool()
     with pytest.raises(dataclasses.FrozenInstanceError):
-        pool.planner = pool.planner
+        pool.researcher = pool.researcher
 
 
-def test_agentpool_planner_field():
+def test_agentpool_does_not_have_planner_field():
+    """AgentPool has no planner field — planner deferred to Phase E (D015)."""
     pool = _make_pool()
-    assert pool.planner.name == "planner"
+    assert not hasattr(pool, "planner")
+
+
+def test_agentpool_three_fields_only():
+    """Constructing AgentPool with a planner kwarg raises TypeError."""
+    researcher = Agent("researcher", "r", "d", make_mock_llm(), "p")
+    verifier = Agent("verifier", "r", "d", make_mock_llm(), "p")
+    editor = Agent("editor", "r", "d", make_mock_llm(), "p")
+    with pytest.raises(TypeError):
+        AgentPool(planner=researcher, researcher=researcher, verifier=verifier, editor=editor)
 
 
 def test_agentpool_researcher_field():
@@ -155,12 +165,10 @@ def test_agentpool_editor_field():
 
 def test_agentpool_fields_are_same_instances():
     """Field access must return the exact Agent instances passed at construction."""
-    planner = Agent("planner", "r", "d", make_mock_llm(), "p")
     researcher = Agent("researcher", "r", "d", make_mock_llm(), "p")
     verifier = Agent("verifier", "r", "d", make_mock_llm(), "p")
     editor = Agent("editor", "r", "d", make_mock_llm(), "p")
-    pool = AgentPool(planner=planner, researcher=researcher, verifier=verifier, editor=editor)
-    assert pool.planner is planner
+    pool = AgentPool(researcher=researcher, verifier=verifier, editor=editor)
     assert pool.researcher is researcher
     assert pool.verifier is verifier
     assert pool.editor is editor

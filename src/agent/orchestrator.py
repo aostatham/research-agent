@@ -1,36 +1,22 @@
 """
 Research orchestration layer.
 
-Implements the full agentic research loop:
+Implements the research pipeline:
 
     1. decompose()                — LLM breaks a topic into 4–5 focused sub-questions.
-    2. _research_question_sync()  — Agentic loop per question: LLM calls web_search
-                                    until it has enough information to write an answer.
-    3. research_question_async()  — Async wrapper around _research_question_sync()
-                                    that gates concurrency via a semaphore.
+    2. _research_question_sync()  — Delegates to the Researcher Agent (agent/researcher.py)
+                                    which owns the agentic search loop.
+    3. research_question_async()  — Async wrapper: runs researcher then verifier.
     4. research_all_async()       — Researches all questions in parallel using asyncio.
-    5. reflect()                  — Critic LLM identifies genuine gaps in the combined
-                                    findings.
+    5. reflect()                  — Critic LLM identifies genuine gaps in the findings.
     6. run()                      — Ties all steps together; uses research_all_async()
                                     for both initial questions and gap fill.
-
-Key robustness mechanisms in _research_question_sync():
-    - Repeated query detection: if the model issues the same search twice,
-      a synthesis-forcing message is injected instead of executing another search.
-    - Tool-call string detection: some smaller models return a literal "[Calling …]"
-      string as text; this is caught and redirected.
-    - Fallback synthesis: if max_iterations is reached but search results were
-      accumulated, a standalone LLM call synthesises from those results rather
-      than returning a failure message.
 """
 
 import asyncio
 import json
 import logging
-import time
-from typing import Optional
 from llm.base import LLMClient
-from agent.tools import ALL_TOOLS, execute_tool_with_sources
 from config import Config
 from evidence.schema import ResearchResult
 
@@ -84,20 +70,18 @@ class Orchestrator:
     uses a separate client that may be a different model or provider.
     """
 
-    def __init__(self, llm: LLMClient, config: Config = None, agent_pool=None):
+    def __init__(self, llm: LLMClient, agent_pool, config: Config = None):
         """
         Initialise the orchestrator.
 
         Args:
-            llm:        LLMClient instance to use for all orchestration calls
-                        (decompose, _research_question_sync, reflect).
+            llm:        LLMClient instance for decompose and reflect calls.
+            agent_pool: AgentPool containing the researcher, verifier, and editor agents.
             config:     Config instance; defaults to Config() if not provided.
-            agent_pool: Optional AgentPool for Phase D Part 2 multi-agent pipeline.
-                        When None the existing single-LLM loop runs unchanged.
         """
         self.llm = llm
-        self.config = config or Config()
         self.agent_pool = agent_pool
+        self.config = config or Config()
         self._last_research_results: list = []
 
     def decompose(self, topic: str) -> list[str]:
@@ -149,11 +133,7 @@ class Orchestrator:
 
     def _research_question_sync(self, question: str) -> ResearchResult:
         """
-        Run the agentic research loop for a single sub-question (synchronous).
-
-        When agent_pool is set, delegates entirely to the Researcher Agent's
-        research() function (D009). When agent_pool is None (tests without a
-        pool, or legacy call sites), runs the equivalent loop inline.
+        Delegate to the Researcher Agent for a single sub-question.
 
         Args:
             question: The sub-question to research.
@@ -161,152 +141,18 @@ class Orchestrator:
         Returns:
             ResearchResult with answer, sources, and message_history.
         """
-        if self.agent_pool is not None:
-            from agent.researcher import research
-            return research(
-                self.agent_pool.researcher,
-                question,
-                max_tokens=self.config.max_tokens_research,
-            )
-
-        # ── Fallback inline loop (no agent_pool) ─────────────────────────────
-        # Preserves identical behaviour for tests and legacy call sites.
-        print(f"\n🔍 Researching: '{question}'")
-        start = time.time()
-
-        messages = [{"role": "user", "content": question}]
-        iteration = 0
-        all_sources = []
-        seen_queries: set[str] = set()   # detects both consecutive and oscillating repeats
-        accumulated_results = []         # saves all search outputs for fallback synthesis
-
-        while iteration < self.config.max_iterations:
-            iteration += 1
-            response = self.llm.chat(
-                messages=messages,
-                tools=ALL_TOOLS,
-                max_tokens=self.config.max_tokens_research
-            )
-
-            if response.type == "tool_call":
-                current_query = response.tool_input.get("query")
-
-                if current_query in seen_queries:
-                    print(f"  ⚠️  Repeated query detected ('{current_query}'), "
-                          f"prompting synthesis...")
-                    messages.append({
-                        "role": "assistant",
-                        "content": f"I will search for: {current_query}"
-                    })
-                    messages.append({
-                        "role": "user",
-                        "content": (
-                            f"You have already searched for '{current_query}' and received results. "
-                            f"Do not search again. Based on everything you have found so far, "
-                            f"please provide a comprehensive text answer to the original question: "
-                            f"{question}\n\nDo not use any tools. Write your answer now."
-                        )
-                    })
-                    continue
-
-                print(f"  🌐 Searching: '{current_query}'")
-                tool_result, sources = execute_tool_with_sources(
-                    response.tool_name, response.tool_input
-                )
-                all_sources.extend(sources)
-                seen_queries.add(current_query)
-                accumulated_results.append(f"Search: '{current_query}'\n{tool_result}")
-
-                messages.append({
-                    "role": "assistant",
-                    "content": (
-                        f"I need to search for more information to answer this question. "
-                        f"I will search for: {current_query}"
-                    )
-                })
-                messages.append({
-                    "role": "user",
-                    "content": (
-                        f"Search results for '{current_query}':\n\n"
-                        f"{tool_result}\n\n"
-                        f"---\n"
-                        f"Original question: {question}\n\n"
-                        f"Based on these search results, please provide a comprehensive "
-                        f"answer to the original question as plain text NOW. "
-                        f"Do not call any tools. Do not search again. "
-                        f"Write your answer directly."
-                    )
-                })
-
-            elif response.type == "text":
-                content = response.content.strip()
-                if content.startswith("[Calling") or content.startswith("I'll search"):
-                    print(f"  ⚠️  Detected tool call string, forcing summary...")
-                    messages.append({"role": "assistant", "content": content})
-                    messages.append({
-                        "role": "user",
-                        "content": (
-                            f"Please provide a direct text answer to the original question: "
-                            f"{question}\n\nDo not use any tools. Summarise what you know."
-                        )
-                    })
-                    continue
-
-                elapsed = time.time() - start
-                print(f"  ✅ Answer found ({len(content)} chars, {elapsed:.1f}s)")
-                seen = set()
-                unique_sources = []
-                for s in all_sources:
-                    if s["url"] not in seen:
-                        seen.add(s["url"])
-                        unique_sources.append(s)
-                return ResearchResult(
-                    question=question, answer=content,
-                    sources=unique_sources, message_history=messages,
-                )
-
-        if accumulated_results:
-            print(f"  ⚠️  Max iterations reached, attempting fallback synthesis...")
-            combined = "\n\n".join(accumulated_results)
-            fallback_response = self.llm.chat(
-                messages=[{
-                    "role": "user",
-                    "content": (
-                        f"Based on the following search results, please provide a comprehensive "
-                        f"answer to this question: {question}\n\n"
-                        f"Search results:\n{combined}\n\n"
-                        f"Provide a clear, factual answer. Do not use any tools."
-                    )
-                }],
-                max_tokens=self.config.max_tokens_research
-            )
-            if fallback_response.type == "text" and len(fallback_response.content.strip()) > 50:
-                elapsed = time.time() - start
-                print(f"  ✅ Fallback synthesis succeeded ({len(fallback_response.content)} chars, {elapsed:.1f}s)")
-                seen = set()
-                unique_sources = []
-                for s in all_sources:
-                    if s["url"] not in seen:
-                        seen.add(s["url"])
-                        unique_sources.append(s)
-                return ResearchResult(
-                    question=question, answer=fallback_response.content,
-                    sources=unique_sources, message_history=messages,
-                )
-
-        elapsed = time.time() - start
-        print(f"  ❌ Research failed for: '{question}' ({elapsed:.1f}s)")
-        return ResearchResult(
-            question=question,
-            answer=f"Unable to retrieve information on: {question}",
-            sources=[], message_history=messages,
+        from agent.researcher import research
+        return research(
+            self.agent_pool.researcher,
+            question,
+            max_tokens=self.config.max_tokens_research,
         )
 
     async def research_question_async(
         self, question: str, semaphore: asyncio.Semaphore
     ) -> ResearchResult:
         """
-        Async wrapper around _research_question_sync().
+        Async wrapper: runs the Researcher then the Verifier.
 
         Acquires the semaphore before running the researcher to cap concurrent
         workers at config.max_workers.  The Verifier runs outside the semaphore
@@ -317,16 +163,15 @@ class Orchestrator:
             semaphore: Shared semaphore limiting concurrent workers.
 
         Returns:
-            ResearchResult with verified field set when agent_pool is active.
+            ResearchResult with verified field set by the Verifier Agent.
         """
         async with semaphore:
             rr = await asyncio.to_thread(self._research_question_sync, question)
-        if self.agent_pool is not None:
-            from agent.verifier import verify
-            rr = await asyncio.to_thread(
-                verify, self.agent_pool.verifier, rr,
-                self.config.max_tokens_research,
-            )
+        from agent.verifier import verify
+        rr = await asyncio.to_thread(
+            verify, self.agent_pool.verifier, rr,
+            self.config.max_tokens_research,
+        )
         return rr
 
     async def research_all_async(
