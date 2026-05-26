@@ -70,22 +70,26 @@ def save_report(topic: str, metadata: str, report: str, fmt: str = "markdown") -
     return filepath
 
 
+_INDEX_HEADER = (
+    "# Research Agent — Report Index\n\n"
+    "| Date | Topic | Orchestration | Synthesis | Search | Questions | Searches | Mode | Provenance | File |\n"
+    "|---|---|---|---|---|---|---|---|---|---|\n"
+)
+
+
 def update_index(topic: str, output_path: str, started_at, orch_provider: str,
                  orch_model: str, synth_provider: str, synth_model: str,
                  search_provider: str, question_count: int, search_count: int,
                  short: bool, provenance: str = "none") -> None:
     """
     Append a row to output/index.md tracking all reports generated.
-    Creates the index file with header if it doesn't exist.
+
+    Uses an atomic write (read → modify in memory → write to temp file →
+    os.replace) to eliminate the TOCTOU race on the header check and
+    prevent interleaved rows from concurrent workers.
     """
     os.makedirs("output", exist_ok=True)
     index_path = "output/index.md"
-
-    if not os.path.exists(index_path):
-        with open(index_path, "w", encoding="utf-8") as f:
-            f.write("# Research Agent — Report Index\n\n")
-            f.write("| Date | Topic | Orchestration | Synthesis | Search | Questions | Searches | Mode | Provenance | File |\n")
-            f.write("|---|---|---|---|---|---|---|---|---|---|\n")
 
     mode = "Summary" if short else "Full"
     date = started_at.strftime("%Y-%m-%d %H:%M")
@@ -93,8 +97,20 @@ def update_index(topic: str, output_path: str, started_at, orch_provider: str,
     synth = f"{synth_provider}/{synth_model}"
     filename = os.path.basename(output_path)
     link = f"[{filename}]({filename})"
-
     row = f"| {date} | {topic} | {orch} | {synth} | {search_provider} | {question_count} | {search_count} | {mode} | {provenance} | {link} |\n"
 
-    with open(index_path, "a", encoding="utf-8") as f:
-        f.write(row)
+    # Read existing content into memory; fall back to header for a new file.
+    try:
+        with open(index_path, "r", encoding="utf-8") as f:
+            content = f.read()
+    except FileNotFoundError:
+        content = _INDEX_HEADER
+
+    new_content = content + row
+
+    # Write to a temp file in the same directory, then atomically replace.
+    # os.replace() is atomic on POSIX; as close to atomic as Windows allows.
+    tmp_path = f"{index_path}.tmp.{os.getpid()}"
+    with open(tmp_path, "w", encoding="utf-8") as f:
+        f.write(new_content)
+    os.replace(tmp_path, index_path)
