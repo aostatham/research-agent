@@ -409,6 +409,57 @@ relationships to decide what to restructure, drop, or strengthen. This requires
 Phase E's Kuzu knowledge store. The Editor Agent (Phase D) targets prose coherence
 only. Analyst Agent (Phase E) targets evidence-informed restructuring.
 **Date:** Phase D Part 2 design
+See also: D011 (three editor types established).
+
+### D014 — Editor minimum response length guard
+**Decision:** editor.py rejects a response if `len(edited) < 0.5 * len(original)`
+or if the first 60 characters match a known refusal phrase. Falls back to
+original report unchanged. The 100-character absolute floor introduced by
+Claude Code in Step 9 was insufficient — a 276-char refusal against a
+5000-char report passed the floor.
+**Rationale:** Editor `output_schema` (Agent.output_schema) is not yet enforced.
+Until it is, a proportional heuristic is the most reliable guard against
+model refusals and truncated responses replacing the synthesised report.
+**Date:** Phase D Part 2 QA fixes
+
+### D015 — Planner Agent deferred to Phase E
+**Decision:** Planner is removed from AgentPool in Pass 2. `Orchestrator.decompose()`
+continues to use `self.llm` with the inline `DECOMPOSE_PROMPT`. The Planner field,
+builder code, and `prompts/planner.md` are removed until Phase E when `decompose()`
+is redesigned with a reconciled prompt and parser.
+**Rationale:** QA (H2) found the Planner was built and loaded but never called.
+Wiring it without reconciling the numbered-list prompt against the `json.loads()`
+parser would introduce new bugs. Deferral is cleaner than a partial fix.
+**Date:** Phase D Part 2 QA fixes
+
+### D016 — Inline researcher fallback path removed in Pass 2
+**Decision:** The conditional delegate pattern in `Orchestrator._research_question_sync()`
+— which called `researcher.research()` when `agent_pool` was set and fell back to
+the old inline loop otherwise — is removed in Pass 2. The inline loop is deleted.
+The agent path is now unconditional.
+**Rationale:** QA (M5) found the inline loop had diverged from the agent loop.
+Maintaining two paths is a correctness risk. The agent path is stable and tested.
+**Date:** Phase D Part 2 QA fixes
+
+### D017 — Agent.chat() silently discards caller-supplied system kwarg
+**Decision:** Agent.chat() calls kwargs.pop('system', None) before
+injecting system=self.system_prompt. Any system= kwarg supplied by a
+caller is silently discarded. self.system_prompt is always used.
+**Rationale:** QA (M2) found that passing system= explicitly to
+agent.chat() raised TypeError due to kwarg collision. The agent's system
+prompt is non-negotiable — callers have no legitimate reason to override
+it. Silent discard is safer than raising.
+**Date:** Phase D Part 2 QA fixes
+
+### D018 — asyncio.gather always called with return_exceptions=True
+**Decision:** Every asyncio.gather() call in orchestrator.py uses
+return_exceptions=True. After the gather, results are iterated and
+exceptions are logged as warnings and skipped. The pipeline continues
+with whatever results were successfully collected.
+**Rationale:** QA (H5) found that a single worker failure aborted the
+entire pipeline. One failed research question should not destroy a run
+that otherwise produced four good answers.
+**Date:** Phase D Part 2 QA fixes
 
 ---
 
@@ -433,7 +484,7 @@ already-imported references.
 ### T003 — Growing test count as commit gate
 **Decision:** pytest tests/ -m "not integration" -v must pass all existing tests before
 every commit. Count grows with each phase — treat any reduction as a regression signal.
-Started at 199, currently 307+.
+Started at 199, currently 430.
 **Rationale:** Prevents regressions from accumulating.
 **Date:** Ongoing
 
