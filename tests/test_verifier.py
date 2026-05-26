@@ -331,9 +331,48 @@ def test_is_refuted_ignores_refuted_in_non_status_field_when_status_present():
 
 
 def test_is_refuted_falls_back_to_full_scan_when_no_status_field():
-    """Without a status field, _is_refuted() scans all values as fallback."""
+    """Without a status field, _is_refuted() scans all values using frozenset exact match."""
     from agent.verifier import _is_refuted
-    assert _is_refuted({"note": "this claim is refuted by evidence"}) is True
+    # Value must exactly match a _REFUTED_STATUSES entry for fallback to trigger
+    assert _is_refuted({"note": "refuted"}) is True
+
+
+def test_is_refuted_fallback_does_not_match_substring():
+    """Fallback scan does not match 'refuted' as a substring of a longer value."""
+    from agent.verifier import _is_refuted
+    assert _is_refuted({"note": "this claim is refuted by evidence"}) is False
+
+
+# ── H4: _REFUTED_STATUSES frozenset exact match ───────────────────────────────
+
+def test_is_refuted_matches_false_status():
+    """'false' status is treated as refuted (in _REFUTED_STATUSES)."""
+    from agent.verifier import _is_refuted
+    assert _is_refuted({"status": "false"}) is True
+
+
+def test_is_refuted_matches_incorrect_status():
+    """'incorrect' status is treated as refuted."""
+    from agent.verifier import _is_refuted
+    assert _is_refuted({"status": "incorrect"}) is True
+
+
+def test_is_refuted_matches_disputed_status():
+    """'disputed' status is treated as refuted."""
+    from agent.verifier import _is_refuted
+    assert _is_refuted({"status": "disputed"}) is True
+
+
+def test_is_refuted_matches_wrong_status():
+    """'wrong' status is treated as refuted."""
+    from agent.verifier import _is_refuted
+    assert _is_refuted({"status": "wrong"}) is True
+
+
+def test_is_refuted_matches_inaccurate_status():
+    """'inaccurate' status is treated as refuted."""
+    from agent.verifier import _is_refuted
+    assert _is_refuted({"status": "inaccurate"}) is True
 
 
 # ── Orchestrator verifier integration ────────────────────────────────────────

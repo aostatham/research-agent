@@ -20,6 +20,12 @@ from agent.tools import ALL_TOOLS, execute_tool_with_sources
 from evidence.schema import ResearchResult
 
 
+# Exact status strings that represent a refuted claim.
+_REFUTED_STATUSES = frozenset({
+    "refuted", "false", "incorrect", "disputed",
+    "contradicted", "wrong", "inaccurate",
+})
+
 # Absolute terms that suggest a claim is worth verifying (D010).
 _ABSOLUTE_TERMS = frozenset({
     "first", "only", "always", "never", "largest", "smallest",
@@ -83,19 +89,21 @@ def _extract_suspicious_claims(
 def _is_refuted(result_item) -> bool:
     """Return True if the verification result indicates a refuted claim.
 
-    Checks status/summary fields first (M7). Falls back to a full-value
-    scan only when no recognised field is present, logging at DEBUG level.
+    Uses exact frozenset lookup against _REFUTED_STATUSES (H4) to avoid
+    false positives from substring matching. Checks status/summary fields
+    first (M7); falls back to a full-value scan only when no recognised
+    field is present, logging at DEBUG level.
     """
     if not isinstance(result_item, dict):
         return False
     for field in ("status", "verification_status", "verdict", "summary"):
         val = result_item.get(field)
         if val is not None:
-            return isinstance(val, str) and "refuted" in val.lower()
+            return isinstance(val, str) and val.lower().strip() in _REFUTED_STATUSES
     # No recognised status/summary field — fall back to scanning all values
     logging.debug("_is_refuted: no status/summary field found, scanning all values")
     return any(
-        isinstance(v, str) and "refuted" in v.lower()
+        isinstance(v, str) and v.lower().strip() in _REFUTED_STATUSES
         for v in result_item.values()
     )
 
