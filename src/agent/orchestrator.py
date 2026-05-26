@@ -114,7 +114,14 @@ class Orchestrator:
         )
 
         try:
-            questions = json.loads(response.content)
+            parsed = json.loads(response.content)
+            # H6: handle {"questions": [...]} wrapper shape some models emit
+            if isinstance(parsed, dict):
+                parsed = parsed.get("questions", [])
+            if not isinstance(parsed, list):
+                raise ValueError(f"expected list, got {type(parsed).__name__}")
+            # Discard non-string items (defensive: model may include dicts)
+            questions = [q for q in parsed if isinstance(q, str)]
             # Enforce the hard cap; the model sometimes ignores the max instruction
             questions = questions[:self.config.max_questions]
             if len(questions) < self.config.min_questions:
@@ -123,9 +130,9 @@ class Orchestrator:
             for i, q in enumerate(questions, 1):
                 print(f"  {i}. {q}")
             return questions
-        except json.JSONDecodeError:
-            # The model returned non-JSON; use safe generic questions so the
-            # pipeline doesn't hard-fail at the very first step.
+        except (json.JSONDecodeError, ValueError, AttributeError, TypeError):
+            # The model returned non-JSON or unexpected shape; use safe generic
+            # questions so the pipeline doesn't hard-fail at the very first step.
             print("  ⚠️  Failed to parse questions, using fallback")
             return [f"What is {topic}?", f"What are recent developments in {topic}?",
                     f"What are the key challenges in {topic}?",
@@ -260,9 +267,20 @@ class Orchestrator:
                     content = content[4:]
                 content = content.strip()
 
-            result = json.loads(content)
-            sufficient = result.get("sufficient", True)
-            missing = result.get("missing", [])
+            parsed = json.loads(content)
+            # H6/M8: handle a bare list — treat it as a list of gap strings
+            if isinstance(parsed, list):
+                missing = [g for g in parsed if isinstance(g, str)]
+                if missing:
+                    print(f"  ⚠️  Gaps identified (bare list): {missing}")
+                    return False, missing
+                return True, []
+            if not isinstance(parsed, dict):
+                raise ValueError(f"expected dict or list, got {type(parsed).__name__}")
+            sufficient = bool(parsed.get("sufficient", True))
+            missing = parsed.get("missing", [])
+            if not isinstance(missing, list):
+                missing = []
 
             if sufficient:
                 print("  ✅ Research is sufficient")
@@ -272,7 +290,7 @@ class Orchestrator:
 
             return sufficient, missing
 
-        except json.JSONDecodeError:
+        except (json.JSONDecodeError, ValueError, AttributeError, TypeError):
             # If we can't parse the reflection, assume research is good enough
             # rather than triggering unnecessary extra research.
             print("  ⚠️  Could not parse reflection, proceeding anyway")

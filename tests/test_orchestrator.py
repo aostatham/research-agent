@@ -296,6 +296,44 @@ def test_reflect_returns_all_gaps_without_filtering(orchestrator, mock_llm):
     assert "commercial viability and investment landscape" in missing
 
 
+# ── H6/M8: JSON shape hardening ──────────────────────────────────────────────
+
+def test_decompose_handles_dict_wrapper_shape(orchestrator, mock_llm):
+    """decompose() extracts questions from {"questions": [...]} dict shape."""
+    mock_llm.chat.return_value = make_text_response(
+        '{"questions": ["What is fusion?", "How hot is plasma?", "What is ITER?", "What is NIF?"]}'
+    )
+    questions = orchestrator.decompose("fusion")
+    assert "What is fusion?" in questions
+    assert len(questions) >= 1
+
+
+def test_decompose_handles_non_list_json_with_fallback(orchestrator, mock_llm):
+    """decompose() falls back to generic questions when JSON is not a list or recognisable dict."""
+    mock_llm.chat.return_value = make_text_response('"just a string"')
+    questions = orchestrator.decompose("fusion")
+    assert len(questions) >= 4
+    assert any("fusion" in q.lower() for q in questions)
+
+
+def test_reflect_handles_bare_list_as_gaps(orchestrator, mock_llm):
+    """reflect() treats a bare JSON list as a list of gap strings (sufficient=False)."""
+    mock_llm.chat.return_value = make_text_response(
+        '["cost of construction", "timeline to commercial viability"]'
+    )
+    sufficient, missing = orchestrator.reflect("fusion", {"Q1": "A1"})
+    assert sufficient is False
+    assert "cost of construction" in missing
+
+
+def test_reflect_handles_non_dict_non_list_json_with_fallback(orchestrator, mock_llm):
+    """reflect() falls back to (True, []) when JSON is neither dict nor list."""
+    mock_llm.chat.return_value = make_text_response('"sufficient"')
+    sufficient, missing = orchestrator.reflect("fusion", {"Q1": "A1"})
+    assert sufficient is True
+    assert missing == []
+
+
 # ── run() tests ───────────────────────────────────────────────────────────────
 # Verify the full pipeline composition: decompose + research + reflect + gap fill.
 # Research calls are patched via research_question_async; mock_llm handles
