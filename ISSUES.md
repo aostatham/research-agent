@@ -25,7 +25,7 @@ a clean table.
 
 Open: 0 High, 0 Medium, 0 Low
 Deferred: 0 High, 2 Medium (I003, I004), 0 Low
-Last updated: Phase D close
+Last updated: Phase D Pass 6
 
 Status values: Open | Deferred | Closed
 Fixed In: blank for Open, target phase for Deferred, pass name for Closed.
@@ -39,8 +39,6 @@ grep examples:
 |----|----------|------|-------|-------|--------|----------|
 | I001 | High | agent/editor.py | ReadTimeout not caught — editor crash kills pipeline and discards all research | Pass 3 live run | Closed | Pass 4 |
 | I002 | Medium | agent/verifier.py | Verifier runs Ollama calls outside semaphore — causes timeouts when provider is Ollama | Pass 3 live run | Closed | Pass 4 |
-| I033 | High | agent/editor.py | Editor did not catch ReadTimeout — pipeline crashed on Ollama timeout | Pass 4 live run | Closed | Pass 4 |
-| I034 | Medium | agent/orchestrator.py | Verifier ran outside semaphore with Ollama — caused timeout cascades on research workers | Pass 4 live run | Closed | Pass 4 |
 | I003 | Medium | agent/tools.py | Module-level globals for search config and search_count block concurrent FastAPI handlers — concurrent Orchestrators actively corrupt each other's search counts via reset-at-start | Pass 3 QA | Deferred | Phase I |
 | I004 | Medium | agent/orchestrator.py | Orchestrator.run() calls asyncio.run() — raises RuntimeError in async contexts | Pass 1 QA | Deferred | Phase I |
 | I005 | High | agent/researcher.py | System prompt bypassed — agent.llm.chat() called directly instead of agent.chat() | Pass 1 QA | Closed | Pass 1 |
@@ -71,3 +69,11 @@ grep examples:
 | I030 | Low | agent/builder.py | path.read_text() used platform default encoding — UnicodeDecodeError on Windows | Pass 3 QA | Closed | Pass 3 |
 | I031 | Low | llm/retry.py | Anthropic exceptions matched by string name — silent failure on SDK rename | Pass 3 QA | Closed | Pass 3 |
 | I032 | Low | agent/builder.py | Verifier max_iterations hard-coded — not tunable from Config | Pass 4 QA | Closed | Pass 4 |
+| I033 | High | agent/orchestrator.py | Verifier semaphore gate used orch_provider — Verifier uses synth_llm; mixed-provider runs had wrong serialisation behaviour | Pass 4 QA | Closed | Pass 5 |
+| I034 | High | output/formatter.py | XSS surface returns silently when bleach missing — convert_to_html fell through to unsanitised markdown output | Pass 4 QA | Closed | Pass 6 |
+| I035 | High | agent/editor.py | Editor preamble strip failed when report ended in whitespace — find() searched unstripped report against stripped edited | Pass 4 QA | Closed | Pass 5 |
+| I036 | Medium | agent/tools.py | search_count leaked across runs when run_async raised before final reset | Pass 4 QA | Closed | Pass 5 |
+| I037 | Medium | agent/tools.py | search_count incremented before dispatch — counted malformed inputs and unknown tool names | Pass 4 QA | Closed | Pass 5 |
+| I038 | Medium | agent/editor.py | except Exception masked programming bugs — no stderr visibility in headless runs | Pass 4 QA | Closed | Pass 6 |
+| I039 | Medium | agent/tools.py | search_count under-counted billable retried failures — incremented only on success | Pass 5 QA | Closed | Pass 6 |
+| I040 | Medium | agent/orchestrator.py | research_question_async docstring and warning text referenced orchestration provider — Verifier uses synth_llm | Pass 5 QA | Closed | Pass 6 |
