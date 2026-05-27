@@ -121,6 +121,9 @@ def build_agents(
         prompt_dir=prompt_dir,
     )
 
+    # Planner Agent deferred to Phase E (D015). When implemented,
+    # decompose() will be redesigned with a reconciled prompt and parser.
+
     return AgentPool(researcher=researcher, verifier=verifier, editor=editor)
 
 
