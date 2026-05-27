@@ -586,7 +586,8 @@ def test_main_runs_full_pipeline(tmp_path, monkeypatch):
         topic="nuclear fusion",
         results=SAMPLE_RESULTS,
         sources={},
-        short=False
+        short=False,
+        claims=None,
     )
 
 
@@ -1106,6 +1107,53 @@ def test_main_no_warning_when_anthropic_high_workers(tmp_path, monkeypatch, caps
 
     captured = capsys.readouterr()
     assert "Warning" not in captured.out
+
+
+# ── Provenance pipeline ordering tests ───────────────────────────────────────
+
+def test_main_synthesise_receives_claims_when_provenance_file(tmp_path, monkeypatch):
+    """When --provenance file, synthesise() receives the claims list extracted before it."""
+    monkeypatch.chdir(tmp_path)
+    mock_llm = MagicMock()
+    mock_orchestrator = MagicMock()
+    mock_synthesiser = MagicMock()
+    mock_orchestrator.run.return_value = (SAMPLE_RESULTS, {})
+    mock_synthesiser.synthesise.return_value = SAMPLE_REPORT
+    fake_claims = [{"id": 1, "claim": "fusion works", "synthesis_status": "not_attempted"}]
+
+    with patch("sys.argv", ["main.py", "nuclear fusion", "--provenance", "file"]), \
+         patch("llm.builder.AnthropicClient", return_value=mock_llm), \
+         patch("main.Orchestrator", return_value=mock_orchestrator), \
+         patch("main.Synthesiser", return_value=mock_synthesiser), \
+         patch("main.build_claims_from_results", return_value=fake_claims), \
+         patch("main.annotate_report_lines", return_value=(SAMPLE_REPORT, fake_claims)), \
+         patch("main.write_provenance_file"), \
+         patch("main.build_quality_metrics", return_value={}):
+        from main import main
+        main()
+
+    call_kwargs = mock_synthesiser.synthesise.call_args[1]
+    assert call_kwargs.get("claims") == fake_claims
+
+
+def test_main_synthesise_receives_no_claims_when_provenance_none(tmp_path, monkeypatch):
+    """When provenance is none (default), synthesise() is called with claims=None."""
+    monkeypatch.chdir(tmp_path)
+    mock_llm = MagicMock()
+    mock_orchestrator = MagicMock()
+    mock_synthesiser = MagicMock()
+    mock_orchestrator.run.return_value = (SAMPLE_RESULTS, {})
+    mock_synthesiser.synthesise.return_value = SAMPLE_REPORT
+
+    with patch("sys.argv", ["main.py", "nuclear fusion"]), \
+         patch("llm.builder.AnthropicClient", return_value=mock_llm), \
+         patch("main.Orchestrator", return_value=mock_orchestrator), \
+         patch("main.Synthesiser", return_value=mock_synthesiser):
+        from main import main
+        main()
+
+    call_kwargs = mock_synthesiser.synthesise.call_args[1]
+    assert call_kwargs.get("claims") is None
 
 
 # ── Integration tests ─────────────────────────────────────────────────────────

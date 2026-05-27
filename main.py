@@ -231,12 +231,22 @@ def main():
     # Count researcher web searches (excludes verifier searches)
     search_count = orchestrator.search_count
 
+    # Extract provenance claims before synthesis so the synthesiser can anchor them
+    claims = []
+    prov_path = None
+    if config.provenance in ("file", "graph"):
+        claims = build_claims_from_results(
+            orchestrator._last_research_results, synth_llm,
+            custom_domains=config.source_classification,
+        )
+
     # Synthesise — full report or executive summary
     report = synthesiser.synthesise(
         topic=topic,
         results=results,
         sources=sources,
-        short=args.short
+        short=args.short,
+        claims=claims if claims else None,
     )
 
     # Editor Agent pass — coherence only, biased toward no-edit (D011)
@@ -246,14 +256,7 @@ def main():
 
     elapsed = time.time() - start_time
 
-    # Build provenance claims before saving so annotated report is written to disk
-    claims = []
-    prov_path = None
     if config.provenance in ("file", "graph"):
-        claims = build_claims_from_results(
-            orchestrator._last_research_results, synth_llm,
-            custom_domains=config.source_classification,
-        )
         if config.output_mode != "data":
             report, claims = annotate_report_lines(report, claims)
 
