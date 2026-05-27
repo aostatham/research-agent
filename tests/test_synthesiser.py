@@ -367,6 +367,106 @@ def test_build_synthesis_prompt_contains_findings(synthesiser):
     assert "my specific findings text" in result
 
 
+# ── Claim anchors and omissions parsing tests ─────────────────────────────────
+
+def _make_claim(cid, text, confidence=0.8, verification_status="unverified"):
+    return {
+        "id": cid, "claim": text, "confidence": confidence,
+        "verification_status": verification_status, "synthesis_status": "not_attempted",
+    }
+
+
+def test_build_synthesis_prompt_no_claims_has_no_anchors(synthesiser):
+    """When claims is None, the prompt contains no 'Key facts to preserve' section."""
+    result = synthesiser._build_synthesis_prompt("topic", "findings", claims=None)
+    assert "Key facts to preserve" not in result
+
+
+def test_build_synthesis_prompt_with_claims_has_anchor_section(synthesiser):
+    """When claims is provided, the prompt contains the anchor section."""
+    claims = [_make_claim(1, "Fusion ignition was achieved in 2022.")]
+    result = synthesiser._build_synthesis_prompt("topic", "findings", claims=claims)
+    assert "Key facts to preserve" in result
+    assert "Fusion ignition was achieved in 2022." in result
+
+
+def test_build_synthesis_prompt_claims_include_confidence(synthesiser):
+    """Anchor lines include the confidence value rounded to 2 decimal places."""
+    claims = [_make_claim(1, "Some claim.", confidence=0.756)]
+    result = synthesiser._build_synthesis_prompt("topic", "findings", claims=claims)
+    assert "0.76" in result
+
+
+def test_build_synthesis_prompt_claims_include_verification_status(synthesiser):
+    """Anchor lines include the verification_status of each claim."""
+    claims = [_make_claim(1, "Some claim.", verification_status="verified")]
+    result = synthesiser._build_synthesis_prompt("topic", "findings", claims=claims)
+    assert "verified" in result
+
+
+def test_build_synthesis_prompt_short_caps_claim_count(synthesiser):
+    """Short mode limits anchor claims to top-N by confidence."""
+    # 20 claims; at min(2048,8192)//10//100 = 2 max anchors in short mode
+    claims = [_make_claim(i, f"Claim {i}.", confidence=i / 20) for i in range(1, 21)]
+    result = synthesiser._build_synthesis_prompt("topic", "findings", claims=claims, short=True)
+    # Highest-confidence claims (19 and 20) should be included
+    assert "Claim 20." in result
+    assert "Claim 19." in result
+    # Very low-confidence claims should not
+    assert "Claim 1." not in result
+
+
+def test_synthesise_strips_end_marker_from_report(synthesiser, mock_llm, sample_results):
+    """The ---END--- marker is stripped from the returned report."""
+    mock_llm.chat.return_value = LLMResponse(
+        type="text", content="# Report\n\nContent.\n---END---"
+    )
+    claims = [_make_claim(1, "Some claim.")]
+    result = synthesiser.synthesise("topic", sample_results, claims=claims)
+    assert "---END---" not in result
+    assert "Content." in result
+
+
+def test_synthesise_sets_omitted_status_on_claimed_ids(synthesiser, mock_llm, sample_results):
+    """Claim IDs listed after ---END--- get synthesis_status='omitted'."""
+    mock_llm.chat.return_value = LLMResponse(
+        type="text", content="# Report\n\nContent.\n---END---\n3,5"
+    )
+    claims = [
+        _make_claim(3, "Claim three."),
+        _make_claim(5, "Claim five."),
+        _make_claim(7, "Claim seven."),
+    ]
+    synthesiser.synthesise("topic", sample_results, claims=claims)
+    assert claims[0]["synthesis_status"] == "omitted"
+    assert claims[1]["synthesis_status"] == "omitted"
+    assert claims[2]["synthesis_status"] == "not_attempted"
+
+
+def test_synthesise_no_end_marker_logs_debug_and_preserves_status(
+    synthesiser, mock_llm, sample_results, caplog
+):
+    """When ---END--- is absent, claim statuses are unchanged and DEBUG is logged."""
+    import logging
+    mock_llm.chat.return_value = LLMResponse(
+        type="text", content="# Report\n\nContent without marker."
+    )
+    claims = [_make_claim(1, "Some claim.")]
+    with caplog.at_level(logging.DEBUG, logger="agent.synthesiser"):
+        synthesiser.synthesise("topic", sample_results, claims=claims)
+    assert claims[0]["synthesis_status"] == "not_attempted"
+    assert any("falling back to matcher only" in r.message for r in caplog.records)
+
+
+def test_synthesise_without_claims_no_anchor_section(synthesiser, mock_llm, sample_results):
+    """When claims is None, synthesise() sends no anchor section to the LLM."""
+    mock_llm.chat.return_value = LLMResponse(type="text", content="# Report")
+    synthesiser.synthesise("topic", sample_results, claims=None)
+    call_args = mock_llm.chat.call_args
+    prompt = call_args[1]["messages"][0]["content"]
+    assert "Key facts to preserve" not in prompt
+
+
 # ── Integration tests ─────────────────────────────────────────────────────────
 
 @pytest.mark.integration

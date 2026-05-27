@@ -16,8 +16,12 @@ Sources are formatted at two levels:
     2. Master deduplicated References section appended to the final report.
 """
 
+import logging
+
 from llm.base import LLMClient
 from config import Config
+
+logger = logging.getLogger(__name__)
 
 
 SYNTHESISE_PROMPT = """You are a research report writer.
@@ -99,19 +103,55 @@ class Synthesiser:
             Complete prompt string ready to pass to the LLM.
         """
         prompt_template = SHORT_SYNTHESISE_PROMPT if short else SYNTHESISE_PROMPT
-        return (
+        prompt = (
             prompt_template +
             f"\n\n# Topic\n{topic}\n\n# Research Findings\n{findings}"
         )
 
+        if claims:
+            # For short mode, cap anchors to ~10% of the token budget (100 chars/claim estimate)
+            anchor_claims = claims
+            if short:
+                max_tokens_budget = min(2048, self.config.max_tokens_synthesis)
+                max_anchor_claims = max(1, (max_tokens_budget // 10) // 100)
+                anchor_claims = sorted(claims, key=lambda c: c.get("confidence", 0), reverse=True)
+                anchor_claims = anchor_claims[:max_anchor_claims]
+
+            anchor_lines = "\n".join(
+                f"{c['id']}. {c['claim']} "
+                f"(confidence: {c.get('confidence', 0):.2f}, "
+                f"status: {c.get('verification_status', 'unverified')})"
+                for c in anchor_claims
+            )
+            prompt += (
+                "\n\n---\n"
+                "Key facts to preserve (incorporate using language close to the "
+                "phrasing given; you may paraphrase slightly):\n\n"
+                + anchor_lines +
+                "\n\nIf any fact is redundant with another or does not fit the "
+                "report focus, you may omit it. After the report, add a line "
+                "\"---END---\" followed by a comma-separated list of the numbers "
+                "of any omitted claims, e.g. \"3,7,12\". If no claims were "
+                "omitted, write \"---END---\" with nothing after it."
+            )
+
+        return prompt
+
     def synthesise(self, topic: str, results: dict,
                    sources: dict = None, max_tokens: int = None,
-                   short: bool = False) -> str:
+                   short: bool = False, claims: list = None) -> str:
         """
         Synthesise research findings into a structured markdown report.
 
         Formats findings with inline sources into a prompt, calls the LLM,
         then appends a master References section (full mode only).
+
+        When claims is provided, key facts are appended to the prompt as
+        anchor hints and the model is asked to emit "---END---" followed by
+        a comma-separated list of omitted claim IDs.  Omitted claims have
+        synthesis_status set to "omitted"; the marker is stripped from the
+        returned report.  If the model does not emit "---END---", a DEBUG
+        message is logged and all claim statuses are left unchanged.
 
         Args:
             topic:      The research topic string.
@@ -122,6 +162,8 @@ class Synthesiser:
             max_tokens: Override the config token limit for this call.
             short:      If True, use the shorter executive-summary prompt and
                         a lower token limit (min(2048, config.max_tokens_synthesis)).
+            claims:     Optional list of EvidenceClaim dicts to anchor in the
+                        prompt.  None means no anchor section is added.
 
         Returns:
             Markdown string.  Full mode appends a References section;
@@ -137,7 +179,7 @@ class Synthesiser:
             max_tokens = max_tokens or self.config.max_tokens_synthesis
 
         findings = self._format_findings(results, sources or {})
-        prompt = self._build_synthesis_prompt(topic, findings, short=short)
+        prompt = self._build_synthesis_prompt(topic, findings, claims=claims, short=short)
 
         response = self.llm.chat(
             messages=[{"role": "user", "content": prompt}],
@@ -145,6 +187,26 @@ class Synthesiser:
         )
 
         report = response.content
+
+        # Parse omissions marker when claim anchors were provided
+        if claims:
+            end_marker = "---END---"
+            if end_marker in report:
+                body, _, tail = report.partition(end_marker)
+                report = body.rstrip()
+                # Build id→claim index for fast lookup
+                claim_by_id = {c["id"]: c for c in claims}
+                for token in tail.split(","):
+                    token = token.strip()
+                    if token.isdigit():
+                        cid = int(token)
+                        if cid in claim_by_id:
+                            claim_by_id[cid]["synthesis_status"] = "omitted"
+            else:
+                logger.debug(
+                    "Synthesiser did not return omissions marker — "
+                    "falling back to matcher only."
+                )
 
         # Append master reference list in full mode only; short summaries omit it
         if sources and not short:
