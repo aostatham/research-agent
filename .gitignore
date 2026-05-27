@@ -5,6 +5,7 @@ __pycache__/
 *.pyo
 .env
 /output/
+output/index.md.lock
 .pytest_cache/
 *.egg-info/
 dist/

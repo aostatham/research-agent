@@ -522,6 +522,16 @@ the same hole in theory but avoided it in practice because the SDK
 raises concrete subclasses whose names differ from "APIStatusError".
 **Date:** Phase D Part 2 QA Pass 4
 
+### D022 — index.md.lock is an operational artifact, not source
+**Decision:** output/index.md.lock is created by fcntl.flock in
+writer.py on every update_index() call and is never deleted. It is
+added to .gitignore.
+**Rationale:** The lock file is an operational artifact required for
+concurrency-safe index writes. Deleting it after each write would
+introduce a race between deletion and the next lock acquisition.
+Ignoring it in git is cleaner than documenting it in README.
+**Date:** Phase D Part 2 QA Pass 4
+
 ---
 
 ## Testing
