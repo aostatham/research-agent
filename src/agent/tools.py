@@ -161,9 +161,10 @@ def execute_tool_with_sources(tool_name: str, tool_input: dict) -> tuple[str, li
     """
     Dispatch a tool call and return both result text and source citations.
 
-    Increments the module-level _search_call_count on successful dispatch
-    only — unknown tool names and malformed inputs do not count. The
-    Orchestrator reports the total via get_and_reset_search_count().
+    Counter is incremented inside the provider function before the API call,
+    so failed searches are counted too. Unknown tool names and malformed
+    inputs (missing query key) do not increment the counter.
+    The Orchestrator reports the total via get_and_reset_search_count().
 
     Used by the orchestrator so citations are carried through to the synthesiser
     and formatted into the final report's References section.
@@ -180,10 +181,7 @@ def execute_tool_with_sources(tool_name: str, tool_input: dict) -> tuple[str, li
         ValueError: If tool_name is not recognised.
     """
     if tool_name == "web_search":
-        result = _web_search_with_sources(tool_input["query"])
-        global _search_call_count
-        _search_call_count += 1
-        return result
+        return _web_search_with_sources(tool_input["query"])
     raise ValueError(f"Unknown tool: {tool_name}")
 
 
@@ -232,6 +230,9 @@ def _anthropic_search_with_sources(query: str) -> tuple[str, list[dict]]:
     Returns:
         Tuple of (result_text, sources) where sources is deduplicated by URL.
     """
+    global _search_call_count
+    _search_call_count += 1
+
     client = _get_anthropic_client()
 
     response = client.messages.create(
@@ -293,6 +294,9 @@ def _tavily_search_with_sources(query: str) -> tuple[str, list[dict]]:
         raise ImportError(
             "tavily-python not installed. Run: pip install tavily-python"
         )
+
+    global _search_call_count
+    _search_call_count += 1
 
     client = TavilyClient(api_key=_tavily_api_key)
 

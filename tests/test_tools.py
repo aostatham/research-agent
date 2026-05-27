@@ -166,7 +166,9 @@ def test_execute_tool_with_sources_increments_counter():
     """execute_tool_with_sources() increments _search_call_count on each call."""
     import agent.tools as tools_module
     tools_module.get_and_reset_search_count()  # clear any prior state
-    with patch("agent.tools._web_search_with_sources", return_value=("r", [])):
+    mock_client = MagicMock()
+    mock_client.messages.create.return_value = MagicMock(content=[])
+    with patch("agent.tools._get_anthropic_client", return_value=mock_client):
         tools_module.execute_tool_with_sources("web_search", {"query": "test"})
     assert tools_module._search_call_count == 1
 
@@ -175,7 +177,9 @@ def test_get_and_reset_search_count_returns_accumulated_count():
     """get_and_reset_search_count() returns the number of calls since last reset."""
     import agent.tools as tools_module
     tools_module.get_and_reset_search_count()  # clear any prior state
-    with patch("agent.tools._web_search_with_sources", return_value=("r", [])):
+    mock_client = MagicMock()
+    mock_client.messages.create.return_value = MagicMock(content=[])
+    with patch("agent.tools._get_anthropic_client", return_value=mock_client):
         tools_module.execute_tool_with_sources("web_search", {"query": "q1"})
         tools_module.execute_tool_with_sources("web_search", {"query": "q2"})
     count = tools_module.get_and_reset_search_count()
@@ -203,7 +207,33 @@ def test_successful_web_search_increments_counter():
     """A successful web_search dispatch increments the counter exactly once."""
     import agent.tools as tools_module
     tools_module.get_and_reset_search_count()  # clear
-    with patch("agent.tools._web_search_with_sources", return_value=("result", [])):
+    mock_client = MagicMock()
+    mock_client.messages.create.return_value = MagicMock(content=[])
+    with patch("agent.tools._get_anthropic_client", return_value=mock_client):
+        tools_module.execute_tool_with_sources("web_search", {"query": "test"})
+    assert tools_module._search_call_count == 1
+
+
+def test_failed_anthropic_search_still_increments_counter():
+    """Counter increments before API call so a failed search is still counted."""
+    import agent.tools as tools_module
+    tools_module.get_and_reset_search_count()  # clear
+    mock_client = MagicMock()
+    mock_client.messages.create.side_effect = ValueError("bad request")
+    with patch("agent.tools._get_anthropic_client", return_value=mock_client):
+        with pytest.raises(ValueError):
+            tools_module.execute_tool_with_sources("web_search", {"query": "test"})
+    assert tools_module._search_call_count >= 1
+
+
+def test_tavily_search_increments_counter():
+    """_tavily_search_with_sources() increments counter before the Tavily API call."""
+    import agent.tools as tools_module
+    tools_module.configure_search("tavily", tavily_api_key="test-key")
+    tools_module.get_and_reset_search_count()  # clear
+    mock_tavily = MagicMock()
+    mock_tavily.search.return_value = {"answer": "", "results": []}
+    with patch("agent.tools.TavilyClient", return_value=mock_tavily):
         tools_module.execute_tool_with_sources("web_search", {"query": "test"})
     assert tools_module._search_call_count == 1
 
