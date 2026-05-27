@@ -335,3 +335,23 @@ def test_research_non_dict_tool_input_does_not_raise():
     assert isinstance(result, ResearchResult)
 
 
+def test_research_malformed_input_appends_corrective_messages():
+    """Corrective messages are appended after malformed tool_input so the model sees new context."""
+    mock_llm = MagicMock()
+    mock_llm.chat.side_effect = [
+        LLMResponse(type="tool_call", tool_name="web_search", tool_input=None),
+        make_text_response("Fusion is a nuclear reaction."),
+    ]
+    agent = make_agent(mock_llm, max_iterations=5)
+    with patch("agent.researcher.execute_tool_with_sources", return_value=("r", [])):
+        result = research(agent, "What is fusion?")
+    # The second chat call must receive a messages list containing the corrective pair
+    second_call_messages = mock_llm.chat.call_args_list[1][0][0]
+    roles = [m["role"] for m in second_call_messages]
+    assert "assistant" in roles
+    assert roles[-1] == "user"
+    # The corrective user message must direct the model away from tools
+    last_user = next(m for m in reversed(second_call_messages) if m["role"] == "user")
+    assert "Do not use any tools" in last_user["content"]
+
+

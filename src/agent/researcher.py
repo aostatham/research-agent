@@ -56,6 +56,18 @@ def research(agent: Agent, question: str, max_tokens: int = 2048) -> ResearchRes
             if current_query is None:
                 logging.warning("Researcher: malformed tool input %r, skipping",
                                 response.tool_input)
+                messages.append({
+                    "role": "assistant",
+                    "content": "Tool call had malformed input.",
+                })
+                messages.append({
+                    "role": "user",
+                    "content": (
+                        "Do not use any tools. Write a direct "
+                        "answer to the following question based "
+                        "on what you already know: " + question
+                    ),
+                })
                 continue
 
             if current_query in seen_queries:
