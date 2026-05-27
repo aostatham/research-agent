@@ -142,26 +142,24 @@ def test_html_fallback_path_escapes_report():
     assert "&lt;script&gt;" in result
 
 
-# ── FIX 6 — split markdown/bleach import failure modes ───────────────────────
+# ── FIX 6 — bleach missing raises ImportError ────────────────────────────────
 
-def test_html_missing_bleach_logs_warning(caplog):
-    """When bleach is unavailable, a WARNING is logged and markdown is still rendered."""
-    import logging
+def test_html_missing_bleach_raises_import_error():
+    """When markdown is available but bleach is missing, convert_to_html raises ImportError."""
     with patch("output.formatter.BLEACH_AVAILABLE", False), \
          patch("output.formatter.MARKDOWN_AVAILABLE", True), \
          patch("output.formatter.markdown", _make_mock_markdown()):
-        with caplog.at_level(logging.WARNING, logger="output.formatter"):
-            result = convert_to_html("Topic", "", "**bold**")
-    assert any("bleach" in record.message.lower() for record in caplog.records)
+        with pytest.raises(ImportError, match="pip install bleach"):
+            convert_to_html("Topic", "", "**bold**")
 
 
-def test_html_missing_bleach_still_renders_markdown():
-    """When bleach is unavailable, markdown rendering still produces HTML."""
+def test_html_missing_bleach_error_states_html_output_requirement():
+    """ImportError message states bleach is required for HTML output specifically."""
     with patch("output.formatter.BLEACH_AVAILABLE", False), \
          patch("output.formatter.MARKDOWN_AVAILABLE", True), \
          patch("output.formatter.markdown", _make_mock_markdown()):
-        result = convert_to_html("Topic", "", "**bold text**")
-    assert "<strong>bold text</strong>" in result
+        with pytest.raises(ImportError, match="bleach is required for HTML output"):
+            convert_to_html("Topic", "", "content")
 
 
 def test_html_missing_markdown_falls_back_to_preformatted():
