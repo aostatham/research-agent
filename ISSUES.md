@@ -41,7 +41,7 @@ grep examples:
 | I002 | Medium | agent/verifier.py | Verifier runs Ollama calls outside semaphore — causes timeouts when provider is Ollama | Pass 3 live run | Closed | Pass 4 |
 | I033 | High | agent/editor.py | Editor did not catch ReadTimeout — pipeline crashed on Ollama timeout | Pass 4 live run | Closed | Pass 4 |
 | I034 | Medium | agent/orchestrator.py | Verifier ran outside semaphore with Ollama — caused timeout cascades on research workers | Pass 4 live run | Closed | Pass 4 |
-| I003 | Medium | agent/tools.py | Module-level globals for search config block concurrent FastAPI request handlers | Pass 3 QA | Deferred | Phase I |
+| I003 | Medium | agent/tools.py | Module-level globals for search config and search_count block concurrent FastAPI handlers — concurrent Orchestrators actively corrupt each other's search counts via reset-at-start | Pass 3 QA | Deferred | Phase I |
 | I004 | Medium | agent/orchestrator.py | Orchestrator.run() calls asyncio.run() — raises RuntimeError in async contexts | Pass 1 QA | Deferred | Phase I |
 | I005 | High | agent/researcher.py | System prompt bypassed — agent.llm.chat() called directly instead of agent.chat() | Pass 1 QA | Closed | Pass 1 |
 | I006 | High | agent/orchestrator.py | Single worker failure aborted entire pipeline — no return_exceptions=True | Pass 1 QA | Closed | Pass 1 |

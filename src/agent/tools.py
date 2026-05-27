@@ -65,8 +65,12 @@ _search_model = "claude-haiku-4-5-20251001"
 # Counts every successful call to execute_tool_with_sources() across all agents
 # (Researcher and Verifier). Reset and read via get_and_reset_search_count().
 # Not thread-safe by language guarantee — relies on CPython GIL for
-# single-process CLI use. Move to a threading.Lock before Phase I
-# (concurrent request handlers).
+# single-process CLI use. Two concurrent Orchestrator.run_async calls
+# in the same process will actively corrupt each other's counts — the
+# second call's reset-at-start discards the first call's accumulated
+# count. Fix for Phase I: use contextvars.ContextVar for per-request
+# isolation, not threading.Lock (async tasks share a thread and would
+# serialise on a Lock). See I003 in ISSUES.md.
 _search_call_count: int = 0
 
 # Lazy singleton — created on first Anthropic search call, reused across
