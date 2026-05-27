@@ -50,7 +50,7 @@ def build_agent(
     path = Path(prompt_dir) / f"{name}.md"
     if not path.exists():
         raise FileNotFoundError(f"System prompt not found: {path}")
-    system_prompt = path.read_text()
+    system_prompt = path.read_text(encoding="utf-8")
     return Agent(
         name=name,
         role=role,

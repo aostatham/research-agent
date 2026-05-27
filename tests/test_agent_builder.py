@@ -91,6 +91,19 @@ def test_build_agent_prompt_path_uses_name_and_dir(tmp_path):
     assert agent.system_prompt == "special prompt"
 
 
+def test_build_agent_reads_prompt_with_utf8_encoding(tmp_path):
+    """build_agent() reads prompt file with encoding='utf-8'."""
+    prompt_file = tmp_path / "myagent.md"
+    prompt_file.write_text("Be helpful.", encoding="utf-8")
+    with patch("agent.builder.Path") as mock_path_cls:
+        mock_path_inst = MagicMock()
+        mock_path_inst.exists.return_value = True
+        mock_path_inst.read_text.return_value = "Be helpful."
+        mock_path_cls.return_value.__truediv__ = lambda self, other: mock_path_inst
+        build_agent("myagent", "role", "desc", make_mock_llm(), tmp_path)
+        mock_path_inst.read_text.assert_called_once_with(encoding="utf-8")
+
+
 # ── build_agents() ────────────────────────────────────────────────────────────
 
 def _make_prompt_dir(tmp_path):
