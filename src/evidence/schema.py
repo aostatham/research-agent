@@ -69,4 +69,3 @@ class ResearchResult:
     message_history: list = field(default_factory=list)  # list[dict]
     # "verified" | "refuted" | "unverified"
     verification: str = "unverified"
-    search_count: int = 0

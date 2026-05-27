@@ -148,7 +148,7 @@ def test_execute_tool_unknown_tool_raises():
 
 
 # ── execute_tool_with_sources() tests ─────────────────────────────────────────
-# Verify the (result, sources) tuple return shape.
+# Verify the (result, sources) tuple return shape and search counter.
 
 def test_execute_tool_with_sources_returns_tuple():
     """execute_tool_with_sources() returns (str, list) tuple."""
@@ -160,6 +160,34 @@ def test_execute_tool_with_sources_returns_tuple():
         result, sources = execute_tool_with_sources("web_search", {"query": "fusion"})
     assert result == "results"
     assert sources[0]["url"] == "https://example.com"
+
+
+def test_execute_tool_with_sources_increments_counter():
+    """execute_tool_with_sources() increments _search_call_count on each call."""
+    import agent.tools as tools_module
+    tools_module.get_and_reset_search_count()  # clear any prior state
+    with patch("agent.tools._web_search_with_sources", return_value=("r", [])):
+        tools_module.execute_tool_with_sources("web_search", {"query": "test"})
+    assert tools_module._search_call_count == 1
+
+
+def test_get_and_reset_search_count_returns_accumulated_count():
+    """get_and_reset_search_count() returns the number of calls since last reset."""
+    import agent.tools as tools_module
+    tools_module.get_and_reset_search_count()  # clear any prior state
+    with patch("agent.tools._web_search_with_sources", return_value=("r", [])):
+        tools_module.execute_tool_with_sources("web_search", {"query": "q1"})
+        tools_module.execute_tool_with_sources("web_search", {"query": "q2"})
+    count = tools_module.get_and_reset_search_count()
+    assert count == 2
+
+
+def test_get_and_reset_search_count_resets_to_zero():
+    """A second call to get_and_reset_search_count() returns zero."""
+    import agent.tools as tools_module
+    tools_module.get_and_reset_search_count()  # clear
+    second = tools_module.get_and_reset_search_count()
+    assert second == 0
 
 
 # ── Anthropic search tests ────────────────────────────────────────────────────

@@ -561,34 +561,18 @@ def test_orchestrator_search_count_initialises_to_zero(mock_llm, config, mock_po
     assert orch.search_count == 0
 
 
-def test_run_accumulates_search_count_from_research_results(orchestrator, mock_llm):
-    """search_count is the sum of each ResearchResult.search_count after run()."""
+def test_run_search_count_comes_from_module_counter(orchestrator, mock_llm):
+    """search_count is populated from get_and_reset_search_count() after all research."""
     mock_llm.chat.side_effect = [
-        make_text_response('["Q1?", "Q2?", "Q3?", "Q4?"]'),
+        make_text_response('["Q1?", "Q2?"]'),
         make_text_response('{"sufficient": true, "missing": []}'),
     ]
     async def fake_rqa(q, sem):
-        rr = make_rr(question=q, answer=f"Answer for {q}")
-        rr.search_count = 2
-        return rr
-    with patch.object(orchestrator, 'research_question_async', side_effect=fake_rqa):
-        orchestrator.run("nuclear fusion")
-    assert orchestrator.search_count == 8  # 4 questions × 2 searches each
-
-
-def test_run_search_count_excludes_verifier_searches(orchestrator, mock_llm):
-    """search_count counts only researcher searches — ResearchResult.search_count is the source."""
-    mock_llm.chat.side_effect = [
-        make_text_response('["Q1?"]'),
-        make_text_response('{"sufficient": true, "missing": []}'),
-    ]
-    async def fake_rqa(q, sem):
-        rr = make_rr(question=q, answer="ans")
-        rr.search_count = 3  # researcher did 3 searches
-        return rr
-    with patch.object(orchestrator, 'research_question_async', side_effect=fake_rqa):
+        return make_rr(question=q, answer="ans")
+    with patch.object(orchestrator, 'research_question_async', side_effect=fake_rqa), \
+         patch("agent.orchestrator.get_and_reset_search_count", return_value=7):
         orchestrator.run("topic")
-    assert orchestrator.search_count == 3
+    assert orchestrator.search_count == 7
 
 
 # ── Integration tests ─────────────────────────────────────────────────────────

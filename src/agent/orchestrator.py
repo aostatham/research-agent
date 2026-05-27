@@ -19,6 +19,7 @@ import logging
 from llm.base import LLMClient
 from config import Config
 from evidence.schema import ResearchResult
+from agent.tools import get_and_reset_search_count
 
 
 DECOMPOSE_PROMPT = """You are a research planning assistant.
@@ -335,7 +336,7 @@ class Orchestrator:
             sources.update(gap_sources)
 
         self._last_research_results = all_rr
-        self.search_count = sum(rr.search_count for rr in all_rr)
+        self.search_count = get_and_reset_search_count()
         print(f"\n✅ Research complete — {len(results)} questions answered")
         return results, sources
 

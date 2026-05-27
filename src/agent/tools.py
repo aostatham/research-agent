@@ -62,6 +62,10 @@ _tavily_api_key = None
 _tavily_max_results = 5
 _search_model = "claude-haiku-4-5-20251001"
 
+# Counts every call to execute_tool_with_sources() across all agents (Researcher
+# and Verifier). Reset and read atomically via get_and_reset_search_count().
+_search_call_count: int = 0
+
 # Lazy singleton — created on first Anthropic search call, reused across
 # all subsequent calls within the same process to avoid repeated auth overhead.
 _anthropic_client = None
@@ -136,9 +140,27 @@ def execute_tool(tool_name: str, tool_input: dict) -> str:
     raise ValueError(f"Unknown tool: {tool_name}")
 
 
+def get_and_reset_search_count() -> int:
+    """
+    Return the total number of execute_tool_with_sources() calls since the last
+    reset, then reset the counter to zero.
+
+    Called once at the end of Orchestrator.run_async() to capture all searches
+    executed across Researcher and Verifier agents during that run.
+    """
+    global _search_call_count
+    count = _search_call_count
+    _search_call_count = 0
+    return count
+
+
 def execute_tool_with_sources(tool_name: str, tool_input: dict) -> tuple[str, list[dict]]:
     """
     Dispatch a tool call and return both result text and source citations.
+
+    Increments the module-level _search_call_count on every call so the
+    Orchestrator can report total searches across all agents via
+    get_and_reset_search_count().
 
     Used by the orchestrator so citations are carried through to the synthesiser
     and formatted into the final report's References section.
@@ -154,6 +176,8 @@ def execute_tool_with_sources(tool_name: str, tool_input: dict) -> tuple[str, li
     Raises:
         ValueError: If tool_name is not recognised.
     """
+    global _search_call_count
+    _search_call_count += 1
     if tool_name == "web_search":
         return _web_search_with_sources(tool_input["query"])
     raise ValueError(f"Unknown tool: {tool_name}")
