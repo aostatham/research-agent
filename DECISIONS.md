@@ -142,6 +142,18 @@ mode, and file link.
 and settings without opening each file individually.
 **Date:** Phase B
 
+### O007 — HTML sanitisation via bleach post-rendering
+**Decision:** convert_to_html() sanitises report output by passing the rendered HTML
+through bleach.clean() with a tag allowlist after markdown.markdown(). The topic
+variable is escaped via html.escape() before interpolation into the HTML template.
+html.escape() must not be applied to the report body — it runs before markdown
+rendering and causes double-encoding inside fenced code blocks.
+**Rationale:** Pre-rendering escape (html.escape on report body) was introduced as
+an XSS fix in Pass 2 but caused double-encoding of code blocks at runtime. Post-rendering
+sanitisation via bleach correctly strips disallowed tags from the rendered HTML without
+corrupting markdown-formatted content.
+**Date:** Phase D Part 2 QA Pass 3
+
 ---
 
 ## Knowledge & Persistence
@@ -303,7 +315,7 @@ Consistent with the existing LLM builder pattern.
 
 ### D005 — AgentPool typed container replaces dict
 **Decision:** Typed AgentPool dataclass (frozen=True) replaces dict[str, Agent] for
-passing agents to Orchestrator. AgentPool fields: planner, researcher, verifier, editor.
+passing agents to Orchestrator. AgentPool fields: researcher, verifier, editor.
 **Rationale:** dict[str, Agent] produces KeyError at runtime for missing agents and
 lacks IDE support. AgentPool is type-checked, IDE-friendly, and refactor-safe.
 Grows by field rather than expanding argument lists. Dynamic agent spawning (Phase G)
@@ -312,7 +324,7 @@ will require a registry — defer that change to that phase.
 
 ### D006 — Agent dataclass fields
 **Decision:** Agent dataclass is frozen=True with fields:
-  name: str                          — identifier e.g. "planner", "verifier"
+  name: str                          — identifier e.g. "researcher", "verifier"
   role: str                          — human-readable description
   description: str                   — for future dynamic handoff routing
   llm: LLMClient                     — underlying provider
@@ -346,11 +358,13 @@ handled by a _build_messages(messages, system) helper on each client.
   claims: list[EvidenceClaim]
   sources: list[EvidenceSource]
   message_history: list[dict]
-  verified: bool = False
+  verification: str = "unverified"   # "verified" | "refuted" | "unverified"
 **Rationale:** Unblocks per-claim source attribution (E007). Provides Verifier
 structured input without re-parsing prose. Preserves researcher message history
-so Verifier can see what the researcher considered before concluding.
-**Date:** Phase D Part 2 design
+so Verifier can see what the researcher considered before concluding. Three-state
+verification field (replacing original bool) propagates Verifier outcomes to
+the provenance file accurately.
+**Date:** Phase D Part 2 design / Pass 3 QA fix (H3)
 
 ### D009 — Researcher Agent owns its loop
 **Decision:** _research_question_sync() loop logic moves into the Researcher Agent,
@@ -366,7 +380,8 @@ bundle, not a real agent.
 Verifier has web_search access. Targets top 3 suspicious claims per heuristic:
 contains a number, contains a named entity not in the original question, uses
 absolute terms (first, only, always, never). Cheap first pass flags; optional
-expensive second pass verifies. Runs in parallel with subsequent research questions.
+expensive second pass verifies. Runs outside the semaphore concurrently with
+subsequent research questions.
 **Rationale:** A Verifier with no tools is self-critique by another name — Princeton
 NLP findings confirm same-model maker-checker rarely catches new errors. Per-Researcher
 parallelism provides early focused verification without adding serial latency.
@@ -408,33 +423,33 @@ a configuration of the Editor Agent.
 relationships to decide what to restructure, drop, or strengthen. This requires
 Phase E's Kuzu knowledge store. The Editor Agent (Phase D) targets prose coherence
 only. Analyst Agent (Phase E) targets evidence-informed restructuring.
+**See also:** D011 (three editor types established).
 **Date:** Phase D Part 2 design
-See also: D011 (three editor types established).
 
 ### D014 — Editor minimum response length guard
-**Decision:** editor.py rejects a response if `len(edited) < 0.5 * len(original)`
+**Decision:** editor.py rejects a response if len(edited) < 0.5 * len(original)
 or if the first 60 characters match a known refusal phrase. Falls back to
 original report unchanged. The 100-character absolute floor introduced by
 Claude Code in Step 9 was insufficient — a 276-char refusal against a
 5000-char report passed the floor.
-**Rationale:** Editor `output_schema` (Agent.output_schema) is not yet enforced.
+**Rationale:** Editor output_schema (Agent.output_schema) is not yet enforced.
 Until it is, a proportional heuristic is the most reliable guard against
 model refusals and truncated responses replacing the synthesised report.
 **Date:** Phase D Part 2 QA fixes
 
 ### D015 — Planner Agent deferred to Phase E
-**Decision:** Planner is removed from AgentPool in Pass 2. `Orchestrator.decompose()`
-continues to use `self.llm` with the inline `DECOMPOSE_PROMPT`. The Planner field,
-builder code, and `prompts/planner.md` are removed until Phase E when `decompose()`
+**Decision:** Planner is removed from AgentPool in Pass 2. Orchestrator.decompose()
+continues to use self.llm with the inline DECOMPOSE_PROMPT. The Planner field,
+builder code, and prompts/planner.md are removed until Phase E when decompose()
 is redesigned with a reconciled prompt and parser.
 **Rationale:** QA (H2) found the Planner was built and loaded but never called.
-Wiring it without reconciling the numbered-list prompt against the `json.loads()`
+Wiring it without reconciling the numbered-list prompt against the json.loads()
 parser would introduce new bugs. Deferral is cleaner than a partial fix.
 **Date:** Phase D Part 2 QA fixes
 
 ### D016 — Inline researcher fallback path removed in Pass 2
-**Decision:** The conditional delegate pattern in `Orchestrator._research_question_sync()`
-— which called `researcher.research()` when `agent_pool` was set and fell back to
+**Decision:** The conditional delegate pattern in Orchestrator._research_question_sync()
+— which called researcher.research() when agent_pool was set and fell back to
 the old inline loop otherwise — is removed in Pass 2. The inline loop is deleted.
 The agent path is now unconditional.
 **Rationale:** QA (M5) found the inline loop had diverged from the agent loop.
@@ -442,13 +457,13 @@ Maintaining two paths is a correctness risk. The agent path is stable and tested
 **Date:** Phase D Part 2 QA fixes
 
 ### D017 — Agent.chat() silently discards caller-supplied system kwarg
-**Decision:** Agent.chat() calls kwargs.pop('system', None) before
-injecting system=self.system_prompt. Any system= kwarg supplied by a
-caller is silently discarded. self.system_prompt is always used.
-**Rationale:** QA (M2) found that passing system= explicitly to
-agent.chat() raised TypeError due to kwarg collision. The agent's system
-prompt is non-negotiable — callers have no legitimate reason to override
-it. Silent discard is safer than raising.
+**Decision:** Agent.chat() calls kwargs.pop('system', None) before injecting
+system=self.system_prompt. Any system= kwarg supplied by a caller is silently
+discarded. self.system_prompt is always used.
+**Rationale:** QA (M2) found that passing system= explicitly to agent.chat()
+raised TypeError due to kwarg collision. The agent's system prompt is
+non-negotiable — callers have no legitimate reason to override it. Silent
+discard is safer than raising.
 **Date:** Phase D Part 2 QA fixes
 
 ### D018 — asyncio.gather always called with return_exceptions=True
@@ -456,10 +471,26 @@ it. Silent discard is safer than raising.
 return_exceptions=True. After the gather, results are iterated and
 exceptions are logged as warnings and skipped. The pipeline continues
 with whatever results were successfully collected.
-**Rationale:** QA (H5) found that a single worker failure aborted the
-entire pipeline. One failed research question should not destroy a run
-that otherwise produced four good answers.
+**Rationale:** QA (H5) found that a single worker failure aborted the entire
+pipeline. One failed research question should not destroy a run that
+otherwise produced four good answers.
 **Date:** Phase D Part 2 QA fixes
+
+### D019 — Prompt location policy: agent identity vs task instruction
+**Decision:** Agent system prompts go in prompts/ as .md files. Task
+instruction prompts stay inline in source files.
+**Rationale:** Agent prompts (Researcher, Verifier, Editor) define
+persona, behaviour, and output contract for autonomous agents. They
+evolve independently of code, benefit from distinct git history, and
+can be swapped without code changes. Task prompts (decompose, reflect,
+synthesis, fallback) are tightly coupled to parsing logic and runtime
+string interpolation — separating them from the code that depends on
+their exact output shape creates invisible coupling and increases the
+risk of breakage.
+**Exception:** If a task prompt grows complex enough to need per-model
+variants or independent versioning, extract it to prompts/ and record
+a superseding decision.
+**Date:** Phase D Part 2 / Pass 3
 
 ---
 
@@ -475,7 +506,7 @@ its own explicitly-run test suite.
 
 ### T002 — Patch at lookup site not definition site
 **Decision:** Always patch at the module where the name is looked up.
-patch("llm.builder.AnthropicClient") not patch("llm.anthropic_client.AnthropicClient")
+patch("src.agent.builder.AnthropicClient") not patch("src.llm.anthropic_client.AnthropicClient")
 **Rationale:** Python's unittest.mock patches the name in the namespace where it is used,
 not where it is defined. Patching at the definition site has no effect on
 already-imported references.
@@ -484,7 +515,7 @@ already-imported references.
 ### T003 — Growing test count as commit gate
 **Decision:** pytest tests/ -m "not integration" -v must pass all existing tests before
 every commit. Count grows with each phase — treat any reduction as a regression signal.
-Started at 199, currently 430.
+Started at 199, currently 448.
 **Rationale:** Prevents regressions from accumulating.
 **Date:** Ongoing
 

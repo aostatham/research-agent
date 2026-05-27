@@ -5,9 +5,15 @@
 main.py                   # Thin CLI entry point: parse_args(), main() only
 src/
   agent/
+    base.py               # Agent and AgentPool frozen dataclasses
     orchestrator.py       # Decompose, research loop, reflect
+    researcher.py         # Researcher Agent — owns the agentic loop
+    verifier.py           # Verifier Agent — parallel claim verification
+    editor.py             # Editor Agent — coherence pass after synthesis
     synthesiser.py        # Report generation (two modes: full / short)
     tools.py              # Tool definitions + Anthropic/Tavily search routing
+    tool_utils.py         # Shared tool input validation helper
+    builder.py            # build_agent(), build_agents(), AgentPool factory
   llm/
     base.py               # LLMClient ABC + LLMResponse dataclass
     anthropic_client.py   # Anthropic implementation
@@ -17,13 +23,18 @@ src/
   config/
     settings.py           # Config dataclass + three-layer loader
   evidence/
-    schema.py             # EvidenceSource, EvidenceClaim, ProvenanceReport TypedDicts
+    schema.py             # EvidenceSource, EvidenceClaim, ProvenanceReport,
+                          # ResearchResult TypedDicts
   output/
     formatter.py          # build_metadata(), convert_to_html(), convert_to_pdf()
     writer.py             # save_report(), update_index()
     provenance.py         # Claim extraction, confidence scoring, source
                           # classification, provenance file writer
 config.yaml               # Default runtime config (provider, models, search, limits)
+prompts/                  # Agent system prompts (versioned in git)
+  researcher.md           # Researcher Agent system prompt
+  verifier.md             # Verifier Agent system prompt
+  editor.md               # Editor Agent system prompt
 tests/                    # Unit tests — one file per source module
 
 
@@ -45,11 +56,12 @@ Run the agent:
   python main.py "your topic" --orchestration-provider ollama --synthesis-provider anthropic
   python main.py "your topic" -f pdf -s
   python main.py "your topic" --output-mode report-evidence --provenance file
+  python main.py "your topic" --max-workers 4
 
 
 ## Test baseline
 
-278 unit tests must pass before every commit.
+492 unit tests must pass before every commit.
 Always run: pytest tests/ -m "not integration" -v
 Never commit with a failing test.
 
@@ -61,10 +73,11 @@ Never commit with a failing test.
 - Ollama integration tests are marked @pytest.mark.ollama
 - Anthropic integration tests are marked @pytest.mark.anthropic_integration (costs money)
 - Patch at the module where the name is looked up, not where it is defined:
-    patch("llm.builder.AnthropicClient")       not patch("llm.anthropic_client.AnthropicClient")
-    patch("output.writer.update_index")        not patch("main.update_index")
-    patch("output.formatter.convert_to_pdf")   not patch("main.convert_to_pdf")
-    patch("output.provenance.classify_source_type")  not patch elsewhere
+    patch("src.agent.builder.AnthropicClient")     not patch("src.llm.anthropic_client.AnthropicClient")
+    patch("src.agent.builder.OllamaClient")        not patch elsewhere
+    patch("src.output.writer.update_index")        not patch("main.update_index")
+    patch("src.output.formatter.convert_to_pdf")   not patch("main.convert_to_pdf")
+    patch("src.output.provenance.classify_source_type") not patch elsewhere
 - Every new function needs at least one unit test
 - New modules need a test file: tests/test_<module>.py
 
@@ -84,8 +97,12 @@ Never commit with a failing test.
 - Inline comments only when the WHY is non-obvious — not the what
 - Type hints on all function signatures
 - No logic changes during structural refactors — one concern per commit
-- New config fields go in Config dataclass in config/settings.py
+- New config fields go in Config dataclass in src/config/settings.py
 - New CLI flags go in parse_args() in main.py and overrides dict in main()
+- Agent system prompts go in prompts/ as .md files (D019). Task
+  instruction prompts with inline string interpolation or tight parser
+  coupling stay in source files.
+- New agent types go in src/agent/<name>.py, mirroring existing agent files
 
 
 ## Config and environment
@@ -96,6 +113,8 @@ Never commit with a failing test.
 - Three-layer config hierarchy: hardcoded defaults -> config.yaml -> CLI flags
 - source_classification in config.yaml extends the source type classifier
   with custom domains — see provenance.py classify_source_type() docstring
+- max_workers default is 2 — safe for both Ollama and Anthropic
+  Ollama safe ceiling: 2. Anthropic safe ceiling: 4+
 
 
 ## Key architectural notes
@@ -107,37 +126,76 @@ Provider abstraction:
     (orch_llm, synth_llm, orch_provider, orch_model, synth_provider, synth_model)
   - Mixed provider: orchestration and synthesis can use different backends per run
 
+Agent layer:
+  - Agent and AgentPool are frozen dataclasses in src/agent/base.py
+  - Agent.chat() is the only place system= is injected — never call
+    agent.llm.chat() directly from agent implementation code (D007, D017)
+  - Agent.chat() silently discards any system= kwarg passed by the caller —
+    self.system_prompt is always used (D017)
+  - AgentPool has three fields: researcher, verifier, editor (Planner deferred
+    to Phase E — D015)
+  - AgentPool is required by Orchestrator — there is no fallback path
+  - ResearchResult is returned by Researcher.research() and carries:
+    question, answer, claims, sources, message_history,
+    verification (str: "verified" | "refuted" | "unverified")
+
 Search routing:
   - Controlled by module-level globals in tools.py set once via configure_search()
   - configure_search() is called at startup in main() before any research begins
   - Anthropic web search citations appear on TEXT blocks, not tool_result blocks
     This is non-obvious behaviour — documented in tools.py
+  - Anthropic search model is configurable via config.anthropic_search_model
+    Default: claude-haiku-4-5-20251001
 
-Agentic loop guards in orchestrator.py:
-  - Repeated query detection — prevents infinite search loops
+Researcher Agent loop guards (src/agent/researcher.py):
+  - Repeated query detection — seen_queries set prevents A->B->A->B oscillation
   - Tool-call-string detection — handles malformed LLM responses
+  - Malformed tool input guard via _validate_tool_input() in tool_utils.py
   - Fallback synthesis — rescues questions that exhaust max iterations
   - accumulated_results enables fallback even when no clean answer was found
 
+Parallel research:
+  - Orchestrator.run_async() is the core async implementation
+  - Orchestrator.run() is a synchronous wrapper for CLI use only
+  - All async contexts (FastAPI, async tests) must call run_async() directly
+  - asyncio.gather() always called with return_exceptions=True (D018)
+  - After gather, exceptions are logged as warnings and skipped
+  - max_workers=2 default — safe for Ollama (serialises internally)
+  - Warning printed when Ollama + max_workers > 2
+  - Verifier runs per-Researcher outside the semaphore concurrently
+    with subsequent research questions
+
 Output pipeline:
   - formatter.py: build_metadata(), convert_to_html(), convert_to_pdf()
+  - HTML output is sanitised post-rendering via bleach.clean() with a tag
+    allowlist — do not use html.escape() on report body (causes double-encoding
+    in code blocks)
   - writer.py: save_report(), update_index()
+  - update_index() uses fcntl.flock + NamedTemporaryFile + os.replace for
+    concurrency-safe atomic writes
   - provenance.py: classify_source_type(), score_confidence(),
     extract_claims_from_answer(), build_claims_from_results(),
     annotate_report_lines(), write_provenance_file(), build_quality_metrics()
-  - evidence/schema.py: EvidenceSource, EvidenceClaim, ProvenanceReport TypedDicts
+  - evidence/schema.py: EvidenceSource, EvidenceClaim, ProvenanceReport,
+    ResearchResult TypedDicts
   - All output functions are independent of the research pipeline
 
 Evidence and provenance pipeline:
   - Triggered in main() when --provenance file or --provenance graph
   - build_claims_from_results() calls extract_claims_from_answer() per question
+  - extract_claims_from_answer() accepts verification: str from ResearchResult
+    and maps: "verified" -> verified, "refuted" -> disputed, "unverified" ->
+    unverified on each EvidenceClaim.verification_status
   - extract_claims_from_answer() uses synth_llm to extract atomic claims via LLM
   - classify_source_type() uses five layers: TLD patterns, stable patterns,
     hardcoded institutional list, custom config domains, LLM fallback
+  - Nine source types: government, academic, news, reference, institutional,
+    industry, video, forum, general
   - score_confidence() scores per claim based on source types and corroboration
   - annotate_report_lines() adds [N] markers to report and sets report_line on claims
   - write_provenance_file() writes .provenance.json alongside the report
   - provenance.py has no imports from agent/ or llm/ — llm_client passed as argument
+  - disputed_claims in quality_metrics counts claims with verification_status="disputed"
 
 Source classification maintenance:
   - Layer 3 hardcoded list in classify_source_type() — add only when a domain
@@ -148,24 +206,68 @@ Source classification maintenance:
 
 ## Current development phase
 
-Phase C — Evidence Layer is largely complete:
-  Part 1  Evidence schema, provenance file pipeline, --provenance flag
-  Part 2  Atomic claim extraction, confidence scoring, report line tracking
-  Part 3  Source classifier refactor (hybrid pattern + LLM fallback + config)
+Phase D — Parallel Research Architecture: COMPLETE
 
-Remaining Phase C items (not yet implemented):
-  - Output mode renderers: dashboard, matrix, academic, bibliography, raw
-  - report-evidence mode: inline [N] markers working but sparse (report line
-    matching improves in Phase D synthesiser integration)
+  Part 1  COMPLETE — asyncio workers, --max-workers, worker failure handling
+  Part 2  COMPLETE — multi-agent architecture
+          448 unit tests passing
+          Pass 1 QA fixes: system prompt injection, gather exception handling,
+            verifier outcome propagation, editor response validation,
+            cross-run state reset
+          Pass 2 QA fixes: Planner removed, inline fallback deleted,
+            XSS sanitisation, configurable search model, atomic index write,
+            verifier robustness
+          Pass 3 QA fixes IN PROGRESS — see next section
 
-276 unit tests passing.
+Pass 3 fixes in progress (do not begin without explicit instruction):
+  Group A (regressions and correctness):
+    H1 — XSS fix regression: replace html.escape with bleach post-rendering
+    H2 — Index write race: fcntl.flock + NamedTemporaryFile
+    H3+M1+M2 — ResearchResult.verification three-state field, thread through
+    H4 — _is_refuted exact frozenset match
+    H5 — _validate_tool_input shared helper for Researcher and Verifier
+    H6+M8 — reflect() and decompose() JSON shape validation
+  Group B (robustness and quality — after Group A confirmed):
+    M3+M5 — Editor similarity check via difflib
+    M4 — Delete prompts/planner.md, add D015 TODO
+    M6 — verifier.md JSON schema, drop fallback value-scan
+    M7 — Verifier seen_queries guard, lower max_iterations to 4
+    L1, L2, L3, L5
 
-Next phases — do not begin without explicit instruction:
-  Option A: Phase D — Parallel Research Architecture
-  Option B: Phase C remaining output mode renderers
-            (dashboard, matrix, academic, bibliography, raw)
+Next after Pass 3 — do not begin without explicit instruction:
+  Phase C remaining output mode renderers (parallel workstream)
+  Phase F partial — read_url, arxiv_search tools
 
-Do not begin either option without explicit instruction from the user.
+
+## Agent architecture (Phase D Part 2 — COMPLETE)
+
+Agent dataclass (src/agent/base.py — frozen=True):
+  name: str                          # identifier
+  role: str                          # human-readable description
+  description: str                   # for future dynamic handoff routing
+  llm: LLMClient                     # underlying provider
+  system_prompt: str                 # passed as native provider system parameter
+  tools: tuple = ()                  # immutable per-agent tool subset
+  temperature: Optional[float] = None
+  max_iterations: int = 5            # per-agent loop budget
+  output_schema: Optional[type] = None
+
+AgentPool dataclass (frozen=True):
+  researcher: Agent    # Haiku, web_search, owns its agentic loop
+  verifier: Agent      # Sonnet, web_search, runs per-Researcher in parallel
+  editor: Agent        # configurable model (defaults to synthesis model), no tools
+  # Planner deferred to Phase E (D015)
+
+ResearchResult dataclass (src/evidence/schema.py):
+  question: str
+  answer: str
+  claims: list          # list[EvidenceClaim]
+  sources: list         # list[EvidenceSource]
+  message_history: list[dict]
+  verification: str = "unverified"   # "verified" | "refuted" | "unverified"
+
+System prompts in prompts/ directory, loaded by agent builder.
+See DECISIONS.md D003-D019 for full rationale.
 
 
 ## Roadmap summary
@@ -173,9 +275,11 @@ Do not begin either option without explicit instruction from the user.
 Phase A  Stability and quality                    COMPLETE
 Phase B  Output options (markdown/HTML/PDF)       COMPLETE
 Phase C  Evidence layer and output modes          LARGELY COMPLETE
-Phase D  Parallel research architecture           PENDING
+Phase D  Parallel research + multi-agent          COMPLETE (Pass 3 QA in progress)
 Phase E  Memory and persistent knowledge          PENDING
-Phase F  Tools and sources                        PENDING
-Phase G  Provider optimisation                    PENDING
-Phase H  Observability and production readiness   PENDING
+Phase F  Tools and sources (read_url priority)    PENDING
+PKG      Packaging (Docker/pipx)                  PENDING
+UI       Comprehensive web UI                     PENDING
+Phase G  Provider optimisation                    PARTIAL
+Phase H  Observability                            PENDING
 Phase I  Interface                                PENDING
