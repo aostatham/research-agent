@@ -62,8 +62,11 @@ _tavily_api_key = None
 _tavily_max_results = 5
 _search_model = "claude-haiku-4-5-20251001"
 
-# Counts every call to execute_tool_with_sources() across all agents (Researcher
-# and Verifier). Reset and read atomically via get_and_reset_search_count().
+# Counts every successful call to execute_tool_with_sources() across all agents
+# (Researcher and Verifier). Reset and read via get_and_reset_search_count().
+# Not thread-safe by language guarantee — relies on CPython GIL for
+# single-process CLI use. Move to a threading.Lock before Phase I
+# (concurrent request handlers).
 _search_call_count: int = 0
 
 # Lazy singleton — created on first Anthropic search call, reused across
