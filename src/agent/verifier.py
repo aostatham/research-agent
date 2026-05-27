@@ -149,8 +149,8 @@ def verify(
     """
     Run the Verifier Agent on a ResearchResult to check suspicious claims.
 
-    If no suspicious claims are found, sets rr.verification = "verified" and
-    returns immediately (no LLM calls).  Otherwise runs an agentic loop:
+    If no suspicious claims are found, leaves rr.verification = "unverified"
+    and returns immediately (no LLM calls).  Otherwise runs an agentic loop:
 
       1. The agent receives the question, answer, and flagged claims.
       2. The agent may call web_search (once per claim at most).
@@ -170,7 +170,10 @@ def verify(
     """
     suspicious = _extract_suspicious_claims(rr.answer, rr.question)
     if not suspicious:
-        rr.verification = "verified"
+        # No claims flagged by heuristic — leave as "unverified" not
+        # falsely "verified". A heuristic miss does not equal a
+        # verification pass.
+        rr.verification = "unverified"
         return rr
 
     claims_list = "\n".join(f"- {c}" for c in suspicious)

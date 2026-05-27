@@ -5,8 +5,8 @@ Verifies:
   - _extract_suspicious_claims(): detects numbers, absolute terms, named
     entities; ranks multi-criteria sentences first; respects max_claims;
     returns empty list when no suspicious markers found.
-  - verify(): returns ResearchResult; sets verification="verified" when no
-    suspicious claims; sets verification="verified" when all claims pass;
+  - verify(): returns ResearchResult; sets verification="unverified" when no
+    suspicious claims (heuristic miss ≠ verification pass); sets verification="verified" when all claims pass;
     sets verification="refuted" when a claim is refuted; handles tool calls;
     handles JSON parse failure (leaves verification="unverified", M1);
     handles max_iterations with no text response (leaves verification="unverified", M1).
@@ -136,8 +136,8 @@ def test_verify_returns_research_result():
     assert isinstance(result, ResearchResult)
 
 
-def test_verify_sets_verified_when_no_suspicious_claims():
-    """When no suspicious claims are found, verification is set to 'verified' without any LLM call."""
+def test_verify_sets_unverified_when_no_suspicious_claims():
+    """When no suspicious claims are found, verification stays 'unverified' — heuristic miss ≠ verified."""
     mock_llm = MagicMock()
     agent = make_verifier_agent(mock_llm)
     rr = ResearchResult(
@@ -146,7 +146,7 @@ def test_verify_sets_verified_when_no_suspicious_claims():
     )
     with patch("agent.verifier._extract_suspicious_claims", return_value=[]):
         result = verify(agent, rr)
-    assert result.verification == "verified"
+    assert result.verification == "unverified"
     assert mock_llm.chat.call_count == 0
 
 
