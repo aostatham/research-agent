@@ -217,7 +217,7 @@ def test_extract_claims_verification_verified_sets_status_verified():
     """extract_claims_from_answer(verification='verified') produces claims with verification_status='verified'."""
     from output.provenance import extract_claims_from_answer
     llm = _make_mock_llm('["Fusion is hot.", "Plasma is ionised gas."]')
-    claims = extract_claims_from_answer("What is fusion?", "Fusion is hot.", [], llm, verification="verified")
+    claims = extract_claims_from_answer("What is fusion?", "test topic", "Fusion is hot.", [], llm, verification="verified")
     assert all(c["verification_status"] == "verified" for c in claims)
 
 
@@ -225,7 +225,7 @@ def test_extract_claims_verification_unverified_sets_status_unverified():
     """extract_claims_from_answer(verification='unverified') produces claims with verification_status='unverified'."""
     from output.provenance import extract_claims_from_answer
     llm = _make_mock_llm('["Fusion is hot.", "Plasma is ionised gas."]')
-    claims = extract_claims_from_answer("What is fusion?", "Fusion is hot.", [], llm, verification="unverified")
+    claims = extract_claims_from_answer("What is fusion?", "test topic", "Fusion is hot.", [], llm, verification="unverified")
     assert all(c["verification_status"] == "unverified" for c in claims)
 
 
@@ -233,7 +233,7 @@ def test_extract_claims_verification_refuted_sets_status_disputed():
     """extract_claims_from_answer(verification='refuted') produces claims with verification_status='disputed'."""
     from output.provenance import extract_claims_from_answer
     llm = _make_mock_llm('["Fusion is hot."]')
-    claims = extract_claims_from_answer("What is fusion?", "Fusion is hot.", [], llm, verification="refuted")
+    claims = extract_claims_from_answer("What is fusion?", "test topic", "Fusion is hot.", [], llm, verification="refuted")
     assert all(c["verification_status"] == "disputed" for c in claims)
 
 
@@ -241,7 +241,7 @@ def test_extract_claims_default_verification_is_unverified():
     """extract_claims_from_answer() defaults to verification='unverified'."""
     from output.provenance import extract_claims_from_answer
     llm = _make_mock_llm('["Fact one."]')
-    claims = extract_claims_from_answer("Q?", "Answer.", [], llm)
+    claims = extract_claims_from_answer("Q?", "test topic", "Answer.", [], llm)
     assert claims[0]["verification_status"] == "unverified"
 
 
@@ -363,7 +363,7 @@ def test_extract_claims_returns_list_of_evidence_claims():
     """extract_claims_from_answer() returns a list of dicts."""
     from output.provenance import extract_claims_from_answer
     llm = _make_mock_llm('["Fusion is hot.", "Plasma is ionised gas."]')
-    claims = extract_claims_from_answer("What is fusion?", "Fusion is hot.", [], llm)
+    claims = extract_claims_from_answer("What is fusion?", "test topic", "Fusion is hot.", [], llm)
     assert isinstance(claims, list)
     assert all(isinstance(c, dict) for c in claims)
 
@@ -373,7 +373,7 @@ def test_extract_claims_count_between_3_and_8():
     from output.provenance import extract_claims_from_answer
     texts = [f"Claim {i}." for i in range(5)]
     llm = _make_mock_llm(json.dumps(texts))
-    claims = extract_claims_from_answer("Q?", "Answer.", [], llm)
+    claims = extract_claims_from_answer("Q?", "test topic", "Answer.", [], llm)
     assert len(claims) == 5
 
 
@@ -381,7 +381,7 @@ def test_extract_claims_handles_json_parse_error_gracefully():
     """Malformed JSON falls back to a single placeholder claim."""
     from output.provenance import extract_claims_from_answer
     llm = _make_mock_llm("This is not JSON at all.")
-    claims = extract_claims_from_answer("Q?", "Some answer text.", [], llm)
+    claims = extract_claims_from_answer("Q?", "test topic", "Some answer text.", [], llm)
     assert len(claims) == 1
     assert "extraction failed" in claims[0]["claim"] or claims[0]["claim"].startswith("Some")
 
@@ -391,7 +391,7 @@ def test_extract_claims_handles_fenced_json_response():
     from output.provenance import extract_claims_from_answer
     fenced = '```json\n["Claim one.", "Claim two."]\n```'
     llm = _make_mock_llm(fenced)
-    claims = extract_claims_from_answer("Q?", "Some answer text.", [], llm)
+    claims = extract_claims_from_answer("Q?", "test topic", "Some answer text.", [], llm)
     assert len(claims) == 2
     assert claims[0]["claim"] == "Claim one."
     assert claims[1]["claim"] == "Claim two."
@@ -401,7 +401,7 @@ def test_extract_claims_assigns_sequential_ids():
     """IDs start at claim_id_start and increment."""
     from output.provenance import extract_claims_from_answer
     llm = _make_mock_llm('["Claim A.", "Claim B.", "Claim C."]')
-    claims = extract_claims_from_answer("Q?", "Answer.", [], llm, claim_id_start=5)
+    claims = extract_claims_from_answer("Q?", "test topic", "Answer.", [], llm, claim_id_start=5)
     assert claims[0]["id"] == 5
     assert claims[1]["id"] == 6
     assert claims[2]["id"] == 7
@@ -411,7 +411,7 @@ def test_extract_claims_scores_confidence():
     """Returned claims have a confidence score between 0 and 1."""
     from output.provenance import extract_claims_from_answer
     llm = _make_mock_llm('["Fact one."]')
-    claims = extract_claims_from_answer("Q?", "Fact one.", [], llm)
+    claims = extract_claims_from_answer("Q?", "test topic", "Fact one.", [], llm)
     assert 0.0 <= claims[0]["confidence"] <= 1.0
 
 
@@ -424,7 +424,7 @@ def test_extract_claims_deduplicates_sources_by_url():
         {"title": "Page B", "url": "https://example.com/b"},
     ]
     llm = _make_mock_llm('["Claim one.", "Claim two."]')
-    claims = extract_claims_from_answer("Q?", "Answer.", sources, llm)
+    claims = extract_claims_from_answer("Q?", "test topic", "Answer.", sources, llm)
     for claim in claims:
         urls = [s["url"] for s in claim["sources"]]
         assert len(urls) == len(set(urls))
@@ -438,7 +438,7 @@ def test_extract_claims_sources_count_not_inflated():
         for i in range(5)
     ]
     llm = _make_mock_llm('["Claim one.", "Claim two.", "Claim three."]')
-    claims = extract_claims_from_answer("Q?", "Answer.", sources, llm)
+    claims = extract_claims_from_answer("Q?", "test topic", "Answer.", sources, llm)
     unique_url_count = len({s["url"] for s in sources})
     for claim in claims:
         assert len(claim["sources"]) <= unique_url_count
@@ -449,8 +449,23 @@ def test_extract_claims_classifies_sources():
     from output.provenance import extract_claims_from_answer
     sources = [{"title": "IAEA", "url": "https://www.iaea.org/news"}]
     llm = _make_mock_llm('["Nuclear energy is regulated."]')
-    claims = extract_claims_from_answer("Q?", "Nuclear energy is regulated.", sources, llm)
+    claims = extract_claims_from_answer("Q?", "test topic", "Nuclear energy is regulated.", sources, llm)
     assert claims[0]["sources"][0]["source_type"] == "government"
+
+
+def test_extract_claims_prompt_contains_topic_and_relevance_constraint():
+    """The prompt sent to the LLM includes the topic and the relevance constraint phrase."""
+    from output.provenance import extract_claims_from_answer
+    from unittest.mock import MagicMock
+    from llm.base import LLMResponse
+    llm = MagicMock()
+    llm.chat.return_value = LLMResponse(type="text", content='["Some claim."]')
+    extract_claims_from_answer("What is X?", "nuclear fusion energy", "Some answer.", [], llm)
+    call_args = llm.chat.call_args
+    messages = call_args[1].get("messages") or call_args[0][0]
+    prompt_text = " ".join(m.get("content", "") for m in messages)
+    assert "nuclear fusion energy" in prompt_text
+    assert "directly about the research topic" in prompt_text
 
 
 # ── annotate_report_lines() tests ────────────────────────────────────────────

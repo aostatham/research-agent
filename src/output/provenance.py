@@ -341,6 +341,7 @@ def score_confidence(sources: list) -> float:
 
 def extract_claims_from_answer(
     question: str,
+    topic: str,
     answer: str,
     sources: list,
     llm_client,
@@ -351,14 +352,17 @@ def extract_claims_from_answer(
     """
     Use an LLM to extract atomic claims from a research answer.
 
-    Each claim is a single verifiable fact extracted from the answer text.
-    Returns a list of EvidenceClaim objects.
+    Each claim is a single verifiable fact extracted from the answer text
+    that is directly about the research topic — tangential mentions,
+    comparisons, and asides are excluded.
 
     If JSON parsing of the LLM response fails, falls back to a single
     placeholder claim using the first 200 characters of the answer.
 
     Args:
         question:       The research question that produced this answer
+        topic:          The overarching research topic; used to anchor
+                        the relevance constraint in the extraction prompt
         answer:         The full answer text
         sources:        List of {"title": str, "url": str} source dicts
         llm_client:     LLMClient instance for extraction
@@ -389,13 +393,20 @@ def extract_claims_from_answer(
 
     prompt = (
         "You are extracting atomic factual claims from a research answer.\n\n"
+        f"Research topic: {topic}\n\n"
         f"Question: {question}\n\n"
         f"Answer: {answer}\n\n"
-        "Extract 3 to 8 atomic claims from this answer.\n"
+        "Extract only claims that are directly about the research topic "
+        "and directly supported by this answer.\n\n"
         "Each claim must be:\n"
         "- A single sentence stating one verifiable fact\n"
-        "- Directly supported by the answer text\n"
+        "- Directly about the research topic, not about tangential "
+        "comparisons, analogies, or unrelated subjects mentioned in passing\n"
+        "- Directly supported by the answer text — do not infer or extrapolate\n"
         "- Not combined with other facts\n\n"
+        "Extract between 1 and 8 claims. If the answer contains fewer than "
+        "3 facts directly about the research topic, extract only those that "
+        "qualify. Do not pad with tangential or low-confidence facts.\n\n"
         'Return ONLY a JSON array of strings. No preamble, no explanation.\n'
         'Example: ["Claim one.", "Claim two.", "Claim three."]'
     )
@@ -448,6 +459,7 @@ def extract_claims_from_answer(
 def build_claims_from_results(
     research_results: list,
     llm_client,
+    topic: str = "",
     custom_domains: dict = None
 ) -> list:
     """
@@ -460,6 +472,8 @@ def build_claims_from_results(
     Args:
         research_results: list[ResearchResult] from orchestrator._last_research_results
         llm_client:       LLMClient instance passed to extract_claims_from_answer()
+        topic:            The overarching research topic; passed to
+                          extract_claims_from_answer() for relevance anchoring
         custom_domains:   Optional dict from config source_classification
 
     Returns:
@@ -471,6 +485,7 @@ def build_claims_from_results(
     for rr in research_results:
         new_claims = extract_claims_from_answer(
             question=rr.question,
+            topic=topic,
             answer=rr.answer,
             sources=rr.sources,
             llm_client=llm_client,

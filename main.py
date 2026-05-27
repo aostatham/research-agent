@@ -245,6 +245,7 @@ def main():
     if config.provenance in ("file", "graph"):
         claims = build_claims_from_results(
             orchestrator._last_research_results, synth_llm,
+            topic=topic,
             custom_domains=config.source_classification,
         )
 
