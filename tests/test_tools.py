@@ -190,6 +190,33 @@ def test_get_and_reset_search_count_resets_to_zero():
     assert second == 0
 
 
+def test_unknown_tool_name_does_not_increment_counter():
+    """An unknown tool name raises ValueError and does not increment the counter."""
+    import agent.tools as tools_module
+    tools_module.get_and_reset_search_count()  # clear
+    with pytest.raises(ValueError):
+        tools_module.execute_tool_with_sources("unknown_tool", {"query": "test"})
+    assert tools_module._search_call_count == 0
+
+
+def test_successful_web_search_increments_counter():
+    """A successful web_search dispatch increments the counter exactly once."""
+    import agent.tools as tools_module
+    tools_module.get_and_reset_search_count()  # clear
+    with patch("agent.tools._web_search_with_sources", return_value=("result", [])):
+        tools_module.execute_tool_with_sources("web_search", {"query": "test"})
+    assert tools_module._search_call_count == 1
+
+
+def test_malformed_tool_input_does_not_increment_counter():
+    """A KeyError from missing query field does not increment the counter."""
+    import agent.tools as tools_module
+    tools_module.get_and_reset_search_count()  # clear
+    with pytest.raises(KeyError):
+        tools_module.execute_tool_with_sources("web_search", {})  # missing "query"
+    assert tools_module._search_call_count == 0
+
+
 # ── Anthropic search tests ────────────────────────────────────────────────────
 # Verify text extraction and citation handling from Anthropic response blocks.
 

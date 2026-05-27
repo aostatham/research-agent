@@ -158,9 +158,9 @@ def execute_tool_with_sources(tool_name: str, tool_input: dict) -> tuple[str, li
     """
     Dispatch a tool call and return both result text and source citations.
 
-    Increments the module-level _search_call_count on every call so the
-    Orchestrator can report total searches across all agents via
-    get_and_reset_search_count().
+    Increments the module-level _search_call_count on successful dispatch
+    only — unknown tool names and malformed inputs do not count. The
+    Orchestrator reports the total via get_and_reset_search_count().
 
     Used by the orchestrator so citations are carried through to the synthesiser
     and formatted into the final report's References section.
@@ -176,10 +176,11 @@ def execute_tool_with_sources(tool_name: str, tool_input: dict) -> tuple[str, li
     Raises:
         ValueError: If tool_name is not recognised.
     """
-    global _search_call_count
-    _search_call_count += 1
     if tool_name == "web_search":
-        return _web_search_with_sources(tool_input["query"])
+        result = _web_search_with_sources(tool_input["query"])
+        global _search_call_count
+        _search_call_count += 1
+        return result
     raise ValueError(f"Unknown tool: {tool_name}")
 
 
