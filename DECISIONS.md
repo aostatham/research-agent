@@ -492,6 +492,23 @@ variants or independent versioning, extract it to prompts/ and record
 a superseding decision.
 **Date:** Phase D Part 2 / Pass 3
 
+### D020 — Editor coherence scope: adjacent paragraphs plus summary/body contradictions
+**Decision:** The Editor checks for contradictions between adjacent
+paragraphs only, plus one additional case: a claim in an executive
+summary or conclusions section that directly contradicts a specific
+finding in the report body. Non-adjacent contradictions elsewhere in
+the report are out of scope.
+**Rationale:** Adjacent contradictions are structural defects a reader
+encounters immediately and that the Editor can fix with high confidence.
+Non-adjacent contradictions across the full report are often deliberate
+nuance, qualified claims, or genuine uncertainty in source material —
+fixing them risks substantive judgement the Editor is not equipped to
+make. The summary/body exception is added because executive summary
+contradictions are visible to any reader and unambiguously confusing.
+Full cross-report contradiction detection requires the claim graph
+from Phase E.
+**Date:** Phase D Part 2 / Pass 3
+
 ---
 
 ## Testing
