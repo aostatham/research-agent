@@ -55,7 +55,14 @@ def edit(agent: Agent, report: str, max_tokens: int = 8192) -> str:
             len(edited), len(report),
         )
         return report
-    ratio = difflib.SequenceMatcher(None, report, edited).ratio()
+    # Skip similarity check for very long strings to bound O(N*M) cost.
+    if len(report) > 100000 or len(edited) > 100000:
+        logging.debug(
+            "Editor: skipping similarity check — strings exceed 100000 char cap"
+        )
+        return edited
+    sm = difflib.SequenceMatcher(None, report, edited, autojunk=False)
+    ratio = sm.ratio()
     if ratio < 0.5:
         logging.warning(
             "Editor response rejected: similarity ratio %.2f < 0.5 "

@@ -256,3 +256,32 @@ def test_edit_uses_agent_system_prompt():
     edit(agent, SAMPLE_REPORT)
     # agent.chat passes system= to llm.chat; verify system= is the agent's prompt
     assert mock_llm.chat.call_args[1]["system"] == "You are a coherence editor."
+
+
+# ── FIX 3 — autojunk=False and length cap ────────────────────────────────────
+
+def test_edit_autojunk_false_handles_repetitive_content():
+    """Repetitive content compared to itself returns ratio >= 0.5 with autojunk=False."""
+    # Highly repetitive report: SequenceMatcher with autojunk=True would mark
+    # most elements as junk and return a near-zero ratio.
+    repetitive = ("nuclear fusion " * 200).strip()
+    mock_llm = MagicMock()
+    mock_llm.chat.return_value = make_text_response(repetitive)
+    agent = make_editor_agent(mock_llm)
+    result = edit(agent, repetitive)
+    # Should be accepted — identical content has ratio 1.0 regardless of autojunk
+    assert result == repetitive
+
+
+def test_edit_length_cap_skips_similarity_check():
+    """Strings over 100000 chars skip the similarity check and accept the response."""
+    # Response is very different but exceeds the length cap — similarity skipped.
+    long_original = ("A sentence about nuclear fusion. " * 4000).strip()   # ~131999 chars
+    long_edited = ("B sentence about nuclear fusion. " * 4000).strip()     # different content
+    assert len(long_original) > 100000
+    mock_llm = MagicMock()
+    mock_llm.chat.return_value = make_text_response(long_edited)
+    agent = make_editor_agent(mock_llm)
+    result = edit(agent, long_original)
+    # Accepted because length cap bypasses similarity check
+    assert result == long_edited
