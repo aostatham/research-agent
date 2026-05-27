@@ -35,6 +35,42 @@ def _strip_code_fence(text: str) -> str:
     return "\n".join(lines)
 
 
+_REFUSAL_PREFIXES = (
+    "i'd be happy", "i would be happy", "i appreciate", "i'm sorry",
+    "i cannot", "i can't", "as an ai", "certainly!", "of course",
+    "sure!", "great question",
+)
+
+
+def _is_valid_claim(text: str) -> bool:
+    """
+    Return False if text is an extraction failure, LLM refusal, or non-atomic content.
+
+    Rejects:
+      - Empty strings
+      - Markdown headers (starts with "#")
+      - Known LLM refusal / clarification opener phrases
+      - Strings containing the extraction-failed sentinel
+      - Strings longer than 500 characters (not a single atomic sentence)
+      - Strings containing a blank line (multi-paragraph, not atomic)
+    """
+    stripped = text.strip()
+    if not stripped:
+        return False
+    if stripped.startswith("#"):
+        return False
+    lower = stripped.lower()
+    if any(lower.startswith(p) for p in _REFUSAL_PREFIXES):
+        return False
+    if "[extraction failed]" in stripped:
+        return False
+    if len(stripped) > 500:
+        return False
+    if "\n\n" in stripped:
+        return False
+    return True
+
+
 def write_provenance_file(
     output_path: str,
     claims: list,
@@ -422,6 +458,15 @@ def extract_claims_from_answer(
             raise ValueError("empty or non-list response")
     except (json.JSONDecodeError, ValueError, AttributeError) as e:
         warnings.warn(f"Claim extraction failed, using fallback: {e}", stacklevel=2)
+        fallback_text = answer[:200] + (" [extraction failed]" if len(answer) > 200 else "")
+        claim_texts = [fallback_text]
+
+    claim_texts = [t for t in claim_texts if _is_valid_claim(str(t))]
+    if not claim_texts:
+        warnings.warn(
+            f"All extracted claims failed validation for question: {question[:80]}",
+            stacklevel=2,
+        )
         fallback_text = answer[:200] + (" [extraction failed]" if len(answer) > 200 else "")
         claim_texts = [fallback_text]
 

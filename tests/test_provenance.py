@@ -348,6 +348,60 @@ def test_score_confidence_mixed_sources():
     assert score_confidence(mixed) > score_confidence(gov_only)
 
 
+# ── _is_valid_claim() tests ──────────────────────────────────────────────────
+
+def test_is_valid_claim_false_for_markdown_header():
+    """_is_valid_claim returns False for text starting with '#'."""
+    from output.provenance import _is_valid_claim
+    assert _is_valid_claim("## Background") is False
+
+
+def test_is_valid_claim_false_for_llm_refusal():
+    """_is_valid_claim returns False for known LLM clarification opener phrases."""
+    from output.provenance import _is_valid_claim
+    assert _is_valid_claim("I'd be happy to help with that!") is False
+    assert _is_valid_claim("As an AI, I cannot verify...") is False
+    assert _is_valid_claim("Certainly! Here are some facts.") is False
+
+
+def test_is_valid_claim_false_for_extraction_failed_sentinel():
+    """_is_valid_claim returns False when text contains [extraction failed]."""
+    from output.provenance import _is_valid_claim
+    assert _is_valid_claim("Some text [extraction failed]") is False
+
+
+def test_is_valid_claim_false_for_overlong_text():
+    """_is_valid_claim returns False for text longer than 500 characters."""
+    from output.provenance import _is_valid_claim
+    long_text = "A" * 501
+    assert _is_valid_claim(long_text) is False
+
+
+def test_is_valid_claim_false_for_multi_paragraph():
+    """_is_valid_claim returns False for text containing a blank line."""
+    from output.provenance import _is_valid_claim
+    assert _is_valid_claim("First paragraph.\n\nSecond paragraph.") is False
+
+
+def test_is_valid_claim_true_for_normal_sentence():
+    """_is_valid_claim returns True for a normal single-sentence factual claim."""
+    from output.provenance import _is_valid_claim
+    assert _is_valid_claim("The Daisy Seed uses an STM32H750 microcontroller.") is True
+
+
+def test_extract_claims_falls_back_when_all_claims_invalid():
+    """extract_claims_from_answer falls back to placeholder when all LLM claims fail validation."""
+    from output.provenance import extract_claims_from_answer
+    import warnings
+    # All items are LLM refusals — should all fail _is_valid_claim
+    llm = _make_mock_llm('["I cannot provide that.", "As an AI, I am unable to confirm this."]')
+    with warnings.catch_warnings(record=True) as w:
+        warnings.simplefilter("always")
+        claims = extract_claims_from_answer("Q?", "test topic", "Some answer text.", [], llm)
+    assert len(claims) == 1
+    assert any("failed validation" in str(warning.message) for warning in w)
+
+
 # ── extract_claims_from_answer() tests ───────────────────────────────────────
 
 def _make_mock_llm(response_text):
