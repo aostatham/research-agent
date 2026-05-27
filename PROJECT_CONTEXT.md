@@ -14,10 +14,11 @@ autonomously decomposes it into sub-questions, searches the web, reflects on gap
 synthesises a structured report, and generates a machine-readable provenance file
 with per-claim evidence chains.
 
-**Built as a learning project for agentic architecture patterns.**
+**Strategic goal:** Build a genuinely usable tool while learning agentic architecture patterns.
+**Primary differentiator:** Machine-readable provenance file with per-claim source typing,
+confidence scoring, and evidence chains — unique among open-source research agents.
 
 **Developer:** Andrew (experienced developer, learning Python specifically)
-
 **Repository:** https://github.com/aostatham/research-agent
 
 ---
@@ -49,12 +50,14 @@ research-agent/
 ├── CLAUDE.md                 # Claude Code briefing
 ├── DECISIONS.md              # Architectural decision log
 ├── PROJECT_CONTEXT.md        # This file
+├── prompts/                  # Agent system prompts (versioned in git)
 ├── src/
 │   ├── agent/
 │   │   ├── __init__.py
 │   │   ├── orchestrator.py   # Decompose, research loop, reflect
 │   │   ├── synthesiser.py    # Report generation (full / short modes)
-│   │   └── tools.py          # Tool definitions + Anthropic/Tavily search
+│   │   ├── tools.py          # Tool definitions + Anthropic/Tavily search
+│   │   └── builder.py        # build_agent(), build_agents(), AgentPool
 │   ├── llm/
 │   │   ├── __init__.py
 │   │   ├── base.py           # Abstract LLMClient + LLMResponse
@@ -96,7 +99,7 @@ research-agent/
 
 ---
 
-## Architecture — How It Works
+## Architecture — Current State
 
 ```
 python main.py "your topic"
@@ -114,13 +117,18 @@ python main.py "your topic"
   Orchestrator.decompose()          — LLM breaks topic into 4-8 sub-questions
        │
        ▼
-  Orchestrator.run()                — researches all questions
-       │  ├── research_question()   — agentic loop per question
-       │  │   ├── LLM tool call → web_search
-       │  │   ├── execute_tool_with_sources() → Anthropic or Tavily
-       │  │   ├── repeated query detection → synthesis forced
-       │  │   └── fallback synthesis if max iterations reached
-       │  └── reflect() → identifies gaps → researches gaps
+  Orchestrator.run()                — sync wrapper → asyncio.run(run_async())
+       │
+       ▼
+  Orchestrator.run_async()          — parallel asyncio workers
+       │  ├── research_all_async()  — max_workers concurrent questions
+       │  │   └── research_question_async() per question
+       │  │       └── _research_question_sync() — agentic loop
+       │  │           ├── LLM tool call → web_search
+       │  │           ├── execute_tool_with_sources() → Anthropic or Tavily
+       │  │           ├── seen_queries set — cyclic query detection
+       │  │           └── fallback synthesis if max iterations reached
+       │  └── reflect() → gaps → research_all_async(gaps)
        │
        ▼
   Synthesiser.synthesise()          — LLM writes structured report
@@ -128,7 +136,7 @@ python main.py "your topic"
        ▼
   build_claims_from_results()       — extract atomic claims via LLM
        │  ├── extract_claims_from_answer() per question
-       │  ├── classify_source_type() — 9-type hybrid classifier
+       │  ├── classify_source_type() — 9-type hybrid classifier (5 layers)
        │  └── score_confidence() — source quality heuristic
        │
        ▼
@@ -167,24 +175,30 @@ Config dataclass       ← hardcoded fallback
 - Orchestration: `claude-haiku-4-5-20251001` (fast, cheap)
 - Synthesis: `claude-sonnet-4-6` (quality)
 
-### 4. Search Provider Abstraction
+### 4. Parallel Research
+- `run_async()` is the core — single event loop across entire pipeline
+- `run()` is a synchronous CLI wrapper only — do not call from async contexts
+- `max_workers=2` default — safe for Ollama (serialises internally)
+- Warning printed when Ollama + max_workers > 2
+
+### 5. Search Provider Abstraction
 `configure_search()` called once at startup. Routes to:
 - `_anthropic_search_with_sources()` — citations on text blocks (not tool_result)
 - `_tavily_search_with_sources()` — per-result citations
 
-### 5. Agentic Loop Guards
-- Repeated query detection — injects synthesis prompt instead of re-searching
+### 6. Agentic Loop Guards
+- `seen_queries: set` — prevents A→B→A→B oscillation (not just consecutive)
 - Tool-call-string detection — handles malformed LLM responses
 - Fallback synthesis — rescues questions that hit max_iterations
 
-### 6. Evidence & Provenance Pipeline
+### 7. Evidence & Provenance Pipeline
 - `EvidenceClaim` TypedDict — JSON-serialisable, no Pydantic overhead
-- `classify_source_type()` — 5-layer hybrid: TLD patterns → stable patterns →
+- `classify_source_type()` — 5-layer hybrid: TLD → stable patterns →
   hardcoded institutional → custom config → LLM fallback
 - 9 source types: government, academic, news, reference, institutional,
   industry, video, forum, general
 - Confidence scoring: base 0.4 + per-source-type increments + corroboration bonus
-- `annotate_report_lines()` — substring matching for [N] inline markers
+- `annotate_report_lines()` — prose-only substring matching for [N] markers
 - Provenance output: `topic.provenance.json` alongside `topic.md`
 
 ---
@@ -213,7 +227,8 @@ tavily_max_results: 5
 min_questions: 4
 max_questions: 5
 max_iterations: 5
-max_workers: 4                # parallel research workers (Phase D)
+max_workers: 2                # default 2 — safe for Ollama and Anthropic
+                              # Ollama ceiling: 2, Anthropic ceiling: 4+
 
 # Token limits
 max_tokens_research: 2048
@@ -254,15 +269,15 @@ python main.py "topic" [options]
 --search-provider {anthropic,tavily}
 
 # Research depth
---min-questions N     # default: 4
---max-questions N     # default: 5
---max-iterations N    # default: 5
---max-workers N       # default: 4 (parallel workers)
+--min-questions N         # default: 4
+--max-questions N         # default: 5
+--max-iterations N        # default: 5
+--max-workers N           # default: 2 (Ollama safe ceiling: 2, Anthropic: 4+)
 --max-tokens-research N
 --max-tokens-synthesis N
 
 # Output
--s, --short           # executive summary
+-s, --short               # executive summary
 -f, --format {markdown,html,pdf}
 --output-mode {report,report-evidence,data,dashboard,slides,
                matrix,academic,bibliography,raw}
@@ -277,7 +292,7 @@ python main.py "topic" [options]
 
 ```bash
 # Unit tests (always free, no API calls)
-pytest tests/ -m "not integration" -v     # 295 passing
+pytest tests/ -m "not integration" -v     # 307 passing
 
 # Free integration tests (Ollama + Tavily)
 pytest tests/test_integration_smoke.py -m "ollama" -v
@@ -305,8 +320,18 @@ produces empty citation lists despite searches succeeding.
 Manually constructed as list of dicts. After a tool call:
 1. Assistant: "I will search for: {query}"
 2. User: search results + "Do not call any tools. Write your answer directly."
-
 The forceful instruction is critical — without it smaller models loop.
+
+### asyncio Pattern
+`run_async()` is the core — use this from async contexts.
+`run()` is a synchronous CLI wrapper only. Never call `run()` from an
+async context — it calls `asyncio.run()` which raises RuntimeError inside
+an already-running event loop.
+
+### CLI Model Override (H1 fix)
+`args.orchestration_model` sets ONLY the field matching the resolved provider.
+Does NOT set both `anthropic_orchestration_model` and `ollama_orchestration_model`.
+Prevents silent config corruption when using tier-specific overrides.
 
 ### Source Classifier Maintenance
 Layer 3 hardcoded list in `classify_source_type()`:
@@ -317,69 +342,71 @@ Layer 3 hardcoded list in `classify_source_type()`:
 ### Provenance Pipeline
 - `provenance.py` has no imports from `agent/` or `llm/`
 - `llm_client` is passed as argument to `extract_claims_from_answer()`
-- `annotate_report_lines()` uses simple substring matching — sparse results
-  expected until Phase D synthesiser integration
+- `annotate_report_lines()` only annotates prose — skips References section
+- `report_line` mostly null until Phase D synthesiser integration
 
 ---
 
-## Completed Phases
+## Current Status
 
-### Phase A — Stability & Quality ✅
-Provider abstraction, model tiering, retry, config, message history fix,
-reflection, citations, repeated query + fallback synthesis.
+### Completed
+- Phase A — Stability and quality
+- Phase B — Output options (markdown/HTML/PDF)
+- Phase C — Evidence layer (pending: output mode renderers)
+- Phase D Part 1 — Parallel asyncio workers
+- Phase D Part 2 — Multi-agent architecture (423 tests at completion,
+  430 after QA pass fixes)
+- Phase E partial (Tavily)
+- Phase G.1 (mixed provider)
 
-### Phase B — Output Options ✅
-Metadata table, --short, --format (markdown/html/pdf), output/index.md.
+### Phase D Part 2 — what was built
+- Agent and AgentPool dataclasses (src/agent/base.py)
+- Agent system prompts (prompts/)
+- Agent builder with prompt loading (src/agent/builder.py)
+- ResearchResult replaces (answer, sources) tuple (src/evidence/schema.py)
+- System prompt routing on LLMClient (src/llm/)
+- Researcher Agent owns the agentic loop (src/agent/researcher.py)
+- Parallel Verifier after each Researcher (src/agent/verifier.py)
+- Editor Agent after synthesis (src/agent/editor.py)
+- Editor config fields (src/config/settings.py, config.yaml)
+- QA fixes: system prompt injection, gather exception handling,
+  verifier outcome propagation, editor response validation,
+  cross-run state reset
 
-### Phase C — Evidence Layer ✅ (largely)
-Evidence schema (TypedDict), provenance file pipeline, --provenance flag,
-atomic claim extraction, confidence scoring, report line tracking,
-hybrid source classifier (5 layers), 9-type source taxonomy,
-source deduplication, --output-mode flag stub.
-Pending: output mode renderers (dashboard, matrix, academic, bibliography, raw).
+### Known issues carried forward to Pass 2
+- H2: Planner Agent never called — to be resolved by removal (D015)
+- M5: Inline researcher fallback has diverged — to be removed (D016)
+- H7: XSS in HTML/PDF formatter
+- M8: Index file write not concurrency-safe
+- M9: Search uses hardcoded model name
+- M3, M4, M6, M7: Verifier robustness gaps
 
-### Phase E (Tavily) ✅
-configure_search(), Anthropic + Tavily routing, --search-provider flag.
-
-### Phase G.1 ✅
-Mixed provider support, --orchestration-provider / --synthesis-provider,
-build_llms() returns 6-tuple.
+### Pending Phases
+- Phase D Part 2 — multi-agent implementation
+- Phase C — output mode renderers
+- Phase F partial — read_url, arxiv_search (high priority)
+- PKG — Dockerfile, pipx, preset configs
+- Phase E — knowledge store (Kuzu), persistence
+- UI — comprehensive web UI (after Phase E)
+- Phase F remaining — SearXNG, pdf_reader, youtube, browser
+- Phase H — observability
+- Phase G remaining — provider optimisation
+- Phase I — interface
 
 ---
 
-## Pending Phases
+## Four-Collaborator Development Process
 
-### Phase D — Parallel Research Architecture (IN PROGRESS)
-**Part 1 (in progress):** asyncio workers, --max-workers flag, configurable
-parallelism, worker failure handling. Target: 194s → ~50s.
+| Role | Collaborator | Trigger |
+|---|---|---|
+| Product Owner | Andrew | Always |
+| Lead Architect | Sonnet 4.6 (main conversation) | Always |
+| Principal Reviewer | Opus 4.7 Session 1 | Phase boundaries, design reviews |
+| QA / Adversarial | Opus 4.7 Session 2 | Phase completion, pre-release |
+| Implementation | Claude Code | Always |
 
-**Part 2 (pending):**
-- Independent verifier agent (separate model, not self-critique)
-- Dedicated planner agent
-- Fact-checker agent
-- Editor agent
-- Synthesiser integration for report line tracking
-
-### Phase E — Memory & Persistent Knowledge
-KnowledgeStore abstraction (Kuzu default, SQLite fallback, Memory for tests),
-retrieval cache, cross-run accumulation, follow-up mode (--follow-up),
---provenance graph mode.
-
-### Phase F — Tools & Sources
-SearXNG, Brave Search, read_url, arxiv_search, pdf_reader,
-youtube_transcript, file_reader, browser tool.
-
-### Phase G — Provider Optimisation (remaining)
-Provider-specific prompts, simple_questions flag, system prompt support,
-Ollama model registry.
-
-### Phase H — Observability
-Structured logging, cost tracking, run replay, confidence threshold,
-streaming output.
-
-### Phase I — Interface
-FastAPI + frontend, SSE streaming, report library, interactive provenance
-viewer, REST API, webhooks.
+Opus 4.7 Session 1 brief: architecture and current practice review
+Opus 4.7 Session 2 brief: adversarial — find what's wrong, no context given
 
 ---
 
@@ -391,67 +418,6 @@ status, and contradiction history. Two delivery modes:
 1. **Report mode** — clean prose with [N] footnote markers and ⚠️ disputed flags
 2. **Provenance file** — `.provenance.json` with line references, quality metrics,
    full evidence chain per claim
-
-```json
-{
-  "report_file": "nuclear_fusion_energy.md",
-  "generated": "2026-05-23T09:49:00",
-  "quality_metrics": {
-    "coverage": 0.87,
-    "confidence": 0.81,
-    "contradictions": 2,
-    "verified_claims": 14,
-    "unverified_claims": 3
-  },
-  "claims": [
-    {
-      "id": 1,
-      "report_line": 42,
-      "claim": "NIF achieved ignition in December 2022",
-      "confidence": 0.96,
-      "verification_status": "verified",
-      "evidence_type": "quantitative",
-      "sources": [...],
-      "contradictions": []
-    }
-  ]
-}
-```
-
----
-
-## Example Commands
-
-```bash
-# Standard run
-python main.py "nuclear fusion energy"
-
-# Maximum depth
-python main.py "nuclear fusion energy" \
-  --min-questions 6 --max-questions 8 \
-  --max-iterations 5 \
-  --max-tokens-research 4096 \
-  --max-tokens-synthesis 8192
-
-# Free run (Ollama + Tavily)
-python main.py "nuclear fusion energy" \
-  -p ollama -m llama3.1 \
-  --search-provider tavily \
-  --provenance file -s
-
-# Mixed provider
-python main.py "nuclear fusion energy" \
-  --orchestration-provider ollama \
-  --orchestration-model llama3.1 \
-  --synthesis-provider anthropic \
-  --synthesis-model claude-sonnet-4-6
-
-# With provenance
-python main.py "nuclear fusion energy" --provenance file
-
-# Run tests
-pytest tests/ -m "not integration" -v
-```
 
 ---
 
@@ -476,6 +442,5 @@ pytest tests/ -m "not integration" -v
 - Fallback synthesis rescues questions but produces shorter answers
 - Anthropic web searches cost $0.01 each regardless of LLM provider
 - Tavily citations are per-result not per-sentence — less granular
-- Reflection uses same model as research — Phase D independent verifier fixes this
-- report_line mostly null — Phase D synthesiser integration fixes this
-- Sequential research loop — Phase D Part 1 in progress
+- Reflection uses same model as research — Phase D Part 2 independent verifier fixes this
+- report_line mostly null — Phase D Part 2 synthesiser integration fixes this
