@@ -67,9 +67,9 @@ def edit(agent: Agent, report: str, max_tokens: int = 8192) -> str:
     # original as a substring, strip everything before the report starts.
     original_prefix = report.strip()[:80]
     if not edited.startswith(original_prefix):
-        idx = edited.find(report)
+        idx = edited.find(report.strip())
         if idx > 0:
-            return edited[idx:]
+            return edited[idx:].strip()
 
     # M6: <= instead of < so an exactly-50%-length response is also rejected.
     if len(edited) <= 0.5 * len(report):

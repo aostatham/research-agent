@@ -287,6 +287,18 @@ def test_edit_strips_preamble_when_original_follows():
     assert result == SAMPLE_REPORT
 
 
+def test_edit_strips_preamble_when_report_has_trailing_whitespace():
+    """Preamble is stripped even when the original report has trailing whitespace."""
+    report = SAMPLE_REPORT + "\n\n"
+    preamble = "Here is the edited report:\n\n"
+    response_text = preamble + report
+    mock_llm = MagicMock()
+    mock_llm.chat.return_value = make_text_response(response_text)
+    agent = make_editor_agent(mock_llm)
+    result = edit(agent, report)
+    assert result == report.strip()
+
+
 def test_edit_rejects_exactly_half_length_response():
     """A response of exactly len(original) * 0.5 characters is rejected."""
     original = "A" * 200
