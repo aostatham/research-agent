@@ -176,3 +176,51 @@ def test_html_missing_both_degrades_gracefully():
          patch("output.formatter.BLEACH_AVAILABLE", False):
         result = convert_to_html("Topic", "", "Normal content")
     assert "Normal content" in result
+
+
+# ── Line anchors ─────────────────────────────────────────────────────────────
+
+def _make_identity_markdown():
+    """Minimal markdown mock that returns the input text unchanged."""
+    mock = MagicMock()
+    mock.markdown.side_effect = lambda text, extensions=None: text
+    return mock
+
+
+def test_html_report_body_contains_line_anchors():
+    """convert_to_html() report body contains span elements with id='L1', 'L2' etc."""
+    with patch("output.formatter.markdown", _make_identity_markdown()), \
+         patch("output.formatter.MARKDOWN_AVAILABLE", True):
+        result = convert_to_html("Topic", "", "First line\nSecond line")
+    assert 'id="L1"' in result
+    assert 'id="L2"' in result
+
+
+def test_html_line_anchors_are_one_based_and_sequential():
+    """Line anchors start at L1 and increment by 1."""
+    with patch("output.formatter.markdown", _make_identity_markdown()), \
+         patch("output.formatter.MARKDOWN_AVAILABLE", True):
+        result = convert_to_html("Topic", "", "A\nB\nC")
+    assert 'id="L1"' in result
+    assert 'id="L2"' in result
+    assert 'id="L3"' in result
+    assert 'id="L0"' not in result
+
+
+def test_html_bleach_preserves_span_id_attribute():
+    """bleach does not strip the id attribute from span elements."""
+    with patch("output.formatter.markdown", _make_identity_markdown()), \
+         patch("output.formatter.MARKDOWN_AVAILABLE", True):
+        result = convert_to_html("Topic", "", "Some content")
+    assert '<span id="L' in result
+
+
+def test_html_line_anchors_only_in_report_body_not_metadata():
+    """Line anchors do not appear in the metadata section — only in the report body."""
+    with patch("output.formatter.markdown", _make_identity_markdown()), \
+         patch("output.formatter.MARKDOWN_AVAILABLE", True):
+        result = convert_to_html("Topic", "Key: Val", "Report line")
+    meta_start = result.find('<div class="metadata">')
+    meta_end = result.find('</div>', meta_start)
+    meta_section = result[meta_start:meta_end]
+    assert 'id="L' not in meta_section

@@ -31,7 +31,28 @@ _SAFE_TAGS = [
     "p", "h1", "h2", "h3", "h4", "h5", "h6",
     "a", "ul", "ol", "li", "strong", "em", "code", "pre",
     "blockquote", "hr", "br", "table", "thead", "tbody", "tr", "th", "td",
+    "span",
 ]
+
+_SAFE_ATTRS = {"a": ["href"], "span": ["id"]}
+
+
+def _add_line_anchors(html_str: str) -> str:
+    """
+    Wrap each line of rendered HTML in a <span id="LN"> element.
+
+    N is the 1-based line number. Enables the provenance viewer to link
+    directly to the report line referenced in each claim's report_line field.
+
+    Args:
+        html_str: Rendered HTML string (post-markdown, pre-bleach)
+
+    Returns:
+        HTML string with each line wrapped in <span id="LN">...</span>
+    """
+    lines = html_str.split("\n")
+    wrapped = [f'<span id="L{i + 1}">{line}</span>' for i, line in enumerate(lines)]
+    return "\n".join(wrapped)
 
 
 def build_metadata(topic: str, config, orch_provider: str, orch_model: str,
@@ -86,16 +107,17 @@ def convert_to_html(topic: str, metadata: str, report: str) -> str:
     if MARKDOWN_AVAILABLE and BLEACH_AVAILABLE:
         meta_html = markdown.markdown(metadata, extensions=["tables"])
         report_html = markdown.markdown(report, extensions=["tables", "fenced_code"])
+        report_html = _add_line_anchors(report_html)
         meta_html = bleach.clean(
             meta_html,
             tags=_SAFE_TAGS,
-            attributes={"a": ["href"]},
+            attributes=_SAFE_ATTRS,
             strip=True,
         )
         report_html = bleach.clean(
             report_html,
             tags=_SAFE_TAGS,
-            attributes={"a": ["href"]},
+            attributes=_SAFE_ATTRS,
             strip=True,
         )
     elif MARKDOWN_AVAILABLE and not BLEACH_AVAILABLE:
