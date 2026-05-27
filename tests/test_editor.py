@@ -18,6 +18,7 @@ Verifies:
 All tests mock the agent's LLM.
 """
 
+import logging
 import pytest
 from unittest.mock import MagicMock
 from agent.editor import edit
@@ -322,3 +323,38 @@ def test_edit_length_cap_skips_similarity_check():
     result = edit(agent, long_original)
     # Accepted because length cap bypasses similarity check
     assert result == long_edited
+
+
+# ── Exception handling ────────────────────────────────────────────────────────
+
+def test_edit_catches_read_timeout_and_returns_original(caplog):
+    """ReadTimeout raised by the LLM is caught; original report is returned."""
+    import requests.exceptions
+    mock_llm = MagicMock()
+    mock_llm.chat.side_effect = requests.exceptions.ReadTimeout("timed out")
+    agent = make_editor_agent(mock_llm)
+    with caplog.at_level(logging.WARNING):
+        result = edit(agent, SAMPLE_REPORT)
+    assert result == SAMPLE_REPORT
+    assert any("Editor pass failed" in r.message for r in caplog.records)
+
+
+def test_edit_catches_generic_exception_and_returns_original(caplog):
+    """Any Exception raised by the LLM is caught; original report is returned."""
+    mock_llm = MagicMock()
+    mock_llm.chat.side_effect = RuntimeError("unexpected LLM error")
+    agent = make_editor_agent(mock_llm)
+    with caplog.at_level(logging.WARNING):
+        result = edit(agent, SAMPLE_REPORT)
+    assert result == SAMPLE_REPORT
+    assert any("Editor pass failed" in r.message for r in caplog.records)
+
+
+def test_edit_exception_warning_includes_exception_type(caplog):
+    """The WARNING message includes the exception class name."""
+    mock_llm = MagicMock()
+    mock_llm.chat.side_effect = ValueError("bad value")
+    agent = make_editor_agent(mock_llm)
+    with caplog.at_level(logging.WARNING):
+        edit(agent, SAMPLE_REPORT)
+    assert any("ValueError" in r.message for r in caplog.records)

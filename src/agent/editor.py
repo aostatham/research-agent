@@ -47,10 +47,17 @@ def edit(agent: Agent, report: str, max_tokens: int = 8192) -> str:
         Edited report string, or the original report if the response is
         rejected by either acceptance check.
     """
-    response = agent.chat(
-        messages=[{"role": "user", "content": report}],
-        max_tokens=max_tokens,
-    )
+    try:
+        response = agent.chat(
+            messages=[{"role": "user", "content": report}],
+            max_tokens=max_tokens,
+        )
+    except Exception as e:
+        logging.warning(
+            "Editor pass failed (%s: %s) — using original report",
+            type(e).__name__, e,
+        )
+        return report
     if response.type != "text":
         return report
     edited = response.content.strip()
