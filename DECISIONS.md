@@ -586,7 +586,12 @@ gains one field.
 claim true vs what should the report say. Conflating graph
 verification in Analyst makes Analyst's scope vaguer. Two clean
 contracts are better than one vague one. Graph-first ordering reduces
-cost and uses the more reliable source first.
+cost and uses the more reliable source first. Graph evidence is
+preferred when available because it carries verification provenance
+from prior runs; web evidence is the fallback when the graph has
+nothing to say. This is a reliability ordering, not a performance
+optimisation — future contributors must not parallelise the two
+verification passes.
 **Date:** Phase E pre-flight review
 
 ### D027 — Durable execution (RunState) as Phase E pre-requisite
