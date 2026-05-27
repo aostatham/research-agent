@@ -87,6 +87,13 @@ def _extract_suspicious_claims(
     return [s for s in scored[:max_claims] if _score(s) > 0]
 
 
+# Matching strategy for _is_refuted and _is_confirmed (L1):
+# Both functions resolve the status field by checking keys in priority order:
+#   status, verification_status, verdict, summary
+# Both use exact frozenset membership against their respective frozensets.
+# Neither uses substring matching.
+
+
 def _is_refuted(result_item) -> bool:
     """Return True if the verification result indicates a refuted claim.
 
