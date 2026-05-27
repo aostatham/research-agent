@@ -14,25 +14,68 @@ import pytest
 import time
 from unittest.mock import MagicMock, patch
 from llm.retry import with_retry, _is_retryable
+import llm.retry as retry_module
 
 
 # ── _is_retryable() tests ─────────────────────────────────────────────────────
 # Verify the classification logic across all three detection paths:
 # exception class name, direct status_code, and nested response.status_code.
 
-def test_rate_limit_error_is_retryable():
-    """Anthropic RateLimitError (429 equivalent) should be retried."""
+def test_rate_limit_error_is_retryable_by_string_fallback():
+    """String name fallback: RateLimitError class name triggers a retry when isinstance unavailable."""
     exc = MagicMock()
-    exc.__class__.__name__ = "RateLimitError"
     type(exc).__name__ = "RateLimitError"
-    assert _is_retryable(exc)
+    with patch.object(retry_module, "_ANTHROPIC_EXCEPTIONS", ()):
+        assert _is_retryable(exc)
 
 
-def test_internal_server_error_is_retryable():
-    """Anthropic InternalServerError (500 equivalent) should be retried."""
+def test_internal_server_error_is_retryable_by_string_fallback():
+    """String name fallback: InternalServerError class name triggers a retry when isinstance unavailable."""
     exc = MagicMock()
     type(exc).__name__ = "InternalServerError"
-    assert _is_retryable(exc)
+    with patch.object(retry_module, "_ANTHROPIC_EXCEPTIONS", ()):
+        assert _is_retryable(exc)
+
+
+def test_is_retryable_isinstance_when_exceptions_available():
+    """When _ANTHROPIC_EXCEPTIONS is populated, isinstance check fires for matching exceptions."""
+    class FakeRateLimitError(Exception):
+        pass
+
+    exc = FakeRateLimitError("rate limited")
+    with patch.object(retry_module, "_ANTHROPIC_EXCEPTIONS", (FakeRateLimitError,)):
+        assert _is_retryable(exc)
+
+
+def test_is_retryable_isinstance_does_not_match_unrelated_exception():
+    """isinstance check does not catch exceptions outside _ANTHROPIC_EXCEPTIONS."""
+    class FakeRateLimitError(Exception):
+        pass
+
+    exc = ValueError("not a rate limit")
+    with patch.object(retry_module, "_ANTHROPIC_EXCEPTIONS", (FakeRateLimitError,)):
+        assert not _is_retryable(exc)
+
+
+def test_is_retryable_string_fallback_when_exceptions_empty():
+    """String name fallback activates only when _ANTHROPIC_EXCEPTIONS is empty."""
+    exc = MagicMock()
+    type(exc).__name__ = "APIStatusError"
+    with patch.object(retry_module, "_ANTHROPIC_EXCEPTIONS", ()):
+        assert _is_retryable(exc)
+
+
+def test_is_retryable_string_fallback_skipped_when_exceptions_available():
+    """String name is NOT checked when _ANTHROPIC_EXCEPTIONS is non-empty (avoids false positives)."""
+    class IrrelevantError(Exception):
+        pass
+    # Patch name to look like a retryable Anthropic error, but _ANTHROPIC_EXCEPTIONS
+    # contains IrrelevantError (not this class) — should NOT match.
+    exc = ValueError("not retryable")
+    # exc's class name is "ValueError" which is not in RETRYABLE_ANTHROPIC_EXCEPTIONS,
+    # and it's not an instance of IrrelevantError.
+    with patch.object(retry_module, "_ANTHROPIC_EXCEPTIONS", (IrrelevantError,)):
+        assert not _is_retryable(exc)
 
 
 def test_status_code_429_is_retryable():

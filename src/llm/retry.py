@@ -22,14 +22,28 @@ logger = logging.getLogger(__name__)
 # 429 = rate limited, 500/502/503 = server errors, 529 = Anthropic overloaded.
 RETRYABLE_STATUS_CODES = {429, 500, 502, 503, 529}
 
-# Anthropic SDK exception class names that map to retryable conditions.
-# Checked by name so we avoid a hard import dependency on the anthropic package
-# in this module.
+# Anthropic SDK exception class names — used as a fallback when the anthropic
+# package is not importable (e.g. in environments that only run Ollama).
 RETRYABLE_ANTHROPIC_EXCEPTIONS = {
     "RateLimitError",
     "InternalServerError",
     "APIStatusError",
 }
+
+# Preferred: actual exception classes for isinstance matching (avoids false
+# positives from name collisions with non-Anthropic exceptions).
+# Falls back to an empty tuple when the anthropic package is not installed.
+try:
+    from anthropic import RateLimitError as _AnthropicRateLimitError
+    from anthropic import InternalServerError as _AnthropicInternalServerError
+    from anthropic import APIStatusError as _AnthropicAPIStatusError
+    _ANTHROPIC_EXCEPTIONS: tuple = (
+        _AnthropicRateLimitError,
+        _AnthropicInternalServerError,
+        _AnthropicAPIStatusError,
+    )
+except ImportError:
+    _ANTHROPIC_EXCEPTIONS = ()
 
 
 def with_retry(max_attempts: int = 3, base_delay: float = 1.0, max_delay: float = 30.0):
@@ -89,7 +103,8 @@ def _is_retryable(exception: Exception) -> bool:
     Decide whether an exception represents a transient failure worth retrying.
 
     Checks three sources of retryability in order:
-    1. Anthropic SDK exception class name (RateLimitError, InternalServerError, …)
+    1. isinstance against _ANTHROPIC_EXCEPTIONS when the package is installed;
+       falls back to string class name when the package is absent.
     2. Direct status_code attribute (used by Anthropic SDK and httpx)
     3. Nested response.status_code (used by requests.exceptions.HTTPError)
 
@@ -99,12 +114,15 @@ def _is_retryable(exception: Exception) -> bool:
     Returns:
         True if the exception indicates a transient problem; False otherwise.
     """
-    exc_type = type(exception).__name__
-
-    # Anthropic SDK raises typed exceptions — match by class name to avoid
-    # importing anthropic here (which would create a circular dependency risk).
-    if exc_type in RETRYABLE_ANTHROPIC_EXCEPTIONS:
-        return True
+    # Prefer isinstance when the anthropic package is available — avoids false
+    # positives from other libraries that happen to share a class name.
+    if _ANTHROPIC_EXCEPTIONS:
+        if isinstance(exception, _ANTHROPIC_EXCEPTIONS):
+            return True
+    else:
+        # Fall back to string name when anthropic is not installed.
+        if type(exception).__name__ in RETRYABLE_ANTHROPIC_EXCEPTIONS:
+            return True
 
     # httpx / Anthropic SDK attach status_code directly to the exception object.
     if hasattr(exception, "status_code"):
