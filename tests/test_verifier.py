@@ -354,6 +354,9 @@ def test_verify_deduplicates_sources_by_url():
 
 
 # ── M7: _is_refuted status-field precision ────────────────────────────────────
+# Note: _REFUTED_STATUSES intentionally contains synonyms beyond what the prompt
+# emits ("refuted" only). The synonyms are defensive coverage for off-script model
+# output — they do not widen the expected happy path. See verifier.py for detail.
 
 def test_is_refuted_checks_status_field_first():
     """_is_refuted() returns True only when the status field says refuted."""

@@ -22,6 +22,11 @@ from evidence.schema import ResearchResult
 
 
 # Exact status strings that represent a refuted claim.
+# The prompt (prompts/verifier.md) instructs the model to emit only "verified",
+# "unverified", or "refuted". The additional synonyms below are defensive
+# coverage in case the model goes off-script — they do not widen the happy path.
+# "disputed" maps correctly by coincidence: provenance.py maps "refuted" ->
+# verification_status="disputed", so accepting "disputed" here is consistent.
 _REFUTED_STATUSES = frozenset({
     "refuted", "false", "incorrect", "disputed",
     "contradicted", "wrong", "inaccurate",
