@@ -581,7 +581,7 @@ def test_main_runs_full_pipeline(tmp_path, monkeypatch):
         from main import main
         main()
 
-    mock_orchestrator.run.assert_called_once_with("nuclear fusion")
+    mock_orchestrator.run.assert_called_once_with("nuclear fusion", run_id=None)
     mock_synthesiser.synthesise.assert_called_once_with(
         topic="nuclear fusion",
         results=SAMPLE_RESULTS,
@@ -795,7 +795,8 @@ def test_main_multi_word_topic(tmp_path, monkeypatch):
         main()
 
     mock_orchestrator.run.assert_called_once_with(
-        "the current state of nuclear fusion"
+        "the current state of nuclear fusion",
+        run_id=None,
     )
 
 
@@ -1107,6 +1108,45 @@ def test_main_no_warning_when_anthropic_high_workers(tmp_path, monkeypatch, caps
 
     captured = capsys.readouterr()
     assert "Warning" not in captured.out
+
+
+# ── --resume flag and run_id tests ───────────────────────────────────────────
+
+def test_resume_flag_is_accepted_without_error(tmp_path, monkeypatch):
+    """--resume RUN_ID is accepted by the CLI and passed to orchestrator.run()."""
+    monkeypatch.chdir(tmp_path)
+    mock_orchestrator = MagicMock()
+    mock_synthesiser = MagicMock()
+    mock_orchestrator.run.return_value = ((SAMPLE_RESULTS, {}), "test-run-id-123")
+    mock_synthesiser.synthesise.return_value = SAMPLE_REPORT
+
+    with patch("sys.argv", ["main.py", "nuclear fusion", "--resume", "abc123"]), \
+         patch("llm.builder.AnthropicClient"), \
+         patch("main.Orchestrator", return_value=mock_orchestrator), \
+         patch("main.Synthesiser", return_value=mock_synthesiser):
+        from main import main
+        main()
+
+    mock_orchestrator.run.assert_called_once_with("nuclear fusion", run_id="abc123")
+
+
+def test_run_id_printed_in_output_summary(tmp_path, monkeypatch, capsys):
+    """run_id returned from run_async is printed in the run summary."""
+    monkeypatch.chdir(tmp_path)
+    mock_orchestrator = MagicMock()
+    mock_synthesiser = MagicMock()
+    mock_orchestrator.run.return_value = ((SAMPLE_RESULTS, {}), "myspecialrunid")
+    mock_synthesiser.synthesise.return_value = SAMPLE_REPORT
+
+    with patch("sys.argv", ["main.py", "nuclear fusion"]), \
+         patch("llm.builder.AnthropicClient"), \
+         patch("main.Orchestrator", return_value=mock_orchestrator), \
+         patch("main.Synthesiser", return_value=mock_synthesiser):
+        from main import main
+        main()
+
+    captured = capsys.readouterr()
+    assert "myspecialrunid" in captured.out
 
 
 # ── Provenance pipeline ordering tests ───────────────────────────────────────

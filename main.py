@@ -99,6 +99,10 @@ def parse_args():
         default="report",
         help="Output mode (default: report)"
     )
+    parser.add_argument(
+        "--resume", metavar="RUN_ID", default=None,
+        help="Resume an interrupted run from its last checkpoint"
+    )
 
     return parser.parse_args()
 
@@ -226,8 +230,11 @@ def main():
     orchestrator = Orchestrator(llm=orch_llm, agent_pool=agent_pool, config=config)
     synthesiser = Synthesiser(llm=synth_llm, config=config)
 
+    if args.resume:
+        print(f"  Resuming run: {args.resume}")
+
     # orchestrator.run() returns ((results, sources), run_id)
-    (results, sources), _run_id = orchestrator.run(topic)
+    (results, sources), run_id = orchestrator.run(topic, run_id=args.resume)
 
     # Count researcher web searches (excludes verifier searches)
     search_count = orchestrator.search_count
@@ -315,6 +322,7 @@ def main():
     print(f"✅ Done — report saved to {output_path}")
     print(f"   Questions: {len(results)}  Searches: {search_count}  "
           f"Search provider: {config.search_provider}  Time: {elapsed:.1f}s")
+    print(f"   Run ID:  {run_id}")
     print(f"{'─' * 50}\n")
 
 
