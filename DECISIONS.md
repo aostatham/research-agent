@@ -652,7 +652,7 @@ already-imported references.
 ### T003 — Growing test count as commit gate
 **Decision:** pytest tests/ -m "not integration" -v must pass all existing tests before
 every commit. Count grows with each phase — treat any reduction as a regression signal.
-Started at 199, currently 515.
+Started at 199. Current count maintained in CLAUDE.md.
 **Rationale:** Prevents regressions from accumulating.
 **Date:** Ongoing
 

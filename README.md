@@ -360,7 +360,7 @@ research-agent/
 │       ├── formatter.py      # HTML, PDF rendering
 │       ├── writer.py         # File saving, index
 │       └── provenance.py     # Claim extraction, classification
-└── tests/                    # 448 unit tests
+└── tests/                    # See CLAUDE.md for current test count
 ```
 
 ---
@@ -378,7 +378,7 @@ pytest tests/test_integration_smoke.py -m "ollama" -v
 pytest tests/test_integration_smoke.py -m "anthropic_integration" -v
 ```
 
-Current test count: **448 unit tests passing**.
+Current test count: See CLAUDE.md for current test count.
 
 ---
 
