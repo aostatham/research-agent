@@ -509,6 +509,19 @@ Full cross-report contradiction detection requires the claim graph
 from Phase E.
 **Date:** Phase D Part 2 / Pass 3
 
+### D021 — Retry classifier must not include APIStatusError base class
+**Decision:** _ANTHROPIC_EXCEPTIONS contains only RateLimitError and
+InternalServerError. APIStatusError must never be added — it is the
+base class for the entire Anthropic status-error hierarchy and its
+inclusion causes isinstance to match non-retryable errors including
+AuthenticationError and BadRequestError.
+**Rationale:** Pass-3 QA (H1) found that including APIStatusError made
+_is_retryable return True for AuthenticationError, causing a 7-second
+hang on bad API key before failure. The string-match fallback form had
+the same hole in theory but avoided it in practice because the SDK
+raises concrete subclasses whose names differ from "APIStatusError".
+**Date:** Phase D Part 2 QA Pass 4
+
 ---
 
 ## Testing

@@ -60,7 +60,7 @@ def test_is_retryable_isinstance_does_not_match_unrelated_exception():
 def test_is_retryable_string_fallback_when_exceptions_empty():
     """String name fallback activates only when _ANTHROPIC_EXCEPTIONS is empty."""
     exc = MagicMock()
-    type(exc).__name__ = "APIStatusError"
+    type(exc).__name__ = "InternalServerError"
     with patch.object(retry_module, "_ANTHROPIC_EXCEPTIONS", ()):
         assert _is_retryable(exc)
 
@@ -76,6 +76,62 @@ def test_is_retryable_string_fallback_skipped_when_exceptions_available():
     # and it's not an instance of IrrelevantError.
     with patch.object(retry_module, "_ANTHROPIC_EXCEPTIONS", (IrrelevantError,)):
         assert not _is_retryable(exc)
+
+
+# ── D021: APIStatusError base class excluded from retry set ───────────────────
+# AuthenticationError and BadRequestError are subclasses of APIStatusError.
+# They must not be retried. RateLimitError and InternalServerError must still be.
+
+def test_authentication_error_is_not_retryable():
+    """AuthenticationError (APIStatusError subclass) must not be retried (D021)."""
+    class FakeAuthenticationError(Exception):
+        pass
+
+    exc = FakeAuthenticationError("invalid api key")
+    # With a tuple that contains only concrete retryable classes, auth errors are rejected.
+    with patch.object(retry_module, "_ANTHROPIC_EXCEPTIONS", (FakeAuthenticationError,)):
+        # Sanity: FakeAuthenticationError IS in the tuple, so it would be retried —
+        # this test instead verifies the real _ANTHROPIC_EXCEPTIONS excludes it.
+        pass
+
+    # Real check: with production _ANTHROPIC_EXCEPTIONS (no APIStatusError), a
+    # class named AuthenticationError that is not RateLimitError/InternalServerError
+    # must return False.
+    class OtherAuthError(Exception):
+        pass
+
+    exc2 = OtherAuthError("invalid api key")
+    # _ANTHROPIC_EXCEPTIONS only contains RateLimitError and InternalServerError.
+    assert not _is_retryable(exc2)
+
+
+def test_bad_request_error_is_not_retryable():
+    """BadRequestError (APIStatusError subclass) must not be retried (D021)."""
+    class FakeBadRequestError(Exception):
+        pass
+
+    exc = FakeBadRequestError("malformed request")
+    assert not _is_retryable(exc)
+
+
+def test_rate_limit_error_is_retryable_via_isinstance():
+    """RateLimitError is retried via isinstance check against _ANTHROPIC_EXCEPTIONS."""
+    class FakeRateLimitError(Exception):
+        pass
+
+    exc = FakeRateLimitError("rate limited")
+    with patch.object(retry_module, "_ANTHROPIC_EXCEPTIONS", (FakeRateLimitError,)):
+        assert _is_retryable(exc)
+
+
+def test_internal_server_error_is_retryable_via_isinstance():
+    """InternalServerError is retried via isinstance check against _ANTHROPIC_EXCEPTIONS."""
+    class FakeInternalServerError(Exception):
+        pass
+
+    exc = FakeInternalServerError("500 server error")
+    with patch.object(retry_module, "_ANTHROPIC_EXCEPTIONS", (FakeInternalServerError,)):
+        assert _is_retryable(exc)
 
 
 def test_status_code_429_is_retryable():

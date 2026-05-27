@@ -24,23 +24,24 @@ RETRYABLE_STATUS_CODES = {429, 500, 502, 503, 529}
 
 # Anthropic SDK exception class names — used as a fallback when the anthropic
 # package is not importable (e.g. in environments that only run Ollama).
+# APIStatusError must NOT be included — it is the base class for the entire
+# Anthropic status-error hierarchy and would match non-retryable errors such
+# as AuthenticationError and BadRequestError (D021).
 RETRYABLE_ANTHROPIC_EXCEPTIONS = {
     "RateLimitError",
     "InternalServerError",
-    "APIStatusError",
 }
 
 # Preferred: actual exception classes for isinstance matching (avoids false
 # positives from name collisions with non-Anthropic exceptions).
 # Falls back to an empty tuple when the anthropic package is not installed.
+# APIStatusError excluded — see D021.
 try:
     from anthropic import RateLimitError as _AnthropicRateLimitError
     from anthropic import InternalServerError as _AnthropicInternalServerError
-    from anthropic import APIStatusError as _AnthropicAPIStatusError
     _ANTHROPIC_EXCEPTIONS: tuple = (
         _AnthropicRateLimitError,
         _AnthropicInternalServerError,
-        _AnthropicAPIStatusError,
     )
 except ImportError:
     _ANTHROPIC_EXCEPTIONS = ()
