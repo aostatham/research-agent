@@ -173,6 +173,8 @@ Output pipeline:
   - writer.py: save_report(), update_index()
   - update_index() uses fcntl.flock + NamedTemporaryFile + os.replace for
     concurrency-safe atomic writes
+  - output/index.md.lock is created on every update_index() call and
+    is gitignored — it is an operational artifact, not source or output
   - provenance.py: classify_source_type(), score_confidence(),
     extract_claims_from_answer(), build_claims_from_results(),
     annotate_report_lines(), write_provenance_file(), build_quality_metrics()

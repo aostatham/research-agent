@@ -167,6 +167,8 @@ python main.py "your topic"
        │
        ▼
   save_report() + update_index()    — .md / .html / .pdf + index entry
+  output/index.md.lock              — operational artifact created by fcntl.flock
+                                       in writer.py; gitignored; safe to ignore (see D022)
 ```
 
 ---
