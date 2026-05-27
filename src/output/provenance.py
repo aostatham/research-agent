@@ -437,6 +437,7 @@ def extract_claims_from_answer(
             timestamp=now,
             sources=deduped_sources,
             report_line=None,
+            synthesis_status="not_attempted",
         )
         claims.append(claim)
 
@@ -543,6 +544,7 @@ def annotate_report_lines(report: str, claims: list) -> tuple:
     When a match is found:
       - Inserts [N] after the end of that line in the report
       - Sets report_line on the claim to the matched line number (1-based)
+      - Sets synthesis_status="anchored" (Tier 1) or "paraphrased" (Tier 2/3)
 
     Only annotates where a clear match exists. Does not force markers.
     Each line is only annotated once (first matching claim wins).
@@ -571,6 +573,7 @@ def annotate_report_lines(report: str, claims: list) -> tuple:
             continue
 
         match_idx = None
+        matched_tier = None
 
         # Tier 1 — key phrase (longest 2+ capitalised-word run)
         key_phrase = _extract_key_phrase(claim_text)
@@ -581,6 +584,7 @@ def annotate_report_lines(report: str, claims: list) -> tuple:
                     continue
                 if kp_lower in line.lower():
                     match_idx = line_idx
+                    matched_tier = 1
                     break
 
         # Tier 2 — number/date match
@@ -600,6 +604,7 @@ def annotate_report_lines(report: str, claims: list) -> tuple:
                             best_line_idx = line_idx
                 if best_line_idx is not None and best_overlap >= 3:
                     match_idx = best_line_idx
+                    matched_tier = 2
 
         # Tier 3 — content word overlap (minimum 5 shared words)
         if match_idx is None:
@@ -615,11 +620,13 @@ def annotate_report_lines(report: str, claims: list) -> tuple:
                     best_line_idx = line_idx
             if best_line_idx is not None:
                 match_idx = best_line_idx
+                matched_tier = 3
 
         if match_idx is not None:
             marker = f" [{claim['id']}]"
             annotated_lines[match_idx] = annotated_lines[match_idx] + marker
             claim["report_line"] = match_idx + 1  # 1-based
+            claim["synthesis_status"] = "anchored" if matched_tier == 1 else "paraphrased"
             annotated_line_indices.add(match_idx)
 
     annotated_prose = "\n".join(annotated_lines)

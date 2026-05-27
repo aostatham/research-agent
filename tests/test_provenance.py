@@ -492,42 +492,46 @@ def test_annotate_report_lines_no_match_leaves_report_unchanged():
 # ── annotate_report_lines() — three-tier matching tests ──────────────────────
 
 def test_annotate_tier1_matches_capitalised_phrase():
-    """Tier 1: a 2+ word capitalised run in the claim matches verbatim in the report line."""
+    """Tier 1: a 2+ word capitalised run in the claim matches verbatim; synthesis_status='anchored'."""
     from output.provenance import annotate_report_lines
     report = "Background.\nThe National Ignition Facility achieved fusion ignition in 2022.\nAnother line."
-    claim = {"id": 5, "claim": "National Ignition Facility achieved a historic scientific milestone.", "report_line": None}
+    claim = {"id": 5, "claim": "National Ignition Facility achieved a historic scientific milestone.", "report_line": None, "synthesis_status": "not_attempted"}
     annotated, claims_out = annotate_report_lines(report, [claim])
     assert "[5]" in annotated
     assert claims_out[0]["report_line"] == 2
+    assert claims_out[0]["synthesis_status"] == "anchored"
 
 
 def test_annotate_tier2_matches_on_number_with_shared_words():
-    """Tier 2: a claim with a digit sequence matches a line containing all digits plus 3+ shared content words."""
+    """Tier 2: digit+overlap match; synthesis_status='paraphrased'."""
     from output.provenance import annotate_report_lines
     report = "Background line.\nThe reactor produced 500 megawatts of clean fusion power output.\nAnother line."
-    claim = {"id": 6, "claim": "Fusion power output reached 500 megawatts of clean energy.", "report_line": None}
+    claim = {"id": 6, "claim": "Fusion power output reached 500 megawatts of clean energy.", "report_line": None, "synthesis_status": "not_attempted"}
     annotated, claims_out = annotate_report_lines(report, [claim])
     assert "[6]" in annotated
     assert claims_out[0]["report_line"] == 2
+    assert claims_out[0]["synthesis_status"] == "paraphrased"
 
 
 def test_annotate_tier3_matches_on_content_word_overlap():
-    """Tier 3: a claim with 5+ shared content words matches when tiers 1 and 2 find nothing."""
+    """Tier 3: content word overlap match; synthesis_status='paraphrased'."""
     from output.provenance import annotate_report_lines
     report = "Background.\nScientists discovered that plasma confinement techniques dramatically improved efficiency.\nAnother."
-    claim = {"id": 7, "claim": "Plasma confinement techniques improved efficiency in scientific experiments.", "report_line": None}
+    claim = {"id": 7, "claim": "Plasma confinement techniques improved efficiency in scientific experiments.", "report_line": None, "synthesis_status": "not_attempted"}
     annotated, claims_out = annotate_report_lines(report, [claim])
     assert "[7]" in annotated
     assert claims_out[0]["report_line"] == 2
+    assert claims_out[0]["synthesis_status"] == "paraphrased"
 
 
 def test_annotate_no_match_when_insufficient_overlap():
-    """A claim with fewer than 5 shared content words and no entity or number leaves report_line as None."""
+    """A claim with no tier match leaves report_line None and synthesis_status unchanged."""
     from output.provenance import annotate_report_lines
     report = "The results showed some promise for future applications."
-    claim = {"id": 8, "claim": "Results showed promise.", "report_line": None}
+    claim = {"id": 8, "claim": "Results showed promise.", "report_line": None, "synthesis_status": "not_attempted"}
     annotated, claims_out = annotate_report_lines(report, [claim])
     assert claims_out[0]["report_line"] is None
+    assert claims_out[0]["synthesis_status"] == "not_attempted"
     assert "[8]" not in annotated
 
 

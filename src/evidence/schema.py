@@ -41,6 +41,11 @@ class EvidenceClaim(TypedDict):
     timestamp: str               # ISO date string
     sources: list                # list of EvidenceSource
     report_line: Optional[int]   # set during synthesis; None until then
+    # "anchored" — matched via key phrase (Tier 1, language close to claim)
+    # "paraphrased" — matched via number/overlap (Tier 2 or 3)
+    # "omitted" — synthesiser explicitly listed as omitted
+    # "not_attempted" — provenance not active or claims not passed to synthesiser
+    synthesis_status: str        # set by annotate_report_lines or synthesiser
 
 
 class ProvenanceReport(TypedDict):
