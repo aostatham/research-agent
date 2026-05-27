@@ -24,11 +24,16 @@ def edit(agent: Agent, report: str, max_tokens: int = 8192) -> str:
     that do not match their content.  It must return the full report text
     (edited or unedited) with no preamble.
 
+    Pre-processing: if the response starts with a preamble (e.g. "Here is
+    the edited report:") followed by the original text, the preamble is
+    stripped and the result returned directly.
+
     A response is only accepted if both conditions are true:
-      1. len(edited) >= 0.5 * len(original)  — proportional length floor.
+      1. len(edited) > 0.5 * len(original)  — proportional length floor
+         (strictly greater than 50%; exactly 50% is rejected).
       2. SequenceMatcher ratio >= 0.5  — edited text is substantially
-         similar to the original (catches refusals, preamble-only replies,
-         and complete rewrites that ignore the source report).
+         similar to the original (catches refusals and complete rewrites).
+         Skipped for strings exceeding 100000 characters.
 
     Either failure logs a WARNING and returns the original report unchanged.
 
@@ -49,7 +54,18 @@ def edit(agent: Agent, report: str, max_tokens: int = 8192) -> str:
     if response.type != "text":
         return report
     edited = response.content.strip()
-    if len(edited) < 0.5 * len(report):
+
+    # M5: strip preamble when the model prefixes the report with boilerplate.
+    # If edited doesn't start with the same 80 chars as original but contains
+    # original as a substring, strip everything before the report starts.
+    original_prefix = report.strip()[:80]
+    if not edited.startswith(original_prefix):
+        idx = edited.find(report)
+        if idx > 0:
+            return edited[idx:]
+
+    # M6: <= instead of < so an exactly-50%-length response is also rejected.
+    if len(edited) <= 0.5 * len(report):
         logging.warning(
             "Editor response rejected: %d chars < 50%% of original %d chars",
             len(edited), len(report),

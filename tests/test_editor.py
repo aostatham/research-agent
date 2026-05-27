@@ -273,6 +273,43 @@ def test_edit_autojunk_false_handles_repetitive_content():
     assert result == repetitive
 
 
+# ── FIX 4 — preamble stripping and exact-50% floor ───────────────────────────
+
+def test_edit_strips_preamble_when_original_follows():
+    """'Here is the edited report:\\n\\n' + original is stripped to original and returned."""
+    preamble = "Here is the edited report:\n\n"
+    response_text = preamble + SAMPLE_REPORT
+    mock_llm = MagicMock()
+    mock_llm.chat.return_value = make_text_response(response_text)
+    agent = make_editor_agent(mock_llm)
+    result = edit(agent, SAMPLE_REPORT)
+    assert result == SAMPLE_REPORT
+
+
+def test_edit_rejects_exactly_half_length_response():
+    """A response of exactly len(original) * 0.5 characters is rejected."""
+    original = "A" * 200
+    exactly_half = "B" * 100  # exactly 50% — must be rejected (M6: <= not <)
+    assert len(exactly_half) == 0.5 * len(original)
+    mock_llm = MagicMock()
+    mock_llm.chat.return_value = make_text_response(exactly_half)
+    agent = make_editor_agent(mock_llm)
+    result = edit(agent, original)
+    assert result == original
+
+
+def test_edit_accepts_just_over_half_length_response():
+    """A response of len(original) * 0.5 + 1 characters passes the length floor."""
+    original = "A" * 200
+    just_over = ("A" * 101) + ("B" * 20)  # 101 chars same prefix — passes length AND similarity
+    assert len(just_over) > 0.5 * len(original)
+    mock_llm = MagicMock()
+    mock_llm.chat.return_value = make_text_response(just_over)
+    agent = make_editor_agent(mock_llm)
+    result = edit(agent, original)
+    assert result == just_over
+
+
 def test_edit_length_cap_skips_similarity_check():
     """Strings over 100000 chars skip the similarity check and accept the response."""
     # Response is very different but exceeds the length cap — similarity skipped.
