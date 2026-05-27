@@ -210,7 +210,7 @@ Phase D — Parallel Research Architecture: COMPLETE
 
   Part 1  COMPLETE — asyncio workers, --max-workers, worker failure handling
   Part 2  COMPLETE — multi-agent architecture
-          448 unit tests passing
+          515 unit tests passing
           Pass 1 QA fixes: system prompt injection, gather exception handling,
             verifier outcome propagation, editor response validation,
             cross-run state reset
@@ -224,9 +224,7 @@ Phase D — Parallel Research Architecture: COMPLETE
 See ISSUES.md for the full issues log including all QA findings and
 their status. grep "| Open |" ISSUES.md to list current open items.
 
-Currently open:
-  I001 (High) — agent/editor.py: ReadTimeout not caught, crashes pipeline
-  I002 (Medium) — agent/verifier.py: Ollama timeout under concurrent load
+No open issues. See ISSUES.md for full log.
 
 Deferred to Phase I:
   I003 — agent/tools.py: module-level search globals block FastAPI

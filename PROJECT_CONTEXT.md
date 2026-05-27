@@ -440,5 +440,5 @@ status, and contradiction history. Two delivery modes:
 See ISSUES.md for the full issues log.
 grep "| Open |" ISSUES.md to list current open items.
 
-Currently open: I001 (editor ReadTimeout), I002 (Ollama verifier timeout)
+No open issues at close of Phase D.
 Deferred to Phase I: I003 (search globals), I004 (run() footgun)
