@@ -14,6 +14,7 @@ Business logic lives in src/: agent/, llm/, config/, output/.
 
 import sys
 import os
+import logging
 import argparse
 import time
 from datetime import datetime
@@ -113,6 +114,8 @@ def main():
       5. Synthesise report
       6. Build metadata, save report, update index
     """
+    logging.basicConfig(level=logging.WARNING, format="%(levelname)s:%(name)s:%(message)s")
+
     args = parse_args()
 
     # Resolve which provider each tier will use (CLI args only — config.yaml not yet loaded)

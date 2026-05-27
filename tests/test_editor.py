@@ -339,8 +339,8 @@ def test_edit_length_cap_skips_similarity_check():
 
 # ── Exception handling ────────────────────────────────────────────────────────
 
-def test_edit_catches_read_timeout_and_returns_original(caplog, capsys):
-    """ReadTimeout raised by the LLM is caught; original report is returned; WARNING and stderr emitted."""
+def test_edit_catches_read_timeout_and_returns_original(caplog):
+    """ReadTimeout raised by the LLM is caught; original report is returned; WARNING logged."""
     import requests.exceptions
     mock_llm = MagicMock()
     mock_llm.chat.side_effect = requests.exceptions.ReadTimeout("timed out")
@@ -349,11 +349,10 @@ def test_edit_catches_read_timeout_and_returns_original(caplog, capsys):
         result = edit(agent, SAMPLE_REPORT)
     assert result == SAMPLE_REPORT
     assert any("Editor pass failed" in r.message for r in caplog.records)
-    assert "Editor pass failed" in capsys.readouterr().err
 
 
-def test_edit_catches_generic_exception_and_returns_original(caplog, capsys):
-    """Any Exception raised by the LLM is caught; original report is returned; WARNING and stderr emitted."""
+def test_edit_catches_generic_exception_and_returns_original(caplog):
+    """Any Exception raised by the LLM is caught; original report is returned; WARNING logged."""
     mock_llm = MagicMock()
     mock_llm.chat.side_effect = RuntimeError("unexpected LLM error")
     agent = make_editor_agent(mock_llm)
@@ -361,7 +360,6 @@ def test_edit_catches_generic_exception_and_returns_original(caplog, capsys):
         result = edit(agent, SAMPLE_REPORT)
     assert result == SAMPLE_REPORT
     assert any("Editor pass failed" in r.message for r in caplog.records)
-    assert "Editor pass failed" in capsys.readouterr().err
 
 
 def test_edit_exception_warning_includes_exception_type(caplog):

@@ -11,7 +11,6 @@ Public API:
 
 import difflib
 import logging
-import sys
 
 from agent.base import Agent
 
@@ -57,11 +56,6 @@ def edit(agent: Agent, report: str, max_tokens: int = 8192) -> str:
         logging.warning(
             "Editor pass failed (%s: %s) — using original report",
             type(e).__name__, e,
-        )
-        print(
-            f"Warning: Editor pass failed ({type(e).__name__}: {e}) "
-            "— using original report",
-            file=sys.stderr,
         )
         return report
     if response.type != "text":
