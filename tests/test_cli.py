@@ -1113,7 +1113,14 @@ def test_main_no_warning_when_anthropic_high_workers(tmp_path, monkeypatch, caps
 
 def test_main_synthesise_receives_claims_when_provenance_file(tmp_path, monkeypatch):
     """When --provenance file, synthesise() receives the claims list extracted before it."""
+    import json as _json
     monkeypatch.chdir(tmp_path)
+    os.makedirs(tmp_path / "output", exist_ok=True)
+    # write_provenance_file must return a real path so main() can json.load it
+    prov_json_path = str(tmp_path / "output" / "nuclear_fusion.provenance.json")
+    with open(prov_json_path, "w") as _f:
+        _json.dump({"schema_version": "1.0", "claims": [], "quality_metrics": {}}, _f)
+
     mock_llm = MagicMock()
     mock_orchestrator = MagicMock()
     mock_synthesiser = MagicMock()
@@ -1127,7 +1134,8 @@ def test_main_synthesise_receives_claims_when_provenance_file(tmp_path, monkeypa
          patch("main.Synthesiser", return_value=mock_synthesiser), \
          patch("main.build_claims_from_results", return_value=fake_claims), \
          patch("main.annotate_report_lines", return_value=(SAMPLE_REPORT, fake_claims)), \
-         patch("main.write_provenance_file"), \
+         patch("main.write_provenance_file", return_value=prov_json_path), \
+         patch("main.save_viewer", return_value="output/nuclear_fusion.viewer.html"), \
          patch("main.build_quality_metrics", return_value={}):
         from main import main
         main()

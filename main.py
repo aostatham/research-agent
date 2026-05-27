@@ -12,6 +12,7 @@ Thin orchestration layer:
 Business logic lives in src/: agent/, llm/, config/, output/.
 """
 
+import json
 import sys
 import os
 import logging
@@ -28,7 +29,7 @@ from agent.tools import configure_search
 from config import load_config
 from llm.builder import build_llms
 from output.formatter import build_metadata
-from output.writer import save_report, update_index
+from output.writer import save_report, update_index, save_viewer
 from output.provenance import (
     build_claims_from_results, build_quality_metrics,
     write_provenance_file, annotate_report_lines,
@@ -302,6 +303,10 @@ def main():
         metrics = build_quality_metrics(claims)
         prov_path = write_provenance_file(output_path, claims, metrics)
         print(f"   Provenance saved to {prov_path}")
+        with open(prov_path, encoding="utf-8") as _f:
+            provenance_dict = json.load(_f)
+        viewer_path = save_viewer(output_path, provenance_dict)
+        print(f"   Viewer saved to    {viewer_path}")
     elif config.provenance == "graph":
         print("   ⚠️  Graph provenance not yet implemented (Phase E)")
 

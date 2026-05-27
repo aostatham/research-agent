@@ -1,14 +1,16 @@
 """
 Report persistence utilities for the research-agent pipeline.
 
-Provides two functions:
+Provides three functions:
   save_report()   — writes a report to output/ in markdown, HTML, or PDF format
   update_index()  — appends a row to output/index.md tracking all runs
+  save_viewer()   — writes a self-contained provenance viewer HTML file
 
-Both functions write to the filesystem. Format conversion (HTML/PDF) is
+All functions write to the filesystem. Format conversion (HTML/PDF) is
 delegated to output.formatter.
 """
 
+import json as _json
 import os
 import tempfile
 import threading
@@ -123,6 +125,38 @@ def update_index(topic: str, output_path: str, started_at, orch_provider: str,
                 lock_fd.close()
         else:
             _write_index_row(index_path, index_dir, row)
+
+
+def save_viewer(output_path: str, provenance_data: dict) -> str:
+    """
+    Write a self-contained provenance viewer HTML file alongside the report.
+
+    Reads the viewer template from src/output/viewer_template.html, injects
+    the serialised provenance_data JSON, and writes the result to
+    output/<base>.viewer.html (same base name as the report).
+
+    Args:
+        output_path:     Path to the saved report file (any extension)
+        provenance_data: ProvenanceReport dict to embed in the viewer
+
+    Returns:
+        Path to the written viewer file
+    """
+    template_path = os.path.join(os.path.dirname(__file__), "viewer_template.html")
+    with open(template_path, "r", encoding="utf-8") as f:
+        template = f.read()
+
+    json_str = _json.dumps(provenance_data, ensure_ascii=False)
+    viewer_html = template.replace("__PROVENANCE_DATA__", json_str, 1)
+
+    base = os.path.splitext(output_path)[0]
+    viewer_path = f"{base}.viewer.html"
+    os.makedirs(os.path.dirname(viewer_path) or ".", exist_ok=True)
+
+    with open(viewer_path, "w", encoding="utf-8") as f:
+        f.write(viewer_html)
+
+    return viewer_path
 
 
 def _write_index_row(index_path: str, index_dir: str, row: str) -> None:

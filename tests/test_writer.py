@@ -1,5 +1,5 @@
 """
-Tests for output/writer.py — update_index().
+Tests for output/writer.py — update_index(), save_viewer().
 
 Verifies:
   - First call creates the index file with header + one row.
@@ -7,8 +7,10 @@ Verifies:
   - os.replace() is called for atomicity (not direct open-and-write).
   - Concurrent calls from multiple threads produce the correct row count
     without interleaving or data loss.
+  - save_viewer() writes a .viewer.html file containing the injected JSON.
 """
 
+import json
 import os
 import threading
 import pytest
@@ -122,3 +124,60 @@ def test_update_index_concurrent_threads_produce_correct_row_count(tmp_path, mon
     index = (tmp_path / "output" / "index.md").read_text()
     data_rows = [l for l in index.splitlines() if l.startswith("| 20") or l.startswith("| 19")]
     assert len(data_rows) == n_threads
+
+
+# ── save_viewer() tests ───────────────────────────────────────────────────────
+
+_SAMPLE_PROV = {
+    "schema_version": "1.0",
+    "report_file": "nuclear_fusion.md",
+    "generated": "2026-01-01T00:00:00+00:00",
+    "quality_metrics": {"coverage": 0.5},
+    "claims": [],
+}
+
+
+def test_save_viewer_writes_html_file(tmp_path, monkeypatch):
+    """save_viewer() creates a .viewer.html file in the output directory."""
+    monkeypatch.chdir(tmp_path)
+    os.makedirs(tmp_path / "output", exist_ok=True)
+    from output.writer import save_viewer
+    viewer_path = save_viewer("output/nuclear_fusion.md", _SAMPLE_PROV)
+    assert os.path.exists(viewer_path)
+    assert viewer_path.endswith(".viewer.html")
+
+
+def test_save_viewer_injected_json_is_parseable(tmp_path, monkeypatch):
+    """The JSON injected into the viewer can be round-tripped with json.loads."""
+    monkeypatch.chdir(tmp_path)
+    os.makedirs(tmp_path / "output", exist_ok=True)
+    from output.writer import save_viewer
+    viewer_path = save_viewer("output/nuclear_fusion.md", _SAMPLE_PROV)
+    with open(viewer_path, encoding="utf-8") as f:
+        content = f.read()
+    # Extract the JSON from the script block
+    start = content.index('id="provenance-data">') + len('id="provenance-data">')
+    end   = content.index("</script>", start)
+    parsed = json.loads(content[start:end].strip())
+    assert parsed["schema_version"] == "1.0"
+    assert parsed["report_file"] == "nuclear_fusion.md"
+
+
+def test_save_viewer_sentinel_not_in_output(tmp_path, monkeypatch):
+    """The sentinel __PROVENANCE_DATA__ does not appear in the written file."""
+    monkeypatch.chdir(tmp_path)
+    os.makedirs(tmp_path / "output", exist_ok=True)
+    from output.writer import save_viewer
+    viewer_path = save_viewer("output/nuclear_fusion.md", _SAMPLE_PROV)
+    with open(viewer_path, encoding="utf-8") as f:
+        content = f.read()
+    assert "__PROVENANCE_DATA__" not in content
+
+
+def test_save_viewer_returns_correct_path(tmp_path, monkeypatch):
+    """save_viewer() returns the path to the written viewer file."""
+    monkeypatch.chdir(tmp_path)
+    os.makedirs(tmp_path / "output", exist_ok=True)
+    from output.writer import save_viewer
+    viewer_path = save_viewer("output/nuclear_fusion.md", _SAMPLE_PROV)
+    assert viewer_path == "output/nuclear_fusion.viewer.html"
