@@ -665,6 +665,20 @@ Treating it as throwaway would repeat the pattern of shipping
 infrastructure without a maintenance story.
 **Date:** HTML provenance viewer phase
 
+### D035 — RunState v1: checkpoint-per-stage, no skip-ahead
+**Decision:** RunState is a dataclass serialised to JSON after each pipeline
+stage (decompose, research, reflect, synthesise, edit). v1 always runs all
+stages even when resuming — it preserves run_id for consistency but does not
+skip completed stages. Skip-ahead resume logic is deferred to Phase E when
+follow-up mode requires it.
+**Schema:** run_id, current_stage, topic, questions,
+accumulated_research_results, report_text, started_at, last_checkpoint_at.
+**Rationale:** Phase E (knowledge graph, follow-up mode, HITL) requires
+durable run state. Option (a) from D027 — minimal, no new dependency, fits
+on one screen. Resist scope creep during implementation. Checkpoints written
+to output/.checkpoints/, gitignored.
+**Date:** RunState implementation
+
 ---
 
 ## Testing

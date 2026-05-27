@@ -165,6 +165,18 @@ python main.py "nuclear fusion energy" \
   --max-tokens-synthesis 8192
 ```
 
+### Resume an interrupted run (experimental)
+
+Every run generates a Run ID printed at completion. If a run is
+interrupted, rerun with `--resume` to reuse the same Run ID:
+
+```bash
+python main.py "nuclear fusion energy" --resume abc123def456
+```
+
+Note: v1 resume reruns all stages with the same Run ID. Stage
+skipping (resuming from the point of failure) is a Phase E feature.
+
 ### All CLI options
 
 ```

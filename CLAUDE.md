@@ -14,6 +14,7 @@ src/
     tools.py              # Tool definitions + Anthropic/Tavily search routing
     tool_utils.py         # Shared tool input validation helper
     builder.py            # build_agent(), build_agents(), AgentPool factory
+    runstate.py           # RunState dataclass, save/load checkpoint
   llm/
     base.py               # LLMClient ABC + LLMResponse dataclass
     anthropic_client.py   # Anthropic implementation
@@ -164,6 +165,16 @@ Parallel research:
   - Warning printed when Ollama + max_workers > 2
   - Verifier runs per-Researcher outside the semaphore concurrently
     with subsequent research questions
+  - run_async() returns ((results, sources), run_id) tuple
+  - run() is a synchronous wrapper that passes run_id through
+
+RunState and checkpointing:
+  - RunState written to output/.checkpoints/{run_id}.json after
+    each pipeline stage
+  - run_async() returns (results, sources), run_id) tuple
+  - --resume RUN_ID CLI flag passes run_id to run_async()
+  - v1: always runs all stages, run_id preserved for consistency
+  - Skip-ahead resume logic deferred to Phase E (D035)
 
 Output pipeline:
   - formatter.py: build_metadata(), convert_to_html(), convert_to_pdf()
