@@ -92,8 +92,8 @@ def _is_refuted(result_item) -> bool:
 
     Uses exact frozenset lookup against _REFUTED_STATUSES (H4) to avoid
     false positives from substring matching. Checks status/summary fields
-    first (M7); falls back to a full-value scan only when no recognised
-    field is present, logging at DEBUG level.
+    in priority order. If none of the recognised field names are present,
+    returns False (no guessing from unrecognised fields — M6).
     """
     if not isinstance(result_item, dict):
         return False
@@ -101,12 +101,10 @@ def _is_refuted(result_item) -> bool:
         val = result_item.get(field)
         if val is not None:
             return isinstance(val, str) and val.lower().strip() in _REFUTED_STATUSES
-    # No recognised status/summary field — fall back to scanning all values
-    logging.debug("_is_refuted: no status/summary field found, scanning all values")
-    return any(
-        isinstance(v, str) and v.lower().strip() in _REFUTED_STATUSES
-        for v in result_item.values()
+    logging.debug(
+        "Verifier result missing recognised status field — treating as unverified"
     )
+    return False
 
 
 # Exact status strings that represent an explicit confirmation.

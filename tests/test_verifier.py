@@ -330,17 +330,34 @@ def test_is_refuted_ignores_refuted_in_non_status_field_when_status_present():
     assert _is_refuted({"status": "verified", "note": "claim was refuted initially"}) is False
 
 
-def test_is_refuted_falls_back_to_full_scan_when_no_status_field():
-    """Without a status field, _is_refuted() scans all values using frozenset exact match."""
+def test_is_refuted_returns_false_when_no_recognised_field():
+    """Without a recognised field, _is_refuted() returns False — no value-scan fallback (M6)."""
     from agent.verifier import _is_refuted
-    # Value must exactly match a _REFUTED_STATUSES entry for fallback to trigger
-    assert _is_refuted({"note": "refuted"}) is True
+    assert _is_refuted({"note": "refuted"}) is False
 
 
-def test_is_refuted_fallback_does_not_match_substring():
-    """Fallback scan does not match 'refuted' as a substring of a longer value."""
+def test_is_refuted_returns_false_for_unrecognised_field_with_refuted_value():
+    """Unrecognised field containing 'refuted' string is not treated as refutation (M6)."""
     from agent.verifier import _is_refuted
     assert _is_refuted({"note": "this claim is refuted by evidence"}) is False
+
+
+# ── M6: No fallback value-scan — unrecognised fields ignored ─────────────────
+
+def test_is_confirmed_returns_false_when_no_recognised_field():
+    """Without a recognised field, _is_confirmed() returns False (no fallback scan)."""
+    from agent.verifier import _is_confirmed
+    assert _is_confirmed({"note": "verified"}) is False
+
+
+def test_is_refuted_logs_debug_when_no_recognised_field(caplog):
+    """DEBUG log fires when no recognised status field is present in the result."""
+    import logging
+    from agent.verifier import _is_refuted
+    with caplog.at_level(logging.DEBUG, logger="root"):
+        _is_refuted({"note": "some value"})
+    assert "missing recognised status field" in caplog.text.lower() or \
+           any("unverified" in r.message.lower() for r in caplog.records)
 
 
 # ── H4: _REFUTED_STATUSES frozenset exact match ───────────────────────────────
