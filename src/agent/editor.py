@@ -23,6 +23,9 @@ def edit(agent: Agent, report: str, max_tokens: int = 8192) -> str:
     broken cross-references, adjacent contradictions, and section headings
     that do not match their content.  It must return the full report text
     (edited or unedited) with no preamble.
+    Scope enforcement is in prompts/editor.md — this function
+    accepts or rejects the LLM response on length and similarity
+    heuristics only.
 
     Pre-processing: if the response starts with a preamble (e.g. "Here is
     the edited report:") followed by the original text, the preamble is

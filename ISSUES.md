@@ -25,7 +25,7 @@ a clean table.
 
 Open: 0 High, 0 Medium, 0 Low
 Deferred: 0 High, 2 Medium (I003, I004), 0 Low
-Last updated: Phase D Pass 6
+Last updated: Phase D Pass 7
 
 Status values: Open | Deferred | Closed
 Fixed In: blank for Open, target phase for Deferred, pass name for Closed.
@@ -77,3 +77,9 @@ grep examples:
 | I038 | Medium | agent/editor.py | except Exception masked programming bugs — no stderr visibility in headless runs | Pass 4 QA | Closed | Pass 6 |
 | I039 | Medium | agent/tools.py | search_count under-counted billable retried failures — incremented only on success | Pass 5 QA | Closed | Pass 6 |
 | I040 | Medium | agent/orchestrator.py | research_question_async docstring and warning text referenced orchestration provider — Verifier uses synth_llm | Pass 5 QA | Closed | Pass 6 |
+| I041 | Medium | main.py | weasyprint fail-fast missing — full pipeline ran before PDF crash | Pass 6 QA | Closed | Pass 6 final |
+| I042 | Medium | CLAUDE.md, PROJECT_CONTEXT.md | Test count drift — CLAUDE.md had 528 and 515; PROJECT_CONTEXT had 307 | Pass 6 QA | Closed | Pass 6 final |
+| I043 | Low | agent/orchestrator.py, agent/verifier.py | Stale "verified field" docstrings after Pass 3 schema rename | Pass 6 QA | Closed | Pass 6 final |
+| I044 | Low | .gitignore | Redundant prompts/planner.md entry after file deleted | Pass 6 QA | Closed | Pass 6 final |
+| I045 | Low | agent/tools.py | Anthropic/Tavily search count asymmetry undocumented | Pass 6 QA | Closed | Pass 6 final |
+| I046 | Low | CLAUDE.md | Pass 3 IN PROGRESS marker stale by three passes | Pass 6 QA | Closed | Pass 6 final |

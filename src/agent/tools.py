@@ -70,7 +70,9 @@ _search_model = "claude-haiku-4-5-20251001"
 # second call's reset-at-start discards the first call's accumulated
 # count. Fix for Phase I: use contextvars.ContextVar for per-request
 # isolation, not threading.Lock (async tasks share a thread and would
-# serialise on a Lock). See I003 in ISSUES.md.
+# serialise on a Lock). threading.Lock also works if Phase I uses a
+# thread-per-worker or process-per-worker model rather than
+# async-in-one-thread. See I003 in ISSUES.md.
 _search_call_count: int = 0
 
 # Lazy singleton — created on first Anthropic search call, reused across

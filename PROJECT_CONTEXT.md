@@ -376,8 +376,7 @@ Layer 3 hardcoded list in `classify_source_type()`:
 - Phase B — Output options (markdown/HTML/PDF)
 - Phase C — Evidence layer (pending: output mode renderers)
 - Phase D Part 1 — Parallel asyncio workers
-- Phase D Part 2 — Multi-agent architecture (423 tests at completion,
-  430 after QA pass fixes)
+- Phase D Part 2 — Multi-agent architecture (423 → 528 across QA passes)
 - Phase E partial (Tavily)
 - Phase G.1 (mixed provider)
 
