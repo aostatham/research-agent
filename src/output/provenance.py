@@ -60,6 +60,7 @@ def write_provenance_file(
     os.makedirs(os.path.dirname(prov_path) or ".", exist_ok=True)
 
     report = ProvenanceReport(
+        schema_version="1.0",
         report_file=os.path.basename(output_path),
         generated=datetime.now(timezone.utc).isoformat(),
         quality_metrics=quality_metrics,

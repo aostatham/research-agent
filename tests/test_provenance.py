@@ -200,6 +200,17 @@ def test_write_provenance_file_html_path(tmp_path, monkeypatch):
     assert prov_path == "output/nuclear_fusion.provenance.json"
 
 
+def test_write_provenance_file_contains_schema_version(tmp_path, monkeypatch):
+    """Written provenance JSON contains schema_version field set to '1.0'."""
+    monkeypatch.chdir(tmp_path)
+    from output.provenance import write_provenance_file
+    os.makedirs(tmp_path / "output", exist_ok=True)
+    prov_path = write_provenance_file("output/nuclear_fusion.md", [], {})
+    with open(prov_path) as f:
+        data = json.load(f)
+    assert data["schema_version"] == "1.0"
+
+
 # ── extract_claims_from_answer() — verification propagation ──────────────────
 
 def test_extract_claims_verification_verified_sets_status_verified():

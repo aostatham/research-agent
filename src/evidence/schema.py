@@ -50,6 +50,7 @@ class EvidenceClaim(TypedDict):
 
 class ProvenanceReport(TypedDict):
     """Top-level structure written to the .provenance.json file."""
+    schema_version: str          # format version; currently "1.0"
     report_file: str
     generated: str
     quality_metrics: dict
