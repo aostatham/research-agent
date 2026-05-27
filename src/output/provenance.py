@@ -16,6 +16,7 @@ Public API:
 
 import json
 import os
+import re
 import warnings
 from datetime import datetime, timezone
 
@@ -481,12 +482,65 @@ def build_claims_from_results(
     return all_claims
 
 
+_STOPWORDS = frozenset({
+    "a", "an", "the", "is", "are", "was", "were", "be", "been", "being",
+    "have", "has", "had", "do", "does", "did", "will", "would", "could",
+    "should", "may", "might", "shall", "of", "in", "on", "at", "to",
+    "for", "with", "by", "from", "and", "or", "but", "not", "this",
+    "that", "these", "those", "it", "its",
+})
+
+_PUNCT = str.maketrans("", "", ".,;:!?\"'()")
+
+
+def _extract_key_phrase(claim: str) -> str | None:
+    """Return the longest run of 2+ consecutive capitalised words in claim, or None."""
+    words = claim.split()
+    best: list[str] = []
+    current: list[str] = []
+    for word in words:
+        clean = word.translate(_PUNCT)
+        if clean and clean[0].isupper():
+            current.append(clean)
+        else:
+            if len(current) >= 2 and len(current) > len(best):
+                best = current[:]
+            current = []
+    if len(current) >= 2 and len(current) > len(best):
+        best = current
+    return " ".join(best) if best else None
+
+
+def _content_words(text: str) -> set[str]:
+    """Return lowercase non-stopword tokens from text."""
+    result: set[str] = set()
+    for word in text.split():
+        w = word.lower().translate(_PUNCT)
+        if w and w not in _STOPWORDS:
+            result.add(w)
+    return result
+
+
 def annotate_report_lines(report: str, claims: list) -> tuple:
     """
     Add inline footnote markers to report text and record line numbers.
 
-    For each claim, searches the report for the first 8 words of the claim
-    (case-insensitive substring match). When found:
+    For each claim, tries three matching tiers in order, stopping at the
+    first match:
+
+      Tier 1 — key phrase: longest run of 2+ consecutive capitalised words
+        in the claim searched case-insensitively against each report line.
+        Catches proper nouns and named entities the synthesiser preserves
+        verbatim (e.g. "National Ignition Facility", "December 2022").
+
+      Tier 2 — number/date: all digit sequences from the claim must appear
+        in the candidate line, and the line must also share at least 3
+        content words with the claim.
+
+      Tier 3 — content word overlap: a line sharing 5 or more non-stopword
+        tokens with the claim is a candidate; the highest-overlap line wins.
+
+    When a match is found:
       - Inserts [N] after the end of that line in the report
       - Sets report_line on the claim to the matched line number (1-based)
 
@@ -512,20 +566,61 @@ def annotate_report_lines(report: str, claims: list) -> tuple:
     annotated_line_indices: set = set()
 
     for claim in claims:
-        words = claim["claim"].split()
-        phrase = " ".join(words[:8]).lower()
-        if not phrase:
+        claim_text = claim["claim"]
+        if not claim_text:
             continue
 
-        for line_idx, line in enumerate(lines):
-            if line_idx in annotated_line_indices:
-                continue
-            if phrase in line.lower():
-                marker = f" [{claim['id']}]"
-                annotated_lines[line_idx] = annotated_lines[line_idx] + marker
-                claim["report_line"] = line_idx + 1  # 1-based
-                annotated_line_indices.add(line_idx)
-                break
+        match_idx = None
+
+        # Tier 1 — key phrase (longest 2+ capitalised-word run)
+        key_phrase = _extract_key_phrase(claim_text)
+        if key_phrase:
+            kp_lower = key_phrase.lower()
+            for line_idx, line in enumerate(lines):
+                if line_idx in annotated_line_indices:
+                    continue
+                if kp_lower in line.lower():
+                    match_idx = line_idx
+                    break
+
+        # Tier 2 — number/date match
+        if match_idx is None:
+            digits = re.findall(r'\d+', claim_text)
+            if digits:
+                claim_words = _content_words(claim_text)
+                best_overlap = -1
+                best_line_idx = None
+                for line_idx, line in enumerate(lines):
+                    if line_idx in annotated_line_indices:
+                        continue
+                    if all(d in line for d in digits):
+                        overlap = len(claim_words & _content_words(line))
+                        if overlap > best_overlap:
+                            best_overlap = overlap
+                            best_line_idx = line_idx
+                if best_line_idx is not None and best_overlap >= 3:
+                    match_idx = best_line_idx
+
+        # Tier 3 — content word overlap (minimum 5 shared words)
+        if match_idx is None:
+            claim_words = _content_words(claim_text)
+            best_overlap = -1
+            best_line_idx = None
+            for line_idx, line in enumerate(lines):
+                if line_idx in annotated_line_indices:
+                    continue
+                overlap = len(claim_words & _content_words(line))
+                if overlap >= 5 and overlap > best_overlap:
+                    best_overlap = overlap
+                    best_line_idx = line_idx
+            if best_line_idx is not None:
+                match_idx = best_line_idx
+
+        if match_idx is not None:
+            marker = f" [{claim['id']}]"
+            annotated_lines[match_idx] = annotated_lines[match_idx] + marker
+            claim["report_line"] = match_idx + 1  # 1-based
+            annotated_line_indices.add(match_idx)
 
     annotated_prose = "\n".join(annotated_lines)
     if references is not None:

@@ -453,7 +453,7 @@ def test_annotate_report_lines_returns_tuple():
 
 
 def test_annotate_report_lines_adds_marker_to_matching_sentence():
-    """A claim whose first 8 words appear in the report gets a [N] marker."""
+    """A claim whose content words match the report line gets a [N] marker."""
     from output.provenance import annotate_report_lines
     report = "Nuclear fusion combines light nuclei to release energy."
     claim = {
@@ -487,6 +487,60 @@ def test_annotate_report_lines_no_match_leaves_report_unchanged():
     annotated, claims_out = annotate_report_lines(report, [claim])
     assert annotated == report
     assert claims_out[0]["report_line"] is None
+
+
+# ── annotate_report_lines() — three-tier matching tests ──────────────────────
+
+def test_annotate_tier1_matches_capitalised_phrase():
+    """Tier 1: a 2+ word capitalised run in the claim matches verbatim in the report line."""
+    from output.provenance import annotate_report_lines
+    report = "Background.\nThe National Ignition Facility achieved fusion ignition in 2022.\nAnother line."
+    claim = {"id": 5, "claim": "National Ignition Facility achieved a historic scientific milestone.", "report_line": None}
+    annotated, claims_out = annotate_report_lines(report, [claim])
+    assert "[5]" in annotated
+    assert claims_out[0]["report_line"] == 2
+
+
+def test_annotate_tier2_matches_on_number_with_shared_words():
+    """Tier 2: a claim with a digit sequence matches a line containing all digits plus 3+ shared content words."""
+    from output.provenance import annotate_report_lines
+    report = "Background line.\nThe reactor produced 500 megawatts of clean fusion power output.\nAnother line."
+    claim = {"id": 6, "claim": "Fusion power output reached 500 megawatts of clean energy.", "report_line": None}
+    annotated, claims_out = annotate_report_lines(report, [claim])
+    assert "[6]" in annotated
+    assert claims_out[0]["report_line"] == 2
+
+
+def test_annotate_tier3_matches_on_content_word_overlap():
+    """Tier 3: a claim with 5+ shared content words matches when tiers 1 and 2 find nothing."""
+    from output.provenance import annotate_report_lines
+    report = "Background.\nScientists discovered that plasma confinement techniques dramatically improved efficiency.\nAnother."
+    claim = {"id": 7, "claim": "Plasma confinement techniques improved efficiency in scientific experiments.", "report_line": None}
+    annotated, claims_out = annotate_report_lines(report, [claim])
+    assert "[7]" in annotated
+    assert claims_out[0]["report_line"] == 2
+
+
+def test_annotate_no_match_when_insufficient_overlap():
+    """A claim with fewer than 5 shared content words and no entity or number leaves report_line as None."""
+    from output.provenance import annotate_report_lines
+    report = "The results showed some promise for future applications."
+    claim = {"id": 8, "claim": "Results showed promise.", "report_line": None}
+    annotated, claims_out = annotate_report_lines(report, [claim])
+    assert claims_out[0]["report_line"] is None
+    assert "[8]" not in annotated
+
+
+def test_annotate_each_line_annotated_at_most_once():
+    """First claim to match a line wins; the same line is not annotated by a second claim."""
+    from output.provenance import annotate_report_lines
+    report = "Scientists proved plasma confinement techniques vastly improved fusion energy efficiency levels."
+    claim1 = {"id": 9, "claim": "Plasma confinement techniques improved fusion energy efficiency dramatically.", "report_line": None}
+    claim2 = {"id": 10, "claim": "Plasma confinement techniques improved fusion energy efficiency results.", "report_line": None}
+    annotated, claims_out = annotate_report_lines(report, [claim1, claim2])
+    assert "[9]" in annotated
+    assert "[10]" not in annotated
+    assert claims_out[1]["report_line"] is None
 
 
 # ── build_claims_from_results() tests ────────────────────────────────────────
