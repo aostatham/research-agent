@@ -59,6 +59,13 @@ def orchestrator(mock_llm, config, mock_pool):
     return Orchestrator(llm=mock_llm, agent_pool=mock_pool, config=config)
 
 
+@pytest.fixture(autouse=True)
+def patch_save_checkpoint():
+    """Suppress checkpoint writes in all orchestrator tests (filesystem side-effect)."""
+    with patch("agent.orchestrator.save_checkpoint"):
+        yield
+
+
 def make_text_response(content):
     """Build a text LLMResponse with the given content string."""
     return LLMResponse(type="text", content=content)
@@ -507,7 +514,7 @@ def test_run_returns_dict_of_results(orchestrator, mock_llm):
     async def fake_rqa(q, sem):
         return make_rr(question=q, answer=f"Answer for {q}")
     with patch.object(orchestrator, 'research_question_async', side_effect=fake_rqa):
-        results, sources = orchestrator.run("nuclear fusion")
+        (results, sources), _ = orchestrator.run("nuclear fusion")
     assert isinstance(results, dict)
     assert isinstance(sources, dict)
     assert len(results) == 4
@@ -523,7 +530,7 @@ def test_run_returns_sources_dict(orchestrator, mock_llm):
     async def fake_rqa(q, sem):
         return make_rr(question=q, answer="ans", sources=mock_sources)
     with patch.object(orchestrator, 'research_question_async', side_effect=fake_rqa):
-        results, sources = orchestrator.run("nuclear fusion")
+        (results, sources), _ = orchestrator.run("nuclear fusion")
     assert isinstance(sources, dict)
     for question in results:
         assert question in sources
@@ -538,7 +545,7 @@ def test_run_researches_gaps_when_insufficient(orchestrator, mock_llm):
     async def fake_rqa(q, sem):
         return make_rr(question=q, answer=f"Answer for {q}")
     with patch.object(orchestrator, 'research_question_async', side_effect=fake_rqa):
-        results, sources = orchestrator.run("nuclear fusion")
+        (results, sources), _ = orchestrator.run("nuclear fusion")
     assert "commercial timeline" in results
     assert "commercial timeline" in sources
 
@@ -568,7 +575,7 @@ def test_run_uses_config_question_bounds(orchestrator, mock_llm, config):
     async def fake_rqa(q, sem):
         return make_rr(question=q, answer="ans")
     with patch.object(orchestrator, 'research_question_async', side_effect=fake_rqa):
-        results, sources = orchestrator.run("nuclear fusion")
+        (results, sources), _ = orchestrator.run("nuclear fusion")
     assert len(results) == 3
 
 
@@ -576,7 +583,7 @@ def test_run_uses_config_question_bounds(orchestrator, mock_llm, config):
 # Verify research_question_async, research_all_async, and max_workers config.
 
 def test_run_async_returns_correct_tuple_shape(orchestrator, mock_llm):
-    """run_async() returns a (dict, dict) tuple from an async context."""
+    """run_async() returns a ((results, sources), run_id) tuple."""
     mock_llm.chat.side_effect = [
         make_text_response('["Q1?", "Q2?", "Q3?", "Q4?"]'),
         make_text_response('{"sufficient": true, "missing": []}'),
@@ -584,9 +591,10 @@ def test_run_async_returns_correct_tuple_shape(orchestrator, mock_llm):
     async def fake_rqa(q, sem):
         return make_rr(question=q, answer="ans")
     with patch.object(orchestrator, 'research_question_async', side_effect=fake_rqa):
-        results, sources = asyncio.run(orchestrator.run_async("nuclear fusion"))
+        (results, sources), run_id = asyncio.run(orchestrator.run_async("nuclear fusion"))
     assert isinstance(results, dict)
     assert isinstance(sources, dict)
+    assert isinstance(run_id, str)
 
 
 def test_config_max_workers_default():
@@ -661,7 +669,7 @@ def test_run_max_workers_respected(orchestrator, mock_llm, config):
     async def fake_rqa(q, sem):
         return make_rr(question=q, answer="ans")
     with patch.object(orchestrator, 'research_question_async', side_effect=fake_rqa):
-        results, sources = orchestrator.run("nuclear fusion")
+        (results, sources), _ = orchestrator.run("nuclear fusion")
     assert len(results) == 4
 
 
@@ -674,7 +682,7 @@ def test_run_gap_research_also_parallel(orchestrator, mock_llm):
     async def fake_rqa(q, sem):
         return make_rr(question=q, answer=f"Answer for {q}")
     with patch.object(orchestrator, 'research_question_async', side_effect=fake_rqa):
-        results, sources = orchestrator.run("nuclear fusion")
+        (results, sources), _ = orchestrator.run("nuclear fusion")
     assert "gap1" in results
     assert "gap2" in results
     assert "gap1" in sources
@@ -757,6 +765,72 @@ def test_run_search_count_reset_at_start_prevents_cross_run_leakage(orchestrator
     assert orchestrator.search_count == 0
 
 
+# ── RunState checkpoint tests ─────────────────────────────────────────────────
+
+def test_run_async_saves_checkpoint_at_each_stage(orchestrator, mock_llm):
+    """run_async() calls save_checkpoint at the decompose, research, reflect, and synthesise stages."""
+    mock_llm.chat.side_effect = [
+        make_text_response('["Q1?", "Q2?", "Q3?", "Q4?"]'),
+        make_text_response('{"sufficient": true, "missing": []}'),
+    ]
+    async def fake_rqa(q, sem):
+        return make_rr(question=q, answer="ans")
+    with patch.object(orchestrator, 'research_question_async', side_effect=fake_rqa), \
+         patch("agent.orchestrator.save_checkpoint") as mock_ckpt:
+        asyncio.run(orchestrator.run_async("nuclear fusion"))
+    # 4 saves: initial (decompose), after decompose (research),
+    # after initial research (reflect), after gap research (synthesise)
+    assert mock_ckpt.call_count == 4
+
+
+def test_run_async_returns_run_id_tuple(orchestrator, mock_llm):
+    """run_async() returns a ((results, sources), run_id) 2-tuple."""
+    mock_llm.chat.side_effect = [
+        make_text_response('["Q1?", "Q2?", "Q3?", "Q4?"]'),
+        make_text_response('{"sufficient": true, "missing": []}'),
+    ]
+    async def fake_rqa(q, sem):
+        return make_rr(question=q, answer="ans")
+    with patch.object(orchestrator, 'research_question_async', side_effect=fake_rqa):
+        result = asyncio.run(orchestrator.run_async("nuclear fusion"))
+    assert len(result) == 2
+    research_output, run_id = result
+    results, sources = research_output
+    assert isinstance(results, dict)
+    assert isinstance(run_id, str)
+    assert len(run_id) > 0
+
+
+def test_run_async_generates_new_run_id_when_none_provided(orchestrator, mock_llm):
+    """A new run_id is generated when no run_id is passed to run_async()."""
+    mock_llm.chat.side_effect = [
+        make_text_response('["Q1?", "Q2?", "Q3?", "Q4?"]'),
+        make_text_response('{"sufficient": true, "missing": []}'),
+        make_text_response('["Q1?", "Q2?", "Q3?", "Q4?"]'),
+        make_text_response('{"sufficient": true, "missing": []}'),
+    ]
+    async def fake_rqa(q, sem):
+        return make_rr(question=q, answer="ans")
+    with patch.object(orchestrator, 'research_question_async', side_effect=fake_rqa):
+        _, run_id_1 = asyncio.run(orchestrator.run_async("nuclear fusion"))
+        _, run_id_2 = asyncio.run(orchestrator.run_async("nuclear fusion"))
+    assert run_id_1 != run_id_2
+
+
+def test_run_async_uses_provided_run_id(orchestrator, mock_llm):
+    """When a run_id is provided, run_async() uses it rather than generating a new one."""
+    mock_llm.chat.side_effect = [
+        make_text_response('["Q1?", "Q2?", "Q3?", "Q4?"]'),
+        make_text_response('{"sufficient": true, "missing": []}'),
+    ]
+    async def fake_rqa(q, sem):
+        return make_rr(question=q, answer="ans")
+    fixed_id = "myspecialrunid123"
+    with patch.object(orchestrator, 'research_question_async', side_effect=fake_rqa):
+        _, returned_id = asyncio.run(orchestrator.run_async("nuclear fusion", run_id=fixed_id))
+    assert returned_id == fixed_id
+
+
 # ── Integration tests ─────────────────────────────────────────────────────────
 
 @pytest.mark.integration
@@ -769,10 +843,11 @@ def test_real_orchestrator_run():
     llm = AnthropicClient()
     mock_pool = MagicMock()
     orchestrator = Orchestrator(llm=llm, agent_pool=mock_pool)
-    results, sources = orchestrator.run("the current state of nuclear fusion energy")
+    (results, sources), run_id = orchestrator.run("the current state of nuclear fusion energy")
 
     assert isinstance(results, dict)
     assert isinstance(sources, dict)
+    assert isinstance(run_id, str)
     assert len(results) >= 3
     for question, answer in results.items():
         assert isinstance(question, str)

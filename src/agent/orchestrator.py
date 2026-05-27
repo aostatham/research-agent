@@ -14,12 +14,16 @@ Implements the research pipeline:
 """
 
 import asyncio
+import dataclasses
 import json
 import logging
+import uuid
+from datetime import datetime, timezone
 from llm.base import LLMClient
 from config import Config
 from evidence.schema import ResearchResult
 from agent.tools import get_and_reset_search_count
+from agent.runstate import RunState, save_checkpoint
 
 
 DECOMPOSE_PROMPT = """You are a research planning assistant.
@@ -313,7 +317,7 @@ class Orchestrator:
             print("  ⚠️  Could not parse reflection, proceeding anyway")
             return True, []
 
-    async def run_async(self, topic: str) -> tuple[dict, dict]:
+    async def run_async(self, topic: str, run_id: str = None) -> tuple:
         """
         Async version of run(). Await this from async contexts (FastAPI, async tests).
 
@@ -322,13 +326,20 @@ class Orchestrator:
           2. Research all sub-questions in parallel via research_all_async().
           3. Reflect on completeness; research any identified gaps in parallel.
 
+        Saves a RunState checkpoint to output/.checkpoints/{run_id}.json after
+        each pipeline stage (decompose, research, reflect, synthesise).
+
         Args:
-            topic: The research topic string.
+            topic:  The research topic string.
+            run_id: Optional run identifier.  If None, a new uuid4 hex is
+                    generated.  Pass an existing run_id (e.g. from --resume)
+                    to produce consistent checkpoint filenames across retries.
 
         Returns:
-            Tuple of (results, sources) where:
+            Tuple of ((results, sources), run_id) where:
               - results = {question: answer} dict (includes gap questions).
               - sources = {question: [{"title": str, "url": str}]} dict.
+              - run_id  = hex string identifying this run.
         """
         # Reset here in addition to __init__ — a reused Orchestrator instance must not
         # leak results across runs.
@@ -337,7 +348,23 @@ class Orchestrator:
         # before reaching the final get_and_reset_search_count() call would otherwise
         # leak its count into the next run.
         get_and_reset_search_count()
+
+        state = RunState(
+            run_id=run_id or uuid.uuid4().hex,
+            current_stage="decompose",
+            topic=topic,
+            questions=[],
+            accumulated_research_results=[],
+            report_text="",
+            started_at=datetime.now(timezone.utc).isoformat(),
+            last_checkpoint_at="",
+        )
+        save_checkpoint(state)
+
         questions = self.decompose(topic)
+        state.current_stage = "research"
+        state.questions = questions
+        save_checkpoint(state)
 
         synth_provider = self.config.synthesis_provider or self.config.provider
         if synth_provider == "ollama":
@@ -352,6 +379,12 @@ class Orchestrator:
         results, sources = await self.research_all_async(questions)
         all_rr = list(self._last_research_results)
 
+        state.current_stage = "reflect"
+        state.accumulated_research_results = [
+            dataclasses.asdict(rr) for rr in self._last_research_results
+        ]
+        save_checkpoint(state)
+
         sufficient, missing = self.reflect(topic, results)
 
         if not sufficient and missing:
@@ -363,20 +396,28 @@ class Orchestrator:
             sources.update(gap_sources)
 
         self._last_research_results = all_rr
+
+        state.current_stage = "synthesise"
+        state.accumulated_research_results = [
+            dataclasses.asdict(rr) for rr in self._last_research_results
+        ]
+        save_checkpoint(state)
+
         self.search_count = get_and_reset_search_count()
         print(f"\n✅ Research complete — {len(results)} questions answered")
-        return results, sources
+        return (results, sources), state.run_id
 
-    def run(self, topic: str) -> tuple[dict, dict]:
+    def run(self, topic: str, run_id: str = None) -> tuple:
         """
         Synchronous entry point for CLI use.
         Do not call from inside an already-running event loop.
         Use run_async() for async contexts (FastAPI, async tests).
 
         Args:
-            topic: The research topic string.
+            topic:  The research topic string.
+            run_id: Optional run identifier passed through to run_async().
 
         Returns:
-            Tuple of (results, sources).
+            Tuple of ((results, sources), run_id).
         """
-        return asyncio.run(self.run_async(topic))
+        return asyncio.run(self.run_async(topic, run_id=run_id))

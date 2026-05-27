@@ -226,8 +226,8 @@ def main():
     orchestrator = Orchestrator(llm=orch_llm, agent_pool=agent_pool, config=config)
     synthesiser = Synthesiser(llm=synth_llm, config=config)
 
-    # orchestrator.run() returns ({question: answer}, {question: [sources]})
-    results, sources = orchestrator.run(topic)
+    # orchestrator.run() returns ((results, sources), run_id)
+    (results, sources), _run_id = orchestrator.run(topic)
 
     # Count researcher web searches (excludes verifier searches)
     search_count = orchestrator.search_count

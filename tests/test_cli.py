@@ -571,7 +571,7 @@ def test_main_runs_full_pipeline(tmp_path, monkeypatch):
     mock_orchestrator = MagicMock()
     mock_synthesiser = MagicMock()
 
-    mock_orchestrator.run.return_value = (SAMPLE_RESULTS, {})
+    mock_orchestrator.run.return_value = ((SAMPLE_RESULTS, {}), "test-run-id-123")
     mock_synthesiser.synthesise.return_value = SAMPLE_REPORT
 
     with patch("sys.argv", ["main.py", "nuclear fusion"]), \
@@ -598,7 +598,7 @@ def test_main_saves_report_to_output(tmp_path, monkeypatch):
     mock_orchestrator = MagicMock()
     mock_synthesiser = MagicMock()
 
-    mock_orchestrator.run.return_value = (SAMPLE_RESULTS, {})
+    mock_orchestrator.run.return_value = ((SAMPLE_RESULTS, {}), "test-run-id-123")
     mock_synthesiser.synthesise.return_value = SAMPLE_REPORT
 
     with patch("sys.argv", ["main.py", "nuclear fusion"]), \
@@ -621,7 +621,7 @@ def test_main_short_flag_passed_to_synthesiser(tmp_path, monkeypatch):
     mock_orchestrator = MagicMock()
     mock_synthesiser = MagicMock()
 
-    mock_orchestrator.run.return_value = (SAMPLE_RESULTS, {})
+    mock_orchestrator.run.return_value = ((SAMPLE_RESULTS, {}), "test-run-id-123")
     mock_synthesiser.synthesise.return_value = SAMPLE_REPORT
 
     with patch("sys.argv", ["main.py", "nuclear fusion", "--short"]), \
@@ -642,7 +642,7 @@ def test_main_short_flag_short_form(tmp_path, monkeypatch):
     mock_orchestrator = MagicMock()
     mock_synthesiser = MagicMock()
 
-    mock_orchestrator.run.return_value = (SAMPLE_RESULTS, {})
+    mock_orchestrator.run.return_value = ((SAMPLE_RESULTS, {}), "test-run-id-123")
     mock_synthesiser.synthesise.return_value = SAMPLE_REPORT
 
     with patch("sys.argv", ["main.py", "nuclear fusion", "-s"]), \
@@ -663,7 +663,7 @@ def test_main_html_format_saves_html_file(tmp_path, monkeypatch):
     mock_orchestrator = MagicMock()
     mock_synthesiser = MagicMock()
 
-    mock_orchestrator.run.return_value = (SAMPLE_RESULTS, {})
+    mock_orchestrator.run.return_value = ((SAMPLE_RESULTS, {}), "test-run-id-123")
     mock_synthesiser.synthesise.return_value = SAMPLE_REPORT
 
     with patch("sys.argv", ["main.py", "nuclear fusion", "--format", "html"]), \
@@ -685,7 +685,7 @@ def test_main_pdf_format_saves_pdf_file(tmp_path, monkeypatch):
     mock_orchestrator = MagicMock()
     mock_synthesiser = MagicMock()
 
-    mock_orchestrator.run.return_value = (SAMPLE_RESULTS, {})
+    mock_orchestrator.run.return_value = ((SAMPLE_RESULTS, {}), "test-run-id-123")
     mock_synthesiser.synthesise.return_value = SAMPLE_REPORT
 
     with patch("sys.argv", ["main.py", "nuclear fusion", "--format", "pdf"]), \
@@ -707,7 +707,7 @@ def test_main_creates_index_entry(tmp_path, monkeypatch):
     mock_orchestrator = MagicMock()
     mock_synthesiser = MagicMock()
 
-    mock_orchestrator.run.return_value = (SAMPLE_RESULTS, {})
+    mock_orchestrator.run.return_value = ((SAMPLE_RESULTS, {}), "test-run-id-123")
     mock_synthesiser.synthesise.return_value = SAMPLE_REPORT
 
     with patch("sys.argv", ["main.py", "nuclear fusion"]), \
@@ -729,7 +729,7 @@ def test_main_mixed_provider_orchestration(tmp_path, monkeypatch):
     mock_orchestrator = MagicMock()
     mock_synthesiser = MagicMock()
 
-    mock_orchestrator.run.return_value = (SAMPLE_RESULTS, {})
+    mock_orchestrator.run.return_value = ((SAMPLE_RESULTS, {}), "test-run-id-123")
     mock_synthesiser.synthesise.return_value = SAMPLE_REPORT
 
     with patch("sys.argv", ["main.py", "nuclear fusion",
@@ -752,7 +752,7 @@ def test_main_uses_anthropic_by_default(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     mock_orchestrator = MagicMock()
     mock_synthesiser = MagicMock()
-    mock_orchestrator.run.return_value = (SAMPLE_RESULTS, {})
+    mock_orchestrator.run.return_value = ((SAMPLE_RESULTS, {}), "test-run-id-123")
     mock_synthesiser.synthesise.return_value = SAMPLE_REPORT
 
     with patch("sys.argv", ["main.py", "nuclear fusion"]), \
@@ -768,7 +768,7 @@ def test_main_uses_ollama_when_specified(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     mock_orchestrator = MagicMock()
     mock_synthesiser = MagicMock()
-    mock_orchestrator.run.return_value = (SAMPLE_RESULTS, {})
+    mock_orchestrator.run.return_value = ((SAMPLE_RESULTS, {}), "test-run-id-123")
     mock_synthesiser.synthesise.return_value = SAMPLE_REPORT
 
     with patch("sys.argv", ["main.py", "nuclear fusion", "--provider", "ollama"]), \
@@ -784,7 +784,7 @@ def test_main_multi_word_topic(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     mock_orchestrator = MagicMock()
     mock_synthesiser = MagicMock()
-    mock_orchestrator.run.return_value = (SAMPLE_RESULTS, {})
+    mock_orchestrator.run.return_value = ((SAMPLE_RESULTS, {}), "test-run-id-123")
     mock_synthesiser.synthesise.return_value = SAMPLE_REPORT
 
     with patch("sys.argv", ["main.py", "the", "current", "state", "of", "nuclear", "fusion"]), \
@@ -938,7 +938,7 @@ def test_orchestration_model_sets_only_ollama_field_when_ollama_provider(
     def capture_orchestrator(*args, **kwargs):
         captured["config"] = kwargs.get("config") or args[1]
         m = MagicMock()
-        m.run.return_value = (SAMPLE_RESULTS, {})
+        m.run.return_value = ((SAMPLE_RESULTS, {}), "test-run-id-123")
         return m
 
     with patch("sys.argv", ["main.py", "nuclear fusion",
@@ -968,7 +968,7 @@ def test_orchestration_model_sets_only_anthropic_field_when_anthropic_provider(
     def capture_orchestrator(*args, **kwargs):
         captured["config"] = kwargs.get("config") or args[1]
         m = MagicMock()
-        m.run.return_value = (SAMPLE_RESULTS, {})
+        m.run.return_value = ((SAMPLE_RESULTS, {}), "test-run-id-123")
         return m
 
     with patch("sys.argv", ["main.py", "nuclear fusion",
@@ -1052,7 +1052,7 @@ def test_main_warns_when_ollama_exceeds_safe_workers(tmp_path, monkeypatch, caps
     monkeypatch.chdir(tmp_path)
     mock_orchestrator = MagicMock()
     mock_synthesiser = MagicMock()
-    mock_orchestrator.run.return_value = (SAMPLE_RESULTS, {})
+    mock_orchestrator.run.return_value = ((SAMPLE_RESULTS, {}), "test-run-id-123")
     mock_synthesiser.synthesise.return_value = SAMPLE_REPORT
 
     with patch("sys.argv", ["main.py", "nuclear fusion",
@@ -1073,7 +1073,7 @@ def test_main_no_warning_when_ollama_safe_workers(tmp_path, monkeypatch, capsys)
     monkeypatch.chdir(tmp_path)
     mock_orchestrator = MagicMock()
     mock_synthesiser = MagicMock()
-    mock_orchestrator.run.return_value = (SAMPLE_RESULTS, {})
+    mock_orchestrator.run.return_value = ((SAMPLE_RESULTS, {}), "test-run-id-123")
     mock_synthesiser.synthesise.return_value = SAMPLE_REPORT
 
     with patch("sys.argv", ["main.py", "nuclear fusion",
@@ -1093,7 +1093,7 @@ def test_main_no_warning_when_anthropic_high_workers(tmp_path, monkeypatch, caps
     monkeypatch.chdir(tmp_path)
     mock_orchestrator = MagicMock()
     mock_synthesiser = MagicMock()
-    mock_orchestrator.run.return_value = (SAMPLE_RESULTS, {})
+    mock_orchestrator.run.return_value = ((SAMPLE_RESULTS, {}), "test-run-id-123")
     mock_synthesiser.synthesise.return_value = SAMPLE_REPORT
 
     with patch("sys.argv", ["main.py", "nuclear fusion",
@@ -1124,7 +1124,7 @@ def test_main_synthesise_receives_claims_when_provenance_file(tmp_path, monkeypa
     mock_llm = MagicMock()
     mock_orchestrator = MagicMock()
     mock_synthesiser = MagicMock()
-    mock_orchestrator.run.return_value = (SAMPLE_RESULTS, {})
+    mock_orchestrator.run.return_value = ((SAMPLE_RESULTS, {}), "test-run-id-123")
     mock_synthesiser.synthesise.return_value = SAMPLE_REPORT
     fake_claims = [{"id": 1, "claim": "fusion works", "synthesis_status": "not_attempted"}]
 
@@ -1150,7 +1150,7 @@ def test_main_synthesise_receives_no_claims_when_provenance_none(tmp_path, monke
     mock_llm = MagicMock()
     mock_orchestrator = MagicMock()
     mock_synthesiser = MagicMock()
-    mock_orchestrator.run.return_value = (SAMPLE_RESULTS, {})
+    mock_orchestrator.run.return_value = ((SAMPLE_RESULTS, {}), "test-run-id-123")
     mock_synthesiser.synthesise.return_value = SAMPLE_REPORT
 
     with patch("sys.argv", ["main.py", "nuclear fusion"]), \
