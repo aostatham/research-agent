@@ -80,6 +80,30 @@ class Synthesiser:
         self.llm = llm
         self.config = config or Config()
 
+    def _build_synthesis_prompt(self, topic: str, findings: str,
+                                claims: list = None, short: bool = False) -> str:
+        """
+        Assemble the full synthesis prompt from template, topic, and findings.
+
+        Selects SYNTHESISE_PROMPT or SHORT_SYNTHESISE_PROMPT based on short,
+        then appends the topic and pre-formatted findings.  When claims is not
+        None, a claim-anchors section is also appended (implemented in Step 3).
+
+        Args:
+            topic:    The research topic string.
+            findings: Pre-formatted findings string from _format_findings().
+            claims:   Optional list of EvidenceClaim dicts; ignored in Step 2.
+            short:    If True, use the shorter executive-summary template.
+
+        Returns:
+            Complete prompt string ready to pass to the LLM.
+        """
+        prompt_template = SHORT_SYNTHESISE_PROMPT if short else SYNTHESISE_PROMPT
+        return (
+            prompt_template +
+            f"\n\n# Topic\n{topic}\n\n# Research Findings\n{findings}"
+        )
+
     def synthesise(self, topic: str, results: dict,
                    sources: dict = None, max_tokens: int = None,
                    short: bool = False) -> str:
@@ -109,17 +133,11 @@ class Synthesiser:
             print("   (executive summary mode)")
             # Cap short-mode tokens so we don't waste budget on a brief summary
             max_tokens = max_tokens or min(2048, self.config.max_tokens_synthesis)
-            prompt_template = SHORT_SYNTHESISE_PROMPT
         else:
             max_tokens = max_tokens or self.config.max_tokens_synthesis
-            prompt_template = SYNTHESISE_PROMPT
 
         findings = self._format_findings(results, sources or {})
-
-        prompt = (
-            prompt_template +
-            f"\n\n# Topic\n{topic}\n\n# Research Findings\n{findings}"
-        )
+        prompt = self._build_synthesis_prompt(topic, findings, short=short)
 
         response = self.llm.chat(
             messages=[{"role": "user", "content": prompt}],

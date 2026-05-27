@@ -333,6 +333,40 @@ def test_format_master_references_has_heading(synthesiser, sample_sources):
     assert "## References" in result
 
 
+# ── _build_synthesis_prompt() tests ──────────────────────────────────────────
+
+def test_build_synthesis_prompt_returns_string(synthesiser):
+    """_build_synthesis_prompt() returns a string."""
+    result = synthesiser._build_synthesis_prompt("nuclear fusion", "some findings")
+    assert isinstance(result, str)
+
+
+def test_build_synthesis_prompt_contains_topic(synthesiser):
+    """_build_synthesis_prompt() includes the topic in the returned prompt."""
+    result = synthesiser._build_synthesis_prompt("nuclear fusion", "some findings")
+    assert "nuclear fusion" in result
+
+
+def test_build_synthesis_prompt_full_uses_full_template(synthesiser):
+    """short=False uses the full SYNTHESISE_PROMPT template."""
+    from agent.synthesiser import SYNTHESISE_PROMPT
+    result = synthesiser._build_synthesis_prompt("topic", "findings", short=False)
+    assert SYNTHESISE_PROMPT[:40] in result
+
+
+def test_build_synthesis_prompt_short_uses_short_template(synthesiser):
+    """short=True uses the SHORT_SYNTHESISE_PROMPT template."""
+    from agent.synthesiser import SHORT_SYNTHESISE_PROMPT
+    result = synthesiser._build_synthesis_prompt("topic", "findings", short=True)
+    assert SHORT_SYNTHESISE_PROMPT[:40] in result
+
+
+def test_build_synthesis_prompt_contains_findings(synthesiser):
+    """_build_synthesis_prompt() includes the findings text."""
+    result = synthesiser._build_synthesis_prompt("topic", "my specific findings text")
+    assert "my specific findings text" in result
+
+
 # ── Integration tests ─────────────────────────────────────────────────────────
 
 @pytest.mark.integration
