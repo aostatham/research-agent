@@ -164,8 +164,13 @@ class Orchestrator:
         Async wrapper: runs the Researcher then the Verifier.
 
         Acquires the semaphore before running the researcher to cap concurrent
-        workers at config.max_workers.  The Verifier runs outside the semaphore
-        so subsequent researchers can start while the verifier runs (D010).
+        workers at config.max_workers.
+
+        Verifier placement depends on the orchestration provider (D023):
+          - anthropic: Verifier runs outside the semaphore so subsequent
+            researchers can start while the verifier runs (original D010 behaviour).
+          - ollama: Verifier runs inside the semaphore to prevent Ollama queue
+            buildup that causes 60s read timeout crashes.
 
         Args:
             question:  The sub-question to research.
@@ -174,13 +179,22 @@ class Orchestrator:
         Returns:
             ResearchResult with verified field set by the Verifier Agent.
         """
-        async with semaphore:
-            rr = await asyncio.to_thread(self._research_question_sync, question)
         from agent.verifier import verify
-        rr = await asyncio.to_thread(
-            verify, self.agent_pool.verifier, rr,
-            self.config.max_tokens_research,
-        )
+        orch_provider = self.config.orchestration_provider or self.config.provider
+        if orch_provider == "ollama":
+            async with semaphore:
+                rr = await asyncio.to_thread(self._research_question_sync, question)
+                rr = await asyncio.to_thread(
+                    verify, self.agent_pool.verifier, rr,
+                    self.config.max_tokens_research,
+                )
+        else:
+            async with semaphore:
+                rr = await asyncio.to_thread(self._research_question_sync, question)
+            rr = await asyncio.to_thread(
+                verify, self.agent_pool.verifier, rr,
+                self.config.max_tokens_research,
+            )
         return rr
 
     async def research_all_async(
@@ -319,6 +333,13 @@ class Orchestrator:
         # leak results across runs.
         self._last_research_results = []
         questions = self.decompose(topic)
+
+        orch_provider = self.config.orchestration_provider or self.config.provider
+        if orch_provider == "ollama":
+            print(
+                "Warning: Ollama provider detected — Verifier will run inside the "
+                "research semaphore to prevent timeouts. This adds latency per question."
+            )
 
         print(f"\n🚀 Researching {len(questions)} questions "
               f"(workers: {self.config.max_workers})...")

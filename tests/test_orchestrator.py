@@ -167,6 +167,81 @@ def test_research_question_sync_returns_research_result(orchestrator):
     assert result is rr
 
 
+# ── Verifier semaphore placement (D023) ──────────────────────────────────────
+# When orch_provider is "ollama", the Verifier must run *inside* the semaphore
+# (before it releases) to prevent Ollama queue buildup.
+# When orch_provider is "anthropic", the Verifier runs *outside* (D010 behaviour).
+
+def test_verifier_runs_inside_semaphore_for_ollama():
+    """Ollama path: verify is awaited while the semaphore is still held."""
+    cfg = Config(provider="ollama")
+    orch = Orchestrator(llm=MagicMock(), agent_pool=MagicMock(), config=cfg)
+    sem = asyncio.Semaphore(1)
+    sem_locked_during_verify = []
+
+    rr = make_rr(question="Q?", answer="ans")
+
+    def fake_verify(agent, result, max_tokens):
+        sem_locked_during_verify.append(sem.locked())
+        return result
+
+    with patch.object(orch, '_research_question_sync', return_value=rr):
+        with patch("agent.verifier.verify", side_effect=fake_verify):
+            asyncio.run(orch.research_question_async("Q?", sem))
+
+    assert sem_locked_during_verify == [True]
+
+
+def test_verifier_runs_outside_semaphore_for_anthropic():
+    """Anthropic path: verify is awaited after the semaphore has been released."""
+    cfg = Config(provider="anthropic")
+    orch = Orchestrator(llm=MagicMock(), agent_pool=MagicMock(), config=cfg)
+    sem = asyncio.Semaphore(1)
+    sem_locked_during_verify = []
+
+    rr = make_rr(question="Q?", answer="ans")
+
+    def fake_verify(agent, result, max_tokens):
+        sem_locked_during_verify.append(sem.locked())
+        return result
+
+    with patch.object(orch, '_research_question_sync', return_value=rr):
+        with patch("agent.verifier.verify", side_effect=fake_verify):
+            asyncio.run(orch.research_question_async("Q?", sem))
+
+    assert sem_locked_during_verify == [False]
+
+
+def test_ollama_warning_printed_once_per_run(orchestrator, mock_llm, capsys):
+    """Ollama semaphore warning is printed exactly once per run regardless of question count."""
+    orchestrator.config.provider = "ollama"
+    mock_llm.chat.side_effect = [
+        make_text_response('["Q1?", "Q2?", "Q3?", "Q4?"]'),
+        make_text_response('{"sufficient": true, "missing": []}'),
+    ]
+    async def fake_rqa(q, sem):
+        return make_rr(question=q, answer="ans")
+    with patch.object(orchestrator, 'research_question_async', side_effect=fake_rqa):
+        orchestrator.run("topic")
+    out = capsys.readouterr().out
+    assert out.count("Verifier will run inside the research semaphore") == 1
+
+
+def test_anthropic_no_ollama_warning(orchestrator, mock_llm, capsys):
+    """No Ollama semaphore warning is printed when orch_provider is anthropic."""
+    orchestrator.config.provider = "anthropic"
+    mock_llm.chat.side_effect = [
+        make_text_response('["Q1?", "Q2?", "Q3?", "Q4?"]'),
+        make_text_response('{"sufficient": true, "missing": []}'),
+    ]
+    async def fake_rqa(q, sem):
+        return make_rr(question=q, answer="ans")
+    with patch.object(orchestrator, 'research_question_async', side_effect=fake_rqa):
+        orchestrator.run("topic")
+    out = capsys.readouterr().out
+    assert "Verifier will run inside the research semaphore" not in out
+
+
 # ── research_question_async() tests ──────────────────────────────────────────
 # Verify async wrapper, semaphore gating, and unconditional verifier call.
 
