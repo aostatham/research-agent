@@ -166,7 +166,8 @@ class Orchestrator:
         Acquires the semaphore before running the researcher to cap concurrent
         workers at config.max_workers.
 
-        Verifier placement depends on the orchestration provider (D023):
+        Verifier placement depends on the synthesis provider (D023) because
+        the Verifier uses synth_llm:
           - anthropic: Verifier runs outside the semaphore so subsequent
             researchers can start while the verifier runs (original D010 behaviour).
           - ollama: Verifier runs inside the semaphore to prevent Ollama queue
@@ -341,8 +342,9 @@ class Orchestrator:
         synth_provider = self.config.synthesis_provider or self.config.provider
         if synth_provider == "ollama":
             print(
-                "Warning: Ollama provider detected — Verifier will run inside the "
-                "research semaphore to prevent timeouts. This adds latency per question."
+                "Warning: Synthesis provider is Ollama — Verifier will run inside the "
+                "research semaphore to prevent timeouts (Verifier uses synth_llm). "
+                "This adds latency per question."
             )
 
         print(f"\n🚀 Researching {len(questions)} questions "
