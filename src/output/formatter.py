@@ -11,6 +11,20 @@ See output.writer for save_report() and update_index().
 """
 
 import html
+import logging
+
+
+try:
+    import markdown
+    MARKDOWN_AVAILABLE = True
+except ImportError:
+    MARKDOWN_AVAILABLE = False
+
+try:
+    import bleach
+    BLEACH_AVAILABLE = True
+except ImportError:
+    BLEACH_AVAILABLE = False
 
 
 _SAFE_TAGS = [
@@ -69,23 +83,29 @@ def convert_to_html(topic: str, metadata: str, report: str) -> str:
     """
     safe_topic = html.escape(topic)
 
-    try:
-        import markdown
-        import bleach
-        meta_html = bleach.clean(
-            markdown.markdown(metadata, extensions=["tables"]),
-            tags=_SAFE_TAGS,
-            attributes={"a": ["href"]},
-            strip=True,
-        )
-        report_html = bleach.clean(
-            markdown.markdown(report, extensions=["tables", "fenced_code"]),
-            tags=_SAFE_TAGS,
-            attributes={"a": ["href"]},
-            strip=True,
-        )
-    except ImportError:
-        # Fallback if markdown or bleach not installed
+    if MARKDOWN_AVAILABLE:
+        meta_html = markdown.markdown(metadata, extensions=["tables"])
+        report_html = markdown.markdown(report, extensions=["tables", "fenced_code"])
+        if BLEACH_AVAILABLE:
+            meta_html = bleach.clean(
+                meta_html,
+                tags=_SAFE_TAGS,
+                attributes={"a": ["href"]},
+                strip=True,
+            )
+            report_html = bleach.clean(
+                report_html,
+                tags=_SAFE_TAGS,
+                attributes={"a": ["href"]},
+                strip=True,
+            )
+        else:
+            logging.warning(
+                "bleach not installed — HTML output is not sanitised; "
+                "install bleach to enable XSS protection"
+            )
+    else:
+        # Fallback if markdown not installed
         meta_html = f"<pre>{html.escape(metadata)}</pre>"
         report_html = f"<pre>{html.escape(report)}</pre>"
 

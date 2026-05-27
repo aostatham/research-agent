@@ -123,17 +123,44 @@ def test_html_escapes_script_tag_in_topic_h1():
 
 
 def test_html_fallback_path_escapes_report():
-    """Fallback path (no markdown/bleach) applies html.escape() to report content."""
-    import sys
-    import importlib
-    original_import = __builtins__["__import__"] if isinstance(__builtins__, dict) else __import__
-
-    def _block_markdown(name, *args, **kwargs):
-        if name in ("markdown", "bleach"):
-            raise ImportError(f"mocked missing: {name}")
-        return original_import(name, *args, **kwargs)
-
-    with patch("builtins.__import__", side_effect=_block_markdown):
+    """Fallback path (no markdown) applies html.escape() to report content."""
+    with patch("output.formatter.MARKDOWN_AVAILABLE", False):
         result = convert_to_html("Topic", "", "<script>alert(1)</script>")
     assert "<script>" not in result
     assert "&lt;script&gt;" in result
+
+
+# ── FIX 6 — split markdown/bleach import failure modes ───────────────────────
+
+def test_html_missing_bleach_logs_warning(caplog):
+    """When bleach is unavailable, a WARNING is logged and markdown is still rendered."""
+    import logging
+    with patch("output.formatter.BLEACH_AVAILABLE", False), \
+         patch("output.formatter.MARKDOWN_AVAILABLE", True):
+        with caplog.at_level(logging.WARNING, logger="output.formatter"):
+            result = convert_to_html("Topic", "", "**bold**")
+    assert any("bleach" in record.message.lower() for record in caplog.records)
+
+
+def test_html_missing_bleach_still_renders_markdown():
+    """When bleach is unavailable, markdown rendering still produces HTML."""
+    with patch("output.formatter.BLEACH_AVAILABLE", False), \
+         patch("output.formatter.MARKDOWN_AVAILABLE", True):
+        result = convert_to_html("Topic", "", "**bold text**")
+    assert "<strong>bold text</strong>" in result
+
+
+def test_html_missing_markdown_falls_back_to_preformatted():
+    """When markdown is unavailable, report falls back to html-escaped preformatted text."""
+    with patch("output.formatter.MARKDOWN_AVAILABLE", False):
+        result = convert_to_html("Topic", "", "<script>alert(1)</script>")
+    assert "<script>" not in result
+    assert "&lt;script&gt;" in result
+
+
+def test_html_missing_both_degrades_gracefully():
+    """When both markdown and bleach are unavailable, fallback path applies."""
+    with patch("output.formatter.MARKDOWN_AVAILABLE", False), \
+         patch("output.formatter.BLEACH_AVAILABLE", False):
+        result = convert_to_html("Topic", "", "Normal content")
+    assert "Normal content" in result
