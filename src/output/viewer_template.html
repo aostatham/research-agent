@@ -1,0 +1,1002 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Provenance Viewer</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --navy: #1a2332;
+    --navy-light: #243047;
+    --navy-border: #2e3d55;
+    --off-white: #f7f8fa;
+    --white: #ffffff;
+    --text-primary: #1c2333;
+    --text-secondary: #5a6478;
+    --text-muted: #8a94a8;
+    --accent: #3b7dd8;
+    --accent-light: #e8f0fb;
+    --green: #1d7a4a;
+    --green-bg: #e8f5ee;
+    --amber: #8a5a00;
+    --amber-bg: #fef6e4;
+    --amber-border: #f5c842;
+    --red: #9b2020;
+    --red-bg: #fdf0f0;
+    --red-border: #e57373;
+    --mono: 'SFMono-Regular', 'Consolas', 'Liberation Mono', 'Menlo', monospace;
+    --sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif;
+    --radius: 6px;
+    --shadow: 0 1px 3px rgba(0,0,0,0.10), 0 1px 2px rgba(0,0,0,0.06);
+    --shadow-md: 0 4px 6px rgba(0,0,0,0.07), 0 2px 4px rgba(0,0,0,0.05);
+  }
+
+  body {
+    font-family: var(--sans);
+    background: var(--off-white);
+    color: var(--text-primary);
+    font-size: 14px;
+    line-height: 1.6;
+    min-height: 100vh;
+  }
+
+  /* ── Header ── */
+  .header {
+    background: var(--navy);
+    color: var(--white);
+    padding: 28px 32px 24px;
+  }
+
+  .header-top {
+    display: flex;
+    align-items: baseline;
+    gap: 12px;
+    margin-bottom: 6px;
+  }
+
+  .header-title {
+    font-size: 20px;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+  }
+
+  .header-filename {
+    font-family: var(--mono);
+    font-size: 13px;
+    color: rgba(255,255,255,0.55);
+  }
+
+  .header-meta {
+    font-size: 12px;
+    color: rgba(255,255,255,0.45);
+    margin-bottom: 20px;
+  }
+
+  .metrics-row {
+    display: flex;
+    gap: 24px;
+    flex-wrap: wrap;
+  }
+
+  .metric-cluster {
+    background: rgba(255,255,255,0.06);
+    border: 1px solid rgba(255,255,255,0.10);
+    border-radius: var(--radius);
+    padding: 14px 18px;
+    min-width: 240px;
+  }
+
+  .metric-cluster-label {
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: rgba(255,255,255,0.40);
+    margin-bottom: 10px;
+  }
+
+  .metric-items {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .metric-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+    color: rgba(255,255,255,0.85);
+  }
+
+  .metric-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+
+  .dot-green  { background: #4caf7d; }
+  .dot-amber  { background: #f5c842; }
+  .dot-red    { background: #e57373; }
+  .dot-blue   { background: #6ea8e0; }
+  .dot-grey   { background: rgba(255,255,255,0.25); }
+
+  .metric-value {
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .metric-pct {
+    color: rgba(255,255,255,0.45);
+    font-size: 12px;
+  }
+
+  .confidence-band {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 3px;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+  }
+
+  .band-high   { background: rgba(76,175,125,0.25); color: #7dd4a8; }
+  .band-medium { background: rgba(245,200,66,0.20); color: #f0cc5a; }
+  .band-low    { background: rgba(229,115,115,0.25); color: #ef9a9a; }
+
+  /* ── Schema warning banner ── */
+  .schema-warning {
+    background: var(--amber-bg);
+    border-bottom: 1px solid var(--amber-border);
+    padding: 10px 32px;
+    font-size: 13px;
+    color: var(--amber);
+    display: none;
+  }
+
+  /* ── Main content ── */
+  .main {
+    max-width: 960px;
+    margin: 0 auto;
+    padding: 24px 24px 48px;
+  }
+
+  /* ── Disputed section ── */
+  .disputed-section {
+    background: var(--red-bg);
+    border: 1px solid var(--red-border);
+    border-radius: var(--radius);
+    margin-bottom: 24px;
+    overflow: hidden;
+  }
+
+  .disputed-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 16px;
+    cursor: pointer;
+    user-select: none;
+    background: rgba(229,115,115,0.08);
+  }
+
+  .disputed-header:hover { background: rgba(229,115,115,0.14); }
+
+  .disputed-title {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--red);
+  }
+
+  .disputed-chevron {
+    font-size: 12px;
+    color: var(--red);
+    transition: transform 0.15s;
+  }
+
+  .disputed-chevron.open { transform: rotate(180deg); }
+
+  .disputed-body {
+    padding: 12px 16px 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .disputed-body.hidden { display: none; }
+
+  /* ── Controls ── */
+  .controls {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 16px;
+    flex-wrap: wrap;
+  }
+
+  .filter-group {
+    display: flex;
+    gap: 4px;
+    flex-wrap: wrap;
+  }
+
+  .filter-btn {
+    padding: 5px 12px;
+    border: 1px solid #d0d5dd;
+    background: var(--white);
+    border-radius: 20px;
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: background 0.1s, border-color 0.1s, color 0.1s;
+  }
+
+  .filter-btn:hover {
+    background: var(--accent-light);
+    border-color: var(--accent);
+    color: var(--accent);
+  }
+
+  .filter-btn.active {
+    background: var(--navy);
+    border-color: var(--navy);
+    color: var(--white);
+  }
+
+  .sort-group {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-left: auto;
+  }
+
+  .sort-label {
+    font-size: 12px;
+    color: var(--text-muted);
+    white-space: nowrap;
+  }
+
+  .sort-select {
+    padding: 5px 8px;
+    border: 1px solid #d0d5dd;
+    border-radius: var(--radius);
+    font-size: 12px;
+    font-family: var(--sans);
+    color: var(--text-primary);
+    background: var(--white);
+    cursor: pointer;
+  }
+
+  .results-count {
+    font-size: 12px;
+    color: var(--text-muted);
+    margin-bottom: 12px;
+  }
+
+  /* ── Claim card ── */
+  .claim-card {
+    background: var(--white);
+    border: 1px solid #e3e7ef;
+    border-radius: var(--radius);
+    padding: 16px;
+    box-shadow: var(--shadow);
+    margin-bottom: 10px;
+  }
+
+  .claim-card.disputed-card {
+    background: #fff8f8;
+    border-color: #f5c0c0;
+  }
+
+  .claim-card-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 10px;
+  }
+
+  .claim-id-text {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    flex-wrap: wrap;
+    flex: 1;
+  }
+
+  .claim-id {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--text-muted);
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
+
+  .claim-text {
+    font-size: 15px;
+    font-weight: 500;
+    color: var(--text-primary);
+    line-height: 1.5;
+  }
+
+  .claim-reviewed {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    flex-shrink: 0;
+    cursor: pointer;
+    font-size: 12px;
+    color: var(--text-muted);
+    white-space: nowrap;
+  }
+
+  .claim-reviewed input[type="checkbox"] {
+    width: 14px;
+    height: 14px;
+    cursor: pointer;
+    accent-color: var(--navy);
+  }
+
+  .claim-meta {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin-bottom: 10px;
+  }
+
+  /* ── Badges ── */
+  .badge {
+    display: inline-block;
+    padding: 2px 7px;
+    border-radius: 3px;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    text-transform: uppercase;
+    white-space: nowrap;
+  }
+
+  .badge-verified   { background: var(--green-bg);  color: var(--green); }
+  .badge-unverified { background: #f0f2f5;           color: #6b7a96; }
+  .badge-disputed   { background: var(--red-bg);     color: var(--red); }
+
+  .badge-anchored     { background: #e8f0fb; color: #2a5fa8; }
+  .badge-paraphrased  { background: #f0f8f4; color: #2a6648; }
+  .badge-omitted      { background: #f5f5f5; color: #7a7a7a; }
+  .badge-not_attempted{ background: #f5f5f5; color: #9a9a9a; }
+
+  .confidence-indicator {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 12px;
+  }
+
+  .conf-bar {
+    display: inline-block;
+    width: 36px;
+    height: 6px;
+    border-radius: 3px;
+  }
+
+  .conf-bar-high   { background: #4caf7d; }
+  .conf-bar-medium { background: #f5c842; }
+  .conf-bar-low    { background: #e57373; }
+
+  .conf-value {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--text-muted);
+  }
+
+  /* ── Report line ── */
+  .report-line {
+    font-size: 12px;
+    color: var(--text-muted);
+    margin-bottom: 8px;
+  }
+
+  .report-line a {
+    color: var(--accent);
+    text-decoration: none;
+  }
+
+  .report-line a:hover { text-decoration: underline; }
+
+  .line-label {
+    font-family: var(--mono);
+    font-size: 11px;
+  }
+
+  /* ── Sources ── */
+  .sources-section {
+    border-top: 1px solid #edf0f5;
+    padding-top: 10px;
+    margin-top: 4px;
+  }
+
+  .sources-label {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    margin-bottom: 6px;
+  }
+
+  .source-item {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    padding: 4px 0;
+    font-size: 12px;
+    border-bottom: 1px solid #f3f4f6;
+  }
+
+  .source-item:last-child { border-bottom: none; }
+
+  .source-title a {
+    color: var(--text-primary);
+    text-decoration: none;
+  }
+
+  .source-title a:hover { text-decoration: underline; color: var(--accent); }
+
+  .source-title-plain {
+    color: var(--text-primary);
+  }
+
+  .source-type-badge {
+    font-size: 10px;
+    padding: 1px 5px;
+    border-radius: 2px;
+    background: #eef0f5;
+    color: var(--text-muted);
+    font-weight: 500;
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
+
+  .source-date {
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--text-muted);
+    white-space: nowrap;
+    margin-left: auto;
+    flex-shrink: 0;
+  }
+
+  /* ── Empty state ── */
+  .empty-state {
+    text-align: center;
+    padding: 48px 24px;
+    color: var(--text-muted);
+    font-size: 14px;
+  }
+
+  /* ── Responsive ── */
+  @media (max-width: 640px) {
+    .header { padding: 20px 16px 18px; }
+    .main   { padding: 16px 12px 32px; }
+    .metrics-row { flex-direction: column; }
+    .metric-cluster { min-width: unset; }
+  }
+</style>
+</head>
+<body>
+
+<!-- Provenance data injected server-side — read via JSON.parse only -->
+<script type="application/json" id="provenance-data">__PROVENANCE_DATA__</script>
+
+<div class="schema-warning" id="schema-warning">
+  This viewer was built for schema v1.0. Some fields may display incorrectly.
+</div>
+
+<header class="header">
+  <div class="header-top">
+    <span class="header-title">Provenance Report</span>
+    <span class="header-filename" id="hdr-filename"></span>
+  </div>
+  <div class="header-meta" id="hdr-meta"></div>
+  <div class="metrics-row" id="metrics-row"></div>
+</header>
+
+<main class="main">
+  <div id="disputed-section" style="display:none"></div>
+  <div class="controls">
+    <div class="filter-group" id="filter-group"></div>
+    <div class="sort-group">
+      <span class="sort-label">Sort:</span>
+      <select class="sort-select" id="sort-select">
+        <option value="id">Default (by ID)</option>
+        <option value="conf-asc">Confidence ↑</option>
+        <option value="conf-desc">Confidence ↓</option>
+      </select>
+    </div>
+  </div>
+  <div class="results-count" id="results-count"></div>
+  <div id="claims-list"></div>
+</main>
+
+<script>
+(function () {
+  "use strict";
+
+  /* ── Helpers ────────────────────────────────────────────────────── */
+
+  function esc(str) {
+    // Returns a text node's content — never used as innerHTML
+    return String(str == null ? "" : str);
+  }
+
+  function setText(el, value) {
+    el.textContent = esc(value);
+  }
+
+  function safeHref(url) {
+    // Only permit http/https — anything else is rendered as plain text
+    if (typeof url !== "string") return null;
+    try {
+      var u = new URL(url);
+      if (u.protocol === "http:" || u.protocol === "https:") return url;
+    } catch (e) {}
+    return null;
+  }
+
+  function pct(n, total) {
+    if (!total) return "0%";
+    return Math.round((n / total) * 100) + "%";
+  }
+
+  function confBand(c) {
+    if (typeof c !== "number") return "low";
+    if (c > 0.7) return "high";
+    if (c >= 0.4) return "medium";
+    return "low";
+  }
+
+  function confBandLabel(c) {
+    var b = confBand(c);
+    return b.charAt(0).toUpperCase() + b.slice(1);
+  }
+
+  function badge(text, cls) {
+    var el = document.createElement("span");
+    el.className = "badge badge-" + cls;
+    setText(el, text);
+    return el;
+  }
+
+  /* ── Load data ──────────────────────────────────────────────────── */
+
+  var raw = document.getElementById("provenance-data").textContent;
+  var data;
+  try {
+    data = JSON.parse(raw);
+  } catch (e) {
+    document.body.innerHTML = "<p style='padding:32px;color:red'>Failed to parse provenance data: " + e.message + "</p>";
+    return;
+  }
+
+  if (!data || typeof data !== "object") {
+    document.body.innerHTML = "<p style='padding:32px;color:red'>Invalid provenance data.</p>";
+    return;
+  }
+
+  /* ── Schema version check ───────────────────────────────────────── */
+
+  if (data.schema_version && data.schema_version !== "1.0") {
+    var warn = document.getElementById("schema-warning");
+    warn.style.display = "block";
+  }
+
+  /* ── Header ─────────────────────────────────────────────────────── */
+
+  var reportFile = esc(data.report_file || "");
+  setText(document.getElementById("hdr-filename"), reportFile);
+
+  var generated = esc(data.generated || "");
+  setText(document.getElementById("hdr-meta"), "Generated " + generated);
+
+  document.title = "Provenance — " + reportFile;
+
+  /* ── Metrics ─────────────────────────────────────────────────────── */
+
+  var claims = Array.isArray(data.claims) ? data.claims : [];
+  var total = claims.length;
+
+  var verified   = claims.filter(function(c) { return c.verification_status === "verified"; }).length;
+  var disputed   = claims.filter(function(c) { return c.verification_status === "disputed"; }).length;
+  var unverified = claims.filter(function(c) { return c.verification_status === "unverified"; }).length;
+
+  var anchored     = claims.filter(function(c) { return c.synthesis_status === "anchored"; }).length;
+  var paraphrased  = claims.filter(function(c) { return c.synthesis_status === "paraphrased"; }).length;
+  var omitted      = claims.filter(function(c) { return c.synthesis_status === "omitted"; }).length;
+  var notAttempted = claims.filter(function(c) { return c.synthesis_status === "not_attempted"; }).length;
+
+  var totalConf = 0, confCount = 0;
+  claims.forEach(function(c) {
+    if (typeof c.confidence === "number") { totalConf += c.confidence; confCount++; }
+  });
+  var avgConf = confCount ? totalConf / confCount : 0;
+
+  function metricItem(dotCls, labelText, valueN, valueTotal) {
+    var li = document.createElement("div");
+    li.className = "metric-item";
+    var dot = document.createElement("span");
+    dot.className = "metric-dot " + dotCls;
+    li.appendChild(dot);
+    var span = document.createElement("span");
+    setText(span, labelText + " ");
+    var mv = document.createElement("span");
+    mv.className = "metric-value";
+    setText(mv, valueN);
+    span.appendChild(mv);
+    if (valueTotal != null) {
+      var mp = document.createElement("span");
+      mp.className = "metric-pct";
+      setText(mp, " (" + pct(valueN, valueTotal) + ")");
+      span.appendChild(mp);
+    }
+    li.appendChild(span);
+    return li;
+  }
+
+  function metricCluster(labelText, items) {
+    var div = document.createElement("div");
+    div.className = "metric-cluster";
+    var lbl = document.createElement("div");
+    lbl.className = "metric-cluster-label";
+    setText(lbl, labelText);
+    div.appendChild(lbl);
+    var inner = document.createElement("div");
+    inner.className = "metric-items";
+    items.forEach(function(i) { inner.appendChild(i); });
+    div.appendChild(inner);
+    return div;
+  }
+
+  // Confidence band item
+  var bandItem = (function() {
+    var li = document.createElement("div");
+    li.className = "metric-item";
+    var dot = document.createElement("span");
+    dot.className = "metric-dot dot-" + confBand(avgConf);
+    li.appendChild(dot);
+    var s = document.createElement("span");
+    setText(s, "Avg confidence ");
+    var b = document.createElement("span");
+    b.className = "confidence-band band-" + confBand(avgConf);
+    setText(b, confBandLabel(avgConf));
+    s.appendChild(b);
+    li.appendChild(s);
+    return li;
+  })();
+
+  var trustCluster = metricCluster("TRUST", [
+    metricItem("dot-green", "Verified",   verified,   total),
+    metricItem("dot-grey",  "Unverified", unverified, total),
+    metricItem("dot-red",   "Disputed",   disputed,   total),
+    bandItem
+  ]);
+
+  var notInReport = omitted + notAttempted;
+  var traceCluster = metricCluster("TRACEABILITY", [
+    metricItem("dot-blue",  "Anchored",      anchored,    total),
+    metricItem("dot-green", "Paraphrased",   paraphrased, total),
+    metricItem("dot-grey",  "Not in report", notInReport, total)
+  ]);
+
+  var metricsRow = document.getElementById("metrics-row");
+  metricsRow.appendChild(trustCluster);
+  metricsRow.appendChild(traceCluster);
+
+  /* ── Filters + sort state ────────────────────────────────────────── */
+
+  var activeFilter = "all";
+  var activeSort   = "id";
+  var reviewedState = {};  // claim id -> bool; resets on reload
+
+  /* ── Build a single claim card ──────────────────────────────────── */
+
+  function buildCard(claim, isDisputed) {
+    var card = document.createElement("div");
+    card.className = "claim-card" + (isDisputed ? " disputed-card" : "");
+
+    // Header: ID + text + reviewed checkbox
+    var hdr = document.createElement("div");
+    hdr.className = "claim-card-header";
+
+    var idText = document.createElement("div");
+    idText.className = "claim-id-text";
+
+    var idEl = document.createElement("span");
+    idEl.className = "claim-id";
+    setText(idEl, "#" + (claim.id != null ? claim.id : "?"));
+    idText.appendChild(idEl);
+
+    var textEl = document.createElement("span");
+    textEl.className = "claim-text";
+    setText(textEl, claim.claim || "");
+    idText.appendChild(textEl);
+
+    hdr.appendChild(idText);
+
+    var reviewLabel = document.createElement("label");
+    reviewLabel.className = "claim-reviewed";
+    var cb = document.createElement("input");
+    cb.type = "checkbox";
+    cb.checked = !!reviewedState[claim.id];
+    cb.addEventListener("change", function() {
+      reviewedState[claim.id] = cb.checked;
+    });
+    reviewLabel.appendChild(cb);
+    var reviewText = document.createTextNode("Reviewed");
+    reviewLabel.appendChild(reviewText);
+    hdr.appendChild(reviewLabel);
+
+    card.appendChild(hdr);
+
+    // Meta: confidence + verification status + synthesis status
+    var meta = document.createElement("div");
+    meta.className = "claim-meta";
+
+    // Confidence indicator
+    var conf = typeof claim.confidence === "number" ? claim.confidence : null;
+    var band = conf !== null ? confBand(conf) : "low";
+    var ci = document.createElement("div");
+    ci.className = "confidence-indicator";
+    var bar = document.createElement("span");
+    bar.className = "conf-bar conf-bar-" + band;
+    ci.appendChild(bar);
+    var cv = document.createElement("span");
+    cv.className = "conf-value";
+    setText(cv, conf !== null ? conf.toFixed(2) : "—");
+    ci.appendChild(cv);
+    meta.appendChild(ci);
+
+    // Verification status badge
+    var vstatus = esc(claim.verification_status || "unverified");
+    meta.appendChild(badge(vstatus, vstatus));
+
+    // Synthesis status badge
+    var sstatus = esc(claim.synthesis_status || "not_attempted");
+    meta.appendChild(badge(sstatus.replace("_", " "), sstatus));
+
+    card.appendChild(meta);
+
+    // Report line
+    var rl = document.createElement("div");
+    rl.className = "report-line";
+
+    if (claim.report_line != null) {
+      var href = safeHref(reportFile + "#L" + claim.report_line);
+      if (href) {
+        var a = document.createElement("a");
+        a.href = href;
+        a.target = "_blank";
+        a.rel = "noopener noreferrer";
+        var lineSpan = document.createElement("span");
+        lineSpan.className = "line-label";
+        setText(lineSpan, "Line " + claim.report_line);
+        a.appendChild(lineSpan);
+        rl.appendChild(a);
+      } else {
+        var lineSpan2 = document.createElement("span");
+        lineSpan2.className = "line-label";
+        setText(lineSpan2, "Line " + claim.report_line);
+        rl.appendChild(lineSpan2);
+      }
+    } else if (claim.synthesis_status === "omitted") {
+      var notIn = document.createElement("span");
+      notIn.className = "line-label";
+      setText(notIn, "Not in report");
+      rl.appendChild(notIn);
+    } else {
+      var unk = document.createElement("span");
+      unk.className = "line-label";
+      setText(unk, "Line unknown");
+      rl.appendChild(unk);
+    }
+
+    card.appendChild(rl);
+
+    // Sources
+    var srcs = Array.isArray(claim.sources) ? claim.sources : [];
+    if (srcs.length > 0) {
+      var srcSection = document.createElement("div");
+      srcSection.className = "sources-section";
+      var srcLabel = document.createElement("div");
+      srcLabel.className = "sources-label";
+      setText(srcLabel, "Sources");
+      srcSection.appendChild(srcLabel);
+
+      srcs.forEach(function(s) {
+        var row = document.createElement("div");
+        row.className = "source-item";
+
+        var titleDiv = document.createElement("div");
+        titleDiv.className = "source-title";
+        var validUrl = safeHref(s.url);
+        if (validUrl) {
+          var link = document.createElement("a");
+          link.href = validUrl;
+          link.target = "_blank";
+          link.rel = "noopener noreferrer";
+          setText(link, s.title || s.url || "Source");
+          titleDiv.appendChild(link);
+        } else {
+          var plain = document.createElement("span");
+          plain.className = "source-title-plain";
+          setText(plain, s.title || "Source");
+          titleDiv.appendChild(plain);
+        }
+        row.appendChild(titleDiv);
+
+        if (s.source_type) {
+          var tb = document.createElement("span");
+          tb.className = "source-type-badge";
+          setText(tb, s.source_type);
+          row.appendChild(tb);
+        }
+
+        if (s.retrieved) {
+          var dt = document.createElement("span");
+          dt.className = "source-date";
+          setText(dt, s.retrieved);
+          row.appendChild(dt);
+        }
+
+        srcSection.appendChild(row);
+      });
+
+      card.appendChild(srcSection);
+    }
+
+    return card;
+  }
+
+  /* ── Disputed section ───────────────────────────────────────────── */
+
+  var disputedClaims = claims.filter(function(c) { return c.verification_status === "disputed"; });
+
+  if (disputedClaims.length > 0) {
+    var ds = document.getElementById("disputed-section");
+    ds.style.display = "block";
+
+    var dsWrap = document.createElement("div");
+    dsWrap.className = "disputed-section";
+
+    var dsHdr = document.createElement("div");
+    dsHdr.className = "disputed-header";
+    dsHdr.setAttribute("role", "button");
+    dsHdr.setAttribute("tabindex", "0");
+
+    var dsTitle = document.createElement("span");
+    dsTitle.className = "disputed-title";
+    setText(dsTitle, "⚠️ " + disputedClaims.length + " disputed claim" + (disputedClaims.length === 1 ? "" : "s") + " — review before use");
+    dsHdr.appendChild(dsTitle);
+
+    var dsChevron = document.createElement("span");
+    dsChevron.className = "disputed-chevron open";
+    setText(dsChevron, "▼");
+    dsHdr.appendChild(dsChevron);
+
+    dsWrap.appendChild(dsHdr);
+
+    var dsBody = document.createElement("div");
+    dsBody.className = "disputed-body";
+
+    disputedClaims.forEach(function(c) {
+      dsBody.appendChild(buildCard(c, true));
+    });
+
+    dsWrap.appendChild(dsBody);
+
+    dsHdr.addEventListener("click", function() {
+      var open = !dsBody.classList.contains("hidden");
+      dsBody.classList.toggle("hidden", open);
+      dsChevron.classList.toggle("open", !open);
+    });
+    dsHdr.addEventListener("keydown", function(e) {
+      if (e.key === "Enter" || e.key === " ") { e.preventDefault(); dsHdr.click(); }
+    });
+
+    ds.appendChild(dsWrap);
+  }
+
+  /* ── Filter buttons ─────────────────────────────────────────────── */
+
+  var filters = [
+    { key: "all",        label: "All" },
+    { key: "disputed",   label: "Disputed" },
+    { key: "verified",   label: "Verified" },
+    { key: "unverified", label: "Unverified" },
+    { key: "omitted",    label: "Omitted" },
+  ];
+
+  var filterGroup = document.getElementById("filter-group");
+  var filterBtns  = {};
+
+  filters.forEach(function(f) {
+    var btn = document.createElement("button");
+    btn.className = "filter-btn" + (f.key === "all" ? " active" : "");
+    setText(btn, f.label);
+    btn.addEventListener("click", function() {
+      activeFilter = f.key;
+      Object.keys(filterBtns).forEach(function(k) {
+        filterBtns[k].classList.toggle("active", k === f.key);
+      });
+      renderList();
+    });
+    filterBtns[f.key] = btn;
+    filterGroup.appendChild(btn);
+  });
+
+  /* ── Sort ───────────────────────────────────────────────────────── */
+
+  document.getElementById("sort-select").addEventListener("change", function(e) {
+    activeSort = e.target.value;
+    renderList();
+  });
+
+  /* ── Render list ────────────────────────────────────────────────── */
+
+  var listEl = document.getElementById("claims-list");
+  var countEl = document.getElementById("results-count");
+
+  function filterClaims(list) {
+    if (activeFilter === "all")        return list;
+    if (activeFilter === "disputed")   return list.filter(function(c) { return c.verification_status === "disputed"; });
+    if (activeFilter === "verified")   return list.filter(function(c) { return c.verification_status === "verified"; });
+    if (activeFilter === "unverified") return list.filter(function(c) { return c.verification_status === "unverified"; });
+    if (activeFilter === "omitted")    return list.filter(function(c) { return c.synthesis_status === "omitted"; });
+    return list;
+  }
+
+  function sortClaims(list) {
+    var sorted = list.slice();
+    if (activeSort === "conf-asc") {
+      sorted.sort(function(a, b) { return (a.confidence || 0) - (b.confidence || 0); });
+    } else if (activeSort === "conf-desc") {
+      sorted.sort(function(a, b) { return (b.confidence || 0) - (a.confidence || 0); });
+    } else {
+      sorted.sort(function(a, b) { return (a.id || 0) - (b.id || 0); });
+    }
+    return sorted;
+  }
+
+  function renderList() {
+    var filtered = filterClaims(claims);
+    var sorted   = sortClaims(filtered);
+
+    setText(countEl, sorted.length + " of " + total + " claim" + (total === 1 ? "" : "s"));
+
+    // Clear
+    while (listEl.firstChild) { listEl.removeChild(listEl.firstChild); }
+
+    if (sorted.length === 0) {
+      var empty = document.createElement("div");
+      empty.className = "empty-state";
+      setText(empty, "No claims match the current filter.");
+      listEl.appendChild(empty);
+      return;
+    }
+
+    sorted.forEach(function(c) {
+      listEl.appendChild(buildCard(c, false));
+    });
+  }
+
+  renderList();
+
+})();
+</script>
+</body>
+</html>
