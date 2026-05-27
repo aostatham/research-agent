@@ -9,6 +9,7 @@ Public API:
   edit() — run the Editor Agent on a synthesised report
 """
 
+import difflib
 import logging
 
 from agent.base import Agent
@@ -23,10 +24,13 @@ def edit(agent: Agent, report: str, max_tokens: int = 8192) -> str:
     that do not match their content.  It must return the full report text
     (edited or unedited) with no preamble.
 
-    A response is only accepted if it passes two checks:
-      1. Length >= 50% of the original report (proportional floor).
-      2. Does not start with a refusal phrase in the first 60 characters.
-    Either failure returns the original report unchanged.
+    A response is only accepted if both conditions are true:
+      1. len(edited) >= 0.5 * len(original)  — proportional length floor.
+      2. SequenceMatcher ratio >= 0.5  — edited text is substantially
+         similar to the original (catches refusals, preamble-only replies,
+         and complete rewrites that ignore the source report).
+
+    Either failure logs a WARNING and returns the original report unchanged.
 
     Args:
         agent:      Editor Agent (no tools, coherence scope only — D011).
@@ -36,7 +40,7 @@ def edit(agent: Agent, report: str, max_tokens: int = 8192) -> str:
 
     Returns:
         Edited report string, or the original report if the response is
-        invalid or too short to be the real report.
+        rejected by either acceptance check.
     """
     response = agent.chat(
         messages=[{"role": "user", "content": report}],
@@ -47,11 +51,16 @@ def edit(agent: Agent, report: str, max_tokens: int = 8192) -> str:
     edited = response.content.strip()
     if len(edited) < 0.5 * len(report):
         logging.warning(
-            f"Editor response rejected: {len(edited)} chars < 50% of original {len(report)} chars"
+            "Editor response rejected: %d chars < 50%% of original %d chars",
+            len(edited), len(report),
         )
         return report
-    refusal_phrases = ("sorry", "i cannot", "i can't", "i'm unable", "as an ai")
-    if any(phrase in edited[:60].lower() for phrase in refusal_phrases):
-        logging.warning("Editor response rejected: starts with refusal phrase")
+    ratio = difflib.SequenceMatcher(None, report, edited).ratio()
+    if ratio < 0.5:
+        logging.warning(
+            "Editor response rejected: similarity ratio %.2f < 0.5 "
+            "(original %d chars, edited %d chars)",
+            ratio, len(report), len(edited),
+        )
         return report
     return edited

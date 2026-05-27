@@ -4,11 +4,16 @@ Tests for agent/editor.py — edit() function.
 Verifies:
   - Returns a string
   - Returns the edited report when the agent provides a valid response
-  - Returns the original report when the response is too short (< 100 chars)
+  - Returns the original report when the response is too short (< 50% of original)
   - Returns the original report when the response is not a text response
   - Calls agent.chat with the report as the user message content
   - Passes max_tokens through to the agent chat call
   - Uses the agent's system prompt (via agent.chat)
+  - Acceptance requires both length >= 50% AND similarity ratio >= 0.5 (M3+M5)
+  - Preamble-only responses are rejected by the length check
+  - Refusal messages are rejected by both checks
+  - Valid minor edits pass both checks
+  - Original is returned unchanged when either check fails
 
 All tests mock the agent's LLM.
 """
@@ -164,14 +169,18 @@ def test_edit_rejects_response_shorter_than_half_original():
 
 
 def test_edit_accepts_response_at_least_half_original():
-    """Response >= 50% of original length is accepted (90 chars for 150-char original)."""
-    original = "A" * 150
-    response = "B" * 90  # 90 >= 75 = 50% of 150
+    """Response >= 50% of original AND similar content is accepted."""
+    # Minor edit: one sentence changed — passes both length and similarity checks
+    original = SAMPLE_REPORT
+    edited = SAMPLE_REPORT.replace(
+        "Nuclear fusion is a process where light atomic nuclei combine to release energy.",
+        "Nuclear fusion combines light atomic nuclei to release enormous energy.",
+    )
     mock_llm = MagicMock()
-    mock_llm.chat.return_value = make_text_response(response)
+    mock_llm.chat.return_value = make_text_response(edited)
     agent = make_editor_agent(mock_llm)
     result = edit(agent, original)
-    assert result == "B" * 90
+    assert result == edited
 
 
 def test_edit_rejects_276_char_response_against_5000_char_report():
@@ -185,17 +194,58 @@ def test_edit_rejects_276_char_response_against_5000_char_report():
     assert result == original
 
 
-def test_edit_rejects_refusal_phrase_in_first_60_chars():
-    """Response starting with a refusal phrase is rejected even if proportionally long enough."""
-    original = "X" * 100
-    # 62 chars starting with "sorry" — passes proportional check (62 >= 50) but is a refusal
-    refusal = "Sorry, I cannot edit this report as it falls outside my scope."
-    assert len(refusal) >= 50
+def test_edit_rejects_preamble_only_response_by_length():
+    """A preamble-only response (no report body) is rejected by the length check."""
+    original = "A" * 3000
+    preamble = "Here is the edited report, no changes needed."  # ~46 chars < 1500 = 50% of 3000
+    assert len(preamble) < 0.5 * len(original)
+    mock_llm = MagicMock()
+    mock_llm.chat.return_value = make_text_response(preamble)
+    agent = make_editor_agent(mock_llm)
+    result = edit(agent, original)
+    assert result == original
+
+
+def test_edit_rejects_refusal_message_by_length_and_similarity():
+    """A 200-char refusal against a 3000-char original fails both checks."""
+    original = "A" * 3000
+    refusal = "Sorry, I cannot edit this report as it falls outside my scope. " * 3  # ~192 chars
+    assert len(refusal) < 0.5 * len(original)  # length check fails
     mock_llm = MagicMock()
     mock_llm.chat.return_value = make_text_response(refusal)
     agent = make_editor_agent(mock_llm)
     result = edit(agent, original)
     assert result == original
+
+
+def test_edit_accepts_valid_minor_edit():
+    """A valid minor edit (one sentence changed) passes both length and similarity checks."""
+    original = SAMPLE_REPORT
+    edited = original.replace(
+        "The primary challenges include plasma confinement and materials science.",
+        "The primary challenges include plasma confinement, materials science, and tritium supply.",
+    )
+    mock_llm = MagicMock()
+    mock_llm.chat.return_value = make_text_response(edited)
+    agent = make_editor_agent(mock_llm)
+    result = edit(agent, original)
+    assert result == edited
+
+
+def test_edit_accepts_valid_short_original():
+    """A 150-char edited report from a 200-char original passes both checks."""
+    original = (
+        "Nuclear fusion is a process where light atomic nuclei combine to release energy. "
+        "This reaction powers the Sun and has been studied since the 1950s for energy."
+    )
+    # Trim 20 chars — still >= 50% length and high similarity
+    edited = original[:-20]
+    assert len(edited) >= 0.5 * len(original)
+    mock_llm = MagicMock()
+    mock_llm.chat.return_value = make_text_response(edited)
+    agent = make_editor_agent(mock_llm)
+    result = edit(agent, original)
+    assert result == edited
 
 
 def test_edit_uses_agent_system_prompt():
