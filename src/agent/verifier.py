@@ -172,6 +172,7 @@ def verify(
 
     messages = [{"role": "user", "content": user_msg}]
     iteration = 0
+    seen_queries: set[str] = set()
 
     while iteration < agent.max_iterations:
         iteration += 1
@@ -185,6 +186,19 @@ def verify(
                 messages.append({
                     "role": "assistant",
                     "content": "Tool call had malformed input.",
+                })
+                messages.append({
+                    "role": "user",
+                    "content": "Return your verification results as a JSON array.",
+                })
+                continue
+
+            # M7: skip repeated queries — prevents oscillation over the same claim.
+            if query in seen_queries:
+                logging.warning("Verifier repeated query: '%s' — skipping", query)
+                messages.append({
+                    "role": "assistant",
+                    "content": f"I already searched for: {query}",
                 })
                 messages.append({
                     "role": "user",
@@ -206,6 +220,7 @@ def verify(
                 logging.warning("Verifier: tool execution failed: %s", e)
                 tool_result = "Search failed."
 
+            seen_queries.add(query)
             messages.append({
                 "role": "assistant",
                 "content": f"I will search for: {query}",

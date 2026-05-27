@@ -112,6 +112,7 @@ def build_agents(
         llm=synth_llm,
         prompt_dir=prompt_dir,
         tools=("web_search",),
+        max_iterations=4,  # 1 search per claim (max 3) + 1 final text response
     )
     editor = build_agent(
         name="editor",

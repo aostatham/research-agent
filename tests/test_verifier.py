@@ -296,6 +296,43 @@ def test_verify_attaches_verifier_sources_to_rr():
     assert any(s["url"] == "https://iter.org" for s in result.sources)
 
 
+# ── M7: Verifier seen_queries guard ──────────────────────────────────────────
+
+def test_verify_skips_repeated_query(caplog):
+    """A repeated search query is skipped — only one search executes per unique query."""
+    import logging
+    mock_llm = MagicMock()
+    mock_llm.chat.side_effect = [
+        make_tool_response("web_search", {"query": "ITER output"}),
+        make_tool_response("web_search", {"query": "ITER output"}),  # repeated
+        make_text_response('[{"status": "verified"}]'),
+    ]
+    agent = make_verifier_agent(mock_llm, max_iterations=5)
+    rr = make_rr(answer="ITER produces 500 MW.")
+    with patch("agent.verifier.execute_tool_with_sources", return_value=("results", [])) as mock_tool:
+        with caplog.at_level(logging.WARNING, logger="root"):
+            result = verify(agent, rr)
+    # Only one actual tool execution for the unique query
+    assert mock_tool.call_count == 1
+
+
+def test_verify_repeated_query_logs_warning(caplog):
+    """A WARNING is logged when a repeated query is detected."""
+    import logging
+    mock_llm = MagicMock()
+    mock_llm.chat.side_effect = [
+        make_tool_response("web_search", {"query": "fusion energy"}),
+        make_tool_response("web_search", {"query": "fusion energy"}),  # repeated
+        make_text_response('[{"status": "verified"}]'),
+    ]
+    agent = make_verifier_agent(mock_llm, max_iterations=5)
+    rr = make_rr(answer="Fusion produces 500 MW.")
+    with patch("agent.verifier.execute_tool_with_sources", return_value=("results", [])):
+        with caplog.at_level(logging.WARNING, logger="root"):
+            verify(agent, rr)
+    assert any("repeated query" in r.message.lower() for r in caplog.records)
+
+
 # ── M2: URL deduplication of verifier sources ─────────────────────────────────
 
 def test_verify_deduplicates_sources_by_url():
