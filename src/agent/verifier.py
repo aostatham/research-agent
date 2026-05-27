@@ -166,7 +166,7 @@ def verify(
         max_tokens: Token budget per LLM call.
 
     Returns:
-        The same ResearchResult with verified field updated.
+        The same ResearchResult with verification field updated.
     """
     suspicious = _extract_suspicious_claims(rr.answer, rr.question)
     if not suspicious:

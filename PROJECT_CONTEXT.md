@@ -314,7 +314,7 @@ python main.py "topic" [options]
 
 ```bash
 # Unit tests (always free, no API calls)
-pytest tests/ -m "not integration" -v     # 307 passing
+pytest tests/ -m "not integration" -v     # See CLAUDE.md for current test count
 
 # Free integration tests (Ollama + Tavily)
 pytest tests/test_integration_smoke.py -m "ollama" -v

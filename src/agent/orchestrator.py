@@ -178,7 +178,7 @@ class Orchestrator:
             semaphore: Shared semaphore limiting concurrent workers.
 
         Returns:
-            ResearchResult with verified field set by the Verifier Agent.
+            ResearchResult with verification field set by the Verifier Agent.
         """
         from agent.verifier import verify
         synth_provider = self.config.synthesis_provider or self.config.provider

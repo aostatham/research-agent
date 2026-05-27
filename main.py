@@ -168,6 +168,18 @@ def main():
             )
             sys.exit(1)
 
+    if args.format == "pdf":
+        try:
+            import weasyprint  # noqa: F401
+        except ImportError:
+            print(
+                "Error: weasyprint is required for PDF output. "
+                "Install with: pip install weasyprint "
+                "(macOS also requires: brew install pango)",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+
     # Configure search provider once at startup
     # All web searches route through execute_tool_with_sources() in tools.py
     configure_search(

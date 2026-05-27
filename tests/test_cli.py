@@ -691,7 +691,8 @@ def test_main_pdf_format_saves_pdf_file(tmp_path, monkeypatch):
          patch("llm.builder.AnthropicClient", return_value=mock_llm), \
          patch("main.Orchestrator", return_value=mock_orchestrator), \
          patch("main.Synthesiser", return_value=mock_synthesiser), \
-         patch("output.writer.convert_to_pdf") as mock_pdf:
+         patch("output.writer.convert_to_pdf") as mock_pdf, \
+         patch.dict("sys.modules", {"weasyprint": MagicMock()}):
         from main import main
         main()
 
@@ -1021,6 +1022,27 @@ def test_main_exits_when_bleach_missing_and_pdf_format(tmp_path, monkeypatch, ca
             main()
     assert exc.value.code == 1
     assert "bleach" in capsys.readouterr().err
+
+
+def test_main_exits_when_weasyprint_missing_and_pdf_format(tmp_path, monkeypatch, capsys):
+    """main() exits with code 1 and prints brew hint when weasyprint absent and format=pdf."""
+    monkeypatch.chdir(tmp_path)
+    with patch("sys.argv", ["main.py", "nuclear fusion", "--format", "pdf"]), \
+         patch("main.load_config", return_value=MagicMock(
+             provider="anthropic", orchestration_provider=None,
+             synthesis_provider=None, model=None,
+             orchestration_model=None, synthesis_model=None,
+             search_provider="anthropic", tavily_api_key=None,
+             tavily_max_results=5, anthropic_search_model="claude-haiku-4-5-20251001",
+         )), \
+         patch.dict("sys.modules", {"weasyprint": None}):
+        with pytest.raises(SystemExit) as exc:
+            from main import main
+            main()
+    assert exc.value.code == 1
+    err = capsys.readouterr().err
+    assert "weasyprint" in err
+    assert "brew install pango" in err
 
 
 # ── Ollama max_workers warning tests ─────────────────────────────────────────

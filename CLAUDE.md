@@ -212,14 +212,14 @@ Phase D — Parallel Research Architecture: COMPLETE
 
   Part 1  COMPLETE — asyncio workers, --max-workers, worker failure handling
   Part 2  COMPLETE — multi-agent architecture
-          515 unit tests passing
+          unit tests passing — see test baseline at top of this file
           Pass 1 QA fixes: system prompt injection, gather exception handling,
             verifier outcome propagation, editor response validation,
             cross-run state reset
           Pass 2 QA fixes: Planner removed, inline fallback deleted,
             XSS sanitisation, configurable search model, atomic index write,
             verifier robustness
-          Pass 3 QA fixes IN PROGRESS — see next section
+          Phase D Part 2 COMPLETE — see ISSUES.md for open items
 
 ## Open issues and known gaps
 

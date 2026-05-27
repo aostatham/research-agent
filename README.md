@@ -253,6 +253,11 @@ Source types: `government`, `academic`, `news`, `reference`, `institutional`,
 > Web searches always use the configured search provider regardless of LLM provider.
 > Ollama runs still require a search API.
 
+> Note: Anthropic searches are retried on transient failures
+> (up to 3 attempts per query). The displayed search count reflects
+> billable API attempts, so an Anthropic run may show a higher count
+> than an equivalent Tavily run for the same number of queries.
+
 ---
 
 ## Ollama Setup (Local Inference)
