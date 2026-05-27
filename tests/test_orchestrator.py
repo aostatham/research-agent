@@ -734,6 +734,29 @@ def test_run_search_count_comes_from_module_counter(orchestrator, mock_llm):
     assert orchestrator.search_count == 7
 
 
+def test_run_search_count_reset_at_start_prevents_cross_run_leakage(orchestrator, mock_llm):
+    """A failed first run does not leak its search count into the next successful run."""
+    from agent.tools import _search_call_count as _orig  # noqa: F401
+    import agent.tools as tools_mod
+
+    # Manually set a residual count as if a previous failed run left it dirty
+    tools_mod._search_call_count = 5
+
+    mock_llm.chat.side_effect = [
+        make_text_response('["Q1?", "Q2?"]'),
+        make_text_response('{"sufficient": true, "missing": []}'),
+    ]
+    async def fake_rqa(q, sem):
+        return make_rr(question=q, answer="ans")
+
+    with patch.object(orchestrator, 'research_question_async', side_effect=fake_rqa):
+        orchestrator.run("topic")
+
+    # The counter was reset at run start, so the final search_count reflects
+    # only the current run (0 actual searches via mocked rqa), not the residue.
+    assert orchestrator.search_count == 0
+
+
 # ── Integration tests ─────────────────────────────────────────────────────────
 
 @pytest.mark.integration

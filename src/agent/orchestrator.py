@@ -332,6 +332,10 @@ class Orchestrator:
         # Reset here in addition to __init__ — a reused Orchestrator instance must not
         # leak results across runs.
         self._last_research_results = []
+        # Reset search counter at the start of every run — a failed run that raises
+        # before reaching the final get_and_reset_search_count() call would otherwise
+        # leak its count into the next run.
+        get_and_reset_search_count()
         questions = self.decompose(topic)
 
         synth_provider = self.config.synthesis_provider or self.config.provider
