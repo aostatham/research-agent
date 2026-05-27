@@ -152,6 +152,19 @@ def main():
 
     config = load_config(config_path=args.config, overrides=overrides)
 
+    # Fail fast if bleach is not installed when HTML or PDF output is requested.
+    # Without bleach the rendered HTML is unsanitised; better to error early.
+    if args.format in ("html", "pdf"):
+        try:
+            import bleach  # noqa: F401
+        except ImportError:
+            print(
+                "Error: bleach is required for HTML and PDF output. "
+                "Install it with: pip install bleach",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+
     # Configure search provider once at startup
     # All web searches route through execute_tool_with_sources() in tools.py
     configure_search(

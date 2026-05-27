@@ -983,6 +983,46 @@ def test_orchestration_model_sets_only_anthropic_field_when_anthropic_provider(
     assert config.ollama_orchestration_model == "llama3.1"
 
 
+# ── bleach import guard tests ────────────────────────────────────────────────
+
+def test_main_exits_when_bleach_missing_and_html_format(tmp_path, monkeypatch, capsys):
+    """main() exits with code 1 and prints an error when bleach is absent and format=html."""
+    monkeypatch.chdir(tmp_path)
+    with patch("sys.argv", ["main.py", "nuclear fusion", "--format", "html"]), \
+         patch("main.load_config", return_value=MagicMock(
+             provider="anthropic", orchestration_provider=None,
+             synthesis_provider=None, model=None,
+             orchestration_model=None, synthesis_model=None,
+             search_provider="anthropic", tavily_api_key=None,
+             tavily_max_results=5, anthropic_search_model="claude-haiku-4-5-20251001",
+         )), \
+         patch.dict("sys.modules", {"bleach": None}):
+        with pytest.raises(SystemExit) as exc:
+            from main import main
+            main()
+    assert exc.value.code == 1
+    assert "bleach" in capsys.readouterr().err
+
+
+def test_main_exits_when_bleach_missing_and_pdf_format(tmp_path, monkeypatch, capsys):
+    """main() exits with code 1 and prints an error when bleach is absent and format=pdf."""
+    monkeypatch.chdir(tmp_path)
+    with patch("sys.argv", ["main.py", "nuclear fusion", "--format", "pdf"]), \
+         patch("main.load_config", return_value=MagicMock(
+             provider="anthropic", orchestration_provider=None,
+             synthesis_provider=None, model=None,
+             orchestration_model=None, synthesis_model=None,
+             search_provider="anthropic", tavily_api_key=None,
+             tavily_max_results=5, anthropic_search_model="claude-haiku-4-5-20251001",
+         )), \
+         patch.dict("sys.modules", {"bleach": None}):
+        with pytest.raises(SystemExit) as exc:
+            from main import main
+            main()
+    assert exc.value.code == 1
+    assert "bleach" in capsys.readouterr().err
+
+
 # ── Ollama max_workers warning tests ─────────────────────────────────────────
 
 def test_main_warns_when_ollama_exceeds_safe_workers(tmp_path, monkeypatch, capsys):
