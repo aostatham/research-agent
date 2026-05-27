@@ -424,6 +424,7 @@ Current test count: **448 unit tests passing**.
 ## Notes
 
 - Reports saved to `output/` — add to `.gitignore` if topics are sensitive
+- Running the agent creates `output/index.md.lock` — an operational artifact used for concurrency-safe index writes. It is gitignored and can be safely ignored.
 - Haiku handles orchestration (fast, cheap); Sonnet handles synthesis (quality)
 - Verifier runs in parallel with subsequent research questions — no serial latency penalty
 - Ollama tool calling: `llama3.1` more reliable than `llama3.2`
