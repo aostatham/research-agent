@@ -6,6 +6,7 @@ __pycache__/
 .env
 /output/
 output/index.md.lock
+prompts/planner.md
 .pytest_cache/
 *.egg-info/
 dist/
