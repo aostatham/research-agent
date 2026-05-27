@@ -18,6 +18,7 @@ try:
     import markdown
     MARKDOWN_AVAILABLE = True
 except ImportError:
+    markdown = None  # type: ignore[assignment]
     MARKDOWN_AVAILABLE = False
 
 try:

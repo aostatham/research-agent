@@ -9,10 +9,20 @@ Verifies:
     html.escape()'s report content.
 """
 
+import re
 import pytest
 from unittest.mock import MagicMock, patch
 from datetime import datetime
 from output.formatter import build_metadata, convert_to_html
+
+
+def _make_mock_markdown():
+    """Minimal markdown mock: converts **text** → <strong>text</strong>."""
+    mock = MagicMock()
+    mock.markdown.side_effect = lambda text, extensions=None: re.sub(
+        r'\*\*(.*?)\*\*', r'<strong>\1</strong>', text
+    )
+    return mock
 
 
 # ── build_metadata() tests ────────────────────────────────────────────────────
@@ -99,7 +109,9 @@ def test_html_strips_disallowed_tag_in_report():
 
 def test_html_safe_tags_pass_through():
     """bleach allows safe markdown-generated tags such as <p> and <strong>."""
-    result = convert_to_html("Topic", "", "**bold text**")
+    with patch("output.formatter.markdown", _make_mock_markdown()), \
+         patch("output.formatter.MARKDOWN_AVAILABLE", True):
+        result = convert_to_html("Topic", "", "**bold text**")
     assert "<strong>bold text</strong>" in result
 
 
@@ -136,7 +148,8 @@ def test_html_missing_bleach_logs_warning(caplog):
     """When bleach is unavailable, a WARNING is logged and markdown is still rendered."""
     import logging
     with patch("output.formatter.BLEACH_AVAILABLE", False), \
-         patch("output.formatter.MARKDOWN_AVAILABLE", True):
+         patch("output.formatter.MARKDOWN_AVAILABLE", True), \
+         patch("output.formatter.markdown", _make_mock_markdown()):
         with caplog.at_level(logging.WARNING, logger="output.formatter"):
             result = convert_to_html("Topic", "", "**bold**")
     assert any("bleach" in record.message.lower() for record in caplog.records)
@@ -145,7 +158,8 @@ def test_html_missing_bleach_logs_warning(caplog):
 def test_html_missing_bleach_still_renders_markdown():
     """When bleach is unavailable, markdown rendering still produces HTML."""
     with patch("output.formatter.BLEACH_AVAILABLE", False), \
-         patch("output.formatter.MARKDOWN_AVAILABLE", True):
+         patch("output.formatter.MARKDOWN_AVAILABLE", True), \
+         patch("output.formatter.markdown", _make_mock_markdown()):
         result = convert_to_html("Topic", "", "**bold text**")
     assert "<strong>bold text</strong>" in result
 

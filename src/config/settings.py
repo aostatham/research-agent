@@ -84,6 +84,7 @@ class Config:
     min_questions: int = 4    # minimum sub-questions generated per topic
     max_questions: int = 5    # hard cap; LLM output sliced to this length
     max_iterations: int = 5   # agentic loop cap per question
+    verifier_max_iterations: int = 4  # 1 search per claim (max 3) + 1 final response
     max_workers: int = 2      # parallel research workers; 2 is safe for Ollama, 4+ for Anthropic
 
     # ── Token limits ──────────────────────────────────────────────────────────

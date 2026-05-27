@@ -41,6 +41,22 @@ def test_default_max_iterations():
     assert config.max_iterations == 5
 
 
+def test_default_verifier_max_iterations():
+    """verifier_max_iterations defaults to 4 (3 claim searches + 1 response)."""
+    config = Config()
+    assert config.verifier_max_iterations == 4
+
+
+def test_verifier_max_iterations_loads_from_config_dict(tmp_path, monkeypatch):
+    """verifier_max_iterations loads from config.yaml when present."""
+    monkeypatch.chdir(tmp_path)
+    config_data = {"verifier_max_iterations": 6}
+    with open(tmp_path / "config.yaml", "w") as f:
+        yaml.dump(config_data, f)
+    config = load_config("config.yaml")
+    assert config.verifier_max_iterations == 6
+
+
 def test_default_max_tokens_research():
     config = Config()
     assert config.max_tokens_research == 2048

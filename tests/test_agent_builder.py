@@ -161,10 +161,12 @@ def test_build_agents_researcher_max_iterations_from_config(tmp_path):
     assert pool.researcher.max_iterations == 7
 
 
-def test_build_agents_verifier_max_iterations_is_4(tmp_path):
-    """Verifier is built with max_iterations=4 (covers 3 claims + 1 final response)."""
-    pool = build_agents(make_config(), make_mock_llm(), make_mock_llm(), prompt_dir=_make_prompt_dir(tmp_path))
-    assert pool.verifier.max_iterations == 4
+def test_build_agents_verifier_max_iterations_from_config(tmp_path):
+    """Verifier max_iterations comes from config.verifier_max_iterations."""
+    cfg = make_config()
+    cfg.verifier_max_iterations = 6
+    pool = build_agents(cfg, make_mock_llm(), make_mock_llm(), prompt_dir=_make_prompt_dir(tmp_path))
+    assert pool.verifier.max_iterations == 6
 
 
 def test_build_agents_editor_inherits_synth_llm_when_no_editor_provider(tmp_path):
