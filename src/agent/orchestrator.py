@@ -180,8 +180,8 @@ class Orchestrator:
             ResearchResult with verified field set by the Verifier Agent.
         """
         from agent.verifier import verify
-        orch_provider = self.config.orchestration_provider or self.config.provider
-        if orch_provider == "ollama":
+        synth_provider = self.config.synthesis_provider or self.config.provider
+        if synth_provider == "ollama":
             async with semaphore:
                 rr = await asyncio.to_thread(self._research_question_sync, question)
                 rr = await asyncio.to_thread(
@@ -334,8 +334,8 @@ class Orchestrator:
         self._last_research_results = []
         questions = self.decompose(topic)
 
-        orch_provider = self.config.orchestration_provider or self.config.provider
-        if orch_provider == "ollama":
+        synth_provider = self.config.synthesis_provider or self.config.provider
+        if synth_provider == "ollama":
             print(
                 "Warning: Ollama provider detected — Verifier will run inside the "
                 "research semaphore to prevent timeouts. This adds latency per question."

@@ -532,18 +532,19 @@ introduce a race between deletion and the next lock acquisition.
 Ignoring it in git is cleaner than documenting it in README.
 **Date:** Phase D Part 2 QA Pass 4
 
-### D023 — Verifier runs inside semaphore when provider is Ollama
-**Decision:** When orch_provider is "ollama", the Verifier runs inside
+### D023 — Verifier runs inside semaphore when synth_provider is Ollama
+**Decision:** When synth_provider is "ollama", the Verifier runs inside
 the research semaphore after each Researcher completes, before the
-semaphore is released. When orch_provider is "anthropic", the Verifier
+semaphore is released. When synth_provider is "anthropic", the Verifier
 runs outside the semaphore concurrently with subsequent research
 questions (original D010 behaviour).
-**Rationale:** Ollama serialises LLM requests internally. Running
-Verifier calls outside the semaphore pushes Ollama past its 60s read
-timeout and crashes research workers. Serialising the Verifier with
-the semaphore prevents queue buildup at the cost of small additional
-latency per question. Anthropic can handle true parallelism so the
-original concurrent pattern is preserved for that provider.
+**Rationale:** The Verifier uses synth_llm; serialise when synth_provider
+is ollama. Ollama serialises LLM requests internally. Running Verifier
+calls outside the semaphore pushes Ollama past its 60s read timeout and
+crashes research workers. Serialising the Verifier with the semaphore
+prevents queue buildup at the cost of small additional latency per
+question. Anthropic can handle true parallelism so the original concurrent
+pattern is preserved for that provider.
 **Date:** Phase D Part 2 QA Pass 4 live run fix
 
 ---

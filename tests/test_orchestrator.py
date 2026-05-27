@@ -168,9 +168,9 @@ def test_research_question_sync_returns_research_result(orchestrator):
 
 
 # ── Verifier semaphore placement (D023) ──────────────────────────────────────
-# When orch_provider is "ollama", the Verifier must run *inside* the semaphore
-# (before it releases) to prevent Ollama queue buildup.
-# When orch_provider is "anthropic", the Verifier runs *outside* (D010 behaviour).
+# Gate is on synth_provider (Verifier uses synth_llm).
+# When synth_provider is "ollama", the Verifier runs *inside* the semaphore.
+# When synth_provider is "anthropic", the Verifier runs *outside* (D010 behaviour).
 
 def test_verifier_runs_inside_semaphore_for_ollama():
     """Ollama path: verify is awaited while the semaphore is still held."""
@@ -228,7 +228,7 @@ def test_ollama_warning_printed_once_per_run(orchestrator, mock_llm, capsys):
 
 
 def test_anthropic_no_ollama_warning(orchestrator, mock_llm, capsys):
-    """No Ollama semaphore warning is printed when orch_provider is anthropic."""
+    """No Ollama semaphore warning is printed when synth_provider is anthropic."""
     orchestrator.config.provider = "anthropic"
     mock_llm.chat.side_effect = [
         make_text_response('["Q1?", "Q2?", "Q3?", "Q4?"]'),
@@ -240,6 +240,90 @@ def test_anthropic_no_ollama_warning(orchestrator, mock_llm, capsys):
         orchestrator.run("topic")
     out = capsys.readouterr().out
     assert "Verifier will run inside the research semaphore" not in out
+
+
+# ── Mixed-provider semaphore placement (D023) ─────────────────────────────────
+# The gate checks synth_provider, not orch_provider. These tests verify that
+# the mixed-provider configurations route correctly.
+
+def test_verifier_outside_semaphore_mixed_orch_ollama_synth_anthropic():
+    """Mixed (orch=ollama, synth=anthropic): Verifier runs outside semaphore."""
+    cfg = Config(orchestration_provider="ollama", synthesis_provider="anthropic")
+    orch = Orchestrator(llm=MagicMock(), agent_pool=MagicMock(), config=cfg)
+    sem = asyncio.Semaphore(1)
+    sem_locked_during_verify = []
+
+    rr = make_rr(question="Q?", answer="ans")
+
+    def fake_verify(agent, result, max_tokens):
+        sem_locked_during_verify.append(sem.locked())
+        return result
+
+    with patch.object(orch, '_research_question_sync', return_value=rr):
+        with patch("agent.verifier.verify", side_effect=fake_verify):
+            asyncio.run(orch.research_question_async("Q?", sem))
+
+    assert sem_locked_during_verify == [False]
+
+
+def test_verifier_inside_semaphore_mixed_orch_anthropic_synth_ollama():
+    """Mixed (orch=anthropic, synth=ollama): Verifier runs inside semaphore."""
+    cfg = Config(orchestration_provider="anthropic", synthesis_provider="ollama")
+    orch = Orchestrator(llm=MagicMock(), agent_pool=MagicMock(), config=cfg)
+    sem = asyncio.Semaphore(1)
+    sem_locked_during_verify = []
+
+    rr = make_rr(question="Q?", answer="ans")
+
+    def fake_verify(agent, result, max_tokens):
+        sem_locked_during_verify.append(sem.locked())
+        return result
+
+    with patch.object(orch, '_research_question_sync', return_value=rr):
+        with patch("agent.verifier.verify", side_effect=fake_verify):
+            asyncio.run(orch.research_question_async("Q?", sem))
+
+    assert sem_locked_during_verify == [True]
+
+
+def test_verifier_inside_semaphore_pure_ollama():
+    """Pure ollama (orch=ollama, synth=ollama): Verifier runs inside semaphore."""
+    cfg = Config(orchestration_provider="ollama", synthesis_provider="ollama")
+    orch = Orchestrator(llm=MagicMock(), agent_pool=MagicMock(), config=cfg)
+    sem = asyncio.Semaphore(1)
+    sem_locked_during_verify = []
+
+    rr = make_rr(question="Q?", answer="ans")
+
+    def fake_verify(agent, result, max_tokens):
+        sem_locked_during_verify.append(sem.locked())
+        return result
+
+    with patch.object(orch, '_research_question_sync', return_value=rr):
+        with patch("agent.verifier.verify", side_effect=fake_verify):
+            asyncio.run(orch.research_question_async("Q?", sem))
+
+    assert sem_locked_during_verify == [True]
+
+
+def test_verifier_outside_semaphore_pure_anthropic():
+    """Pure anthropic (orch=anthropic, synth=anthropic): Verifier runs outside semaphore."""
+    cfg = Config(orchestration_provider="anthropic", synthesis_provider="anthropic")
+    orch = Orchestrator(llm=MagicMock(), agent_pool=MagicMock(), config=cfg)
+    sem = asyncio.Semaphore(1)
+    sem_locked_during_verify = []
+
+    rr = make_rr(question="Q?", answer="ans")
+
+    def fake_verify(agent, result, max_tokens):
+        sem_locked_during_verify.append(sem.locked())
+        return result
+
+    with patch.object(orch, '_research_question_sync', return_value=rr):
+        with patch("agent.verifier.verify", side_effect=fake_verify):
+            asyncio.run(orch.research_question_async("Q?", sem))
+
+    assert sem_locked_during_verify == [False]
 
 
 # ── research_question_async() tests ──────────────────────────────────────────
