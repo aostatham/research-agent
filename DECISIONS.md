@@ -629,6 +629,42 @@ discriminator and a promotion trigger are stable.
 prompts/tasks/decomposer.md.
 **Date:** Phase E pre-flight review
 
+### D032 — Viewer fully inline, no CDN
+**Decision:** The provenance viewer template contains no CDN-loaded
+dependencies. All CSS and JS are inline. JSON is injected via
+`<script type="application/json">` and parsed with `JSON.parse()` —
+never `eval()` or innerHTML string interpolation.
+**Rationale:** The viewer displays web-fetched data processed through
+an LLM. A compromised CDN could run arbitrary code against this
+data. Fully inline guarantees security and offline operation.
+This is a permanent constraint — no future contributor should add
+CDN dependencies to the viewer.
+**Date:** HTML provenance viewer phase
+
+### D033 — schema_version field on ProvenanceReport
+**Decision:** ProvenanceReport includes `schema_version: str` set to
+`"1.0"` at write time. The viewer reads this field and warns on
+mismatch. Unknown fields are ignored gracefully.
+**Rationale:** Phase E will add cross-report contradiction flags,
+knowledge graph references, and corroboration depth to the provenance
+schema. Without versioning, every Phase E schema change requires a
+viewer audit. With versioning, additions are additive and the viewer
+degrades gracefully until updated.
+**Date:** HTML provenance viewer phase
+
+### D034 — Viewer is infrastructure-class not throwaway
+**Decision:** The provenance viewer template is versioned in git,
+reviewed in commits, and treated as infrastructure. It needs tests
+(integration via save_viewer()), an iteration story (template updated
+atomically with schema changes), and ownership clarity (Lead Architect
+owns it; comprehensive web UI post-Phase E will supersede or extend
+it, not discard it).
+**Rationale:** The viewer is the primary user-facing surface of the
+project's differentiator. It is the first thing an evaluator sees.
+Treating it as throwaway would repeat the pattern of shipping
+infrastructure without a maintenance story.
+**Date:** HTML provenance viewer phase
+
 ---
 
 ## Testing
@@ -763,3 +799,19 @@ the differentiating features even though C is easier to demonstrate.
 **Supersedes:** M005 open to-do ("one concrete user story to be
 identified") — that to-do is now resolved.
 **Date:** Phase D completion / Principal Reviewer strategic review
+
+### M007 — report_line match rate baseline and optimisation deferred
+**Decision:** report_line wiring marked complete at 59% overall match rate
+(baseline measured May 2026 across three reference topics: nuclear
+fusion energy 65%, electrosmith daisy seed 43%, large language model
+training 69%). Distribution: 17% anchored, 43% paraphrased, 20%
+omitted, 21% not_attempted.
+Further improvement deferred to a dedicated optimisation phase after
+Phase E. Candidates: embedding similarity matching, stronger synthesiser
+anchor instructions, or constrained decoding. not_attempted claims are
+correctly represented in the provenance file — they reflect synthesiser
+paraphrasing beyond matcher recovery, not a pipeline failure.
+**Rationale:** Diminishing returns from keyword matching do not justify
+the complexity cost at this stage. The four synthesis_status values
+already give the analyst full signal about each claim's traceability.
+**Date:** report_line wiring completion, May 2026

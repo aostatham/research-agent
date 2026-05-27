@@ -23,9 +23,9 @@ a clean table.
 
 ## Current State (updated at phase boundaries)
 
-Open: 0 High, 0 Medium, 0 Low
+Open: 0 High, 0 Medium, 1 Low
 Deferred: 0 High, 2 Medium (I003, I004), 0 Low
-Last updated: Phase D Pass 7
+Last updated: HTML provenance viewer phase
 
 Status values: Open | Deferred | Closed
 Fixed In: blank for Open, target phase for Deferred, pass name for Closed.
@@ -83,3 +83,4 @@ grep examples:
 | I044 | Low | .gitignore | Redundant prompts/planner.md entry after file deleted | Pass 6 QA | Closed | Pass 6 final |
 | I045 | Low | agent/tools.py | Anthropic/Tavily search count asymmetry undocumented | Pass 6 QA | Closed | Pass 6 final |
 | I046 | Low | CLAUDE.md | Pass 3 IN PROGRESS marker stale by three passes | Pass 6 QA | Closed | Pass 6 final |
+| I047 | Low | src/llm/anthropic_client.py, src/agent/tools.py | Anthropic and Tavily SDK imports are eager — non-Anthropic runs require all provider packages installed | Raised in review | Open | |

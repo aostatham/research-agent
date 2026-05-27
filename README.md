@@ -243,6 +243,24 @@ Source types: `government`, `academic`, `news`, `reference`, `institutional`,
 
 ---
 
+## Provenance Viewer
+
+When `--provenance file` is active, the pipeline generates a self-contained
+viewer file alongside the report and provenance JSON:
+
+```
+output/nuclear_fusion_energy.md
+output/nuclear_fusion_energy.provenance.json
+output/nuclear_fusion_energy.viewer.html
+```
+
+Open the `.viewer.html` file in any browser. No server required.
+The viewer shows quality metrics, disputed claims highlighted, all claims
+with sources and confidence scores, and links back to the report for
+verified claims.
+
+---
+
 ## Search Providers
 
 | Provider | Cost | Free Limit | Notes |
