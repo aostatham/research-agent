@@ -4,6 +4,29 @@ Single source of truth for all issues found in QA passes and live
 runs. Do not duplicate issue status in CLAUDE.md or PROJECT_CONTEXT.md
 — those files reference this one.
 
+## Schema
+
+| Field | Values |
+|-------|--------|
+| ID | Sequential: I001, I002, ... |
+| Severity | High, Medium, Low |
+| Area | src path or component |
+| Issue | One-line description |
+| Found | QA pass or live run |
+| Status | Open, Deferred, Closed |
+| Fixed In | Blank if Open, target phase if Deferred, pass name if Closed |
+
+Severity tracks impact if unresolved, not effort to resolve.
+Issues that become permanent policies migrate to DECISIONS.md.
+Closed issues remain in the file — history is more valuable than
+a clean table.
+
+## Current State (updated at phase boundaries)
+
+Open: 0 High, 0 Medium, 0 Low
+Deferred: 0 High, 2 Medium (I003, I004), 0 Low
+Last updated: Phase D close
+
 Status values: Open | Deferred | Closed
 Fixed In: blank for Open, target phase for Deferred, pass name for Closed.
 

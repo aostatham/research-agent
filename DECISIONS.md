@@ -490,6 +490,7 @@ risk of breakage.
 **Exception:** If a task prompt grows complex enough to need per-model
 variants or independent versioning, extract it to prompts/ and record
 a superseding decision.
+**Superseded by:** D028 — three-category prompt location policy.
 **Date:** Phase D Part 2 / Pass 3
 
 ### D020 — Editor coherence scope: adjacent paragraphs plus summary/body contradictions
@@ -546,6 +547,82 @@ prevents queue buildup at the cost of small additional latency per
 question. Anthropic can handle true parallelism so the original concurrent
 pattern is preserved for that provider.
 **Date:** Phase D Part 2 QA Pass 4 live run fix
+
+---
+
+## Phase E — Knowledge Store and Persistence
+
+### D024 — decompose() stays a function, not an Agent
+**Decision:** Orchestrator.decompose() will not be promoted to a
+Planner Agent in Phase E. The prompt moves to
+prompts/tasks/decomposer.md per the D019 three-category update.
+decompose() remains a function in orchestrator.py.
+**Rationale:** decompose() does not have state, tools, or a loop. It
+is a single-shot LLM call with a JSON parser. Wrapping it in an Agent
+gives nothing except type inflation. The Agent abstraction is reserved
+for things with loop semantics, tool use, and state.
+**Date:** Phase E pre-flight review
+
+### D025 — Knowledge store as tool family, not agent
+**Decision:** Kuzu integration modelled as a tool family added to
+agent tool sets. No KnowledgeStore Agent. Initial tool family:
+kg_query_claims_for_topic, kg_check_contradiction,
+kg_get_related_topics. Analyst gets additional write tools.
+**Rationale:** 2026 best practice treats retrieval as a capability
+distributed across agents, not centralised in a dedicated agent.
+Consistent with existing architecture — Researcher already calls
+tools. An Indexer or Knowledge Agent would centralise something that
+should be distributed.
+**Date:** Phase E pre-flight review
+
+### D026 — Graph Verifier as second Verifier instance in Phase E
+**Decision:** Phase E adds a Graph Verifier — same Agent class as the
+web Verifier, different tool set (knowledge graph tools, no web
+search). Runs after all research completes, before synthesis. Order:
+graph verification first against existing knowledge graph; web
+Verifier runs only on claims the graph could not resolve. AgentPool
+gains one field.
+**Rationale:** Verification and analysis are different jobs — is this
+claim true vs what should the report say. Conflating graph
+verification in Analyst makes Analyst's scope vaguer. Two clean
+contracts are better than one vague one. Graph-first ordering reduces
+cost and uses the more reliable source first.
+**Date:** Phase E pre-flight review
+
+### D027 — Durable execution (RunState) as Phase E pre-requisite
+**Decision:** A RunState dataclass pickled after each pipeline stage
+(decompose, research, reflect, synthesise, edit) must be implemented
+before Phase E begins. Minimal option: no new dependency, resume from
+last completed stage.
+**Rationale:** Knowledge graph writes must be atomic with run
+completion — a crash after research but before graph write loses
+everything. Follow-up mode requires prior run state. HITL requires
+pause and resume. Phase E is not meaningful without this foundation.
+Durable execution is the single most important 2026 architectural
+pattern to adopt before adding Phase E complexity.
+**Date:** Phase E pre-flight review
+
+### D028 — D019 prompt location policy: three categories
+**Decision:** Supersedes D019. Three categories:
+  1. Agent system prompts — prompts/<agent>.md. Non-interpolated,
+     immutable across a session. Current: researcher, verifier, editor.
+  2. Task prompts with stable structure — prompts/tasks/<name>.md.
+     Substantive content, light interpolation (one or two named
+     placeholders), not coupled to message-list construction.
+     Promotion trigger: prompt exceeds 20 lines, or needs per-model
+     variant, or needs independent versioning.
+  3. Inline glue — stays in source. Heavy interpolation, tightly
+     coupled to message history construction, parser-dependent.
+     Examples: fallback synthesis, reflection prompts.
+  Discriminator: how many distinct things the prompt depends on to
+  be valid. One placeholder, stable structure → file. Three
+  placeholders plus conditional message history shape → inline.
+**Rationale:** Two-category D019 had a fuzzy boundary that caused
+arguments at every borderline case. Three categories with an explicit
+discriminator and a promotion trigger are stable.
+**First application:** decompose() prompt to move to
+prompts/tasks/decomposer.md.
+**Date:** Phase E pre-flight review
 
 ---
 
@@ -644,3 +721,40 @@ identified to guide Phase D Part 2 and viewer design.
 visible to evaluators is the highest priority user-facing work. Generic "research"
 is what everyone else does; "auditable research" is the defensible position.
 **Date:** Mid-project strategic review
+
+### M006 — User stories: primary, secondary, tertiary
+**Decision:** Three user stories adopted in priority order. Primary
+drives all prioritisation decisions when items compete. Secondary and
+tertiary inform design but do not override primary.
+
+Primary — Policy Analyst (B):
+  A policy analyst building a briefing document from public sources
+  wants a structured report with traceable evidence chains so they
+  can defend every claim if challenged.
+  Drives: provenance viewer, report_line wiring, confidence scoring
+  calibration, disputed claims display.
+
+Secondary — Journalist (A):
+  A journalist fact-checking claims in a press release or public
+  statement wants a structured research brief with flagged disputed
+  claims and source citations, produced in under five minutes.
+  Drives: verification and disputed claims design, ⚠️ flags in
+  reports, verification_status in provenance file.
+
+Tertiary — Developer/Researcher (C):
+  A developer or technical researcher evaluating an unfamiliar
+  technology wants a comprehensive report covering specifications,
+  comparisons, limitations, and community maturity in a single run.
+  Drives: Phase F tool breadth (read_url, arxiv_search), output
+  mode depth.
+
+**Rationale:** Without a primary user story the roadmap is unrankable —
+every pending item has a plausible case. Primary B maps directly to
+the provenance differentiator. Secondary A drives the verification
+features that differentiate this tool from general research assistants.
+Tertiary C is easiest to demonstrate today and drives tool breadth.
+Secondary A is ranked above C because A has more direct influence on
+the differentiating features even though C is easier to demonstrate.
+**Supersedes:** M005 open to-do ("one concrete user story to be
+identified") — that to-do is now resolved.
+**Date:** Phase D completion / Principal Reviewer strategic review

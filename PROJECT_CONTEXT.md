@@ -18,6 +18,26 @@ with per-claim evidence chains.
 **Primary differentiator:** Machine-readable provenance file with per-claim source typing,
 confidence scoring, and evidence chains — unique among open-source research agents.
 
+## User Stories
+
+Three user stories in priority order. Primary drives all
+prioritisation decisions. See DECISIONS.md M006 for full rationale.
+
+**Primary — Policy Analyst**
+A policy analyst building a briefing document from public sources
+wants a structured report with traceable evidence chains so they can
+defend every claim if challenged.
+
+**Secondary — Journalist**
+A journalist fact-checking claims in a press release or public
+statement wants a structured research brief with flagged disputed
+claims and source citations, produced in under five minutes.
+
+**Tertiary — Developer/Researcher**
+A developer or technical researcher evaluating an unfamiliar
+technology wants a comprehensive report covering specifications,
+comparisons, limitations, and community maturity in a single run.
+
 **Developer:** Andrew (experienced developer, learning Python specifically)
 **Repository:** https://github.com/aostatham/research-agent
 
@@ -381,17 +401,29 @@ Layer 3 hardcoded list in `classify_source_type()`:
 - M9: Search uses hardcoded model name
 - M3, M4, M6, M7: Verifier robustness gaps
 
-### Pending Phases
-- Phase D Part 2 — multi-agent implementation
-- Phase C — output mode renderers
-- Phase F partial — read_url, arxiv_search (high priority)
-- PKG — Dockerfile, pipx, preset configs
-- Phase E — knowledge store (Kuzu), persistence
-- UI — comprehensive web UI (after Phase E)
-- Phase F remaining — SearXNG, pdf_reader, youtube, browser
-- Phase H — observability
-- Phase G remaining — provider optimisation
-- Phase I — interface
+### Revised priority order (post Principal Reviewer strategic review)
+
+1. Pass 5 Group B fixes — in progress
+2. Final Pass 5 QA — if clean, Phase D marked complete
+3. report_line wired through synthesis
+4. HTML provenance viewer
+5. RunState durable execution (D027) — Phase E pre-requisite
+6. Observability hooks (src/observability/events.py)
+7. Phase C output renderers (parallel, low risk)
+8. Phase E — knowledge store, Graph Verifier, Analyst Agent (after
+   items 1-6 complete)
+9. Phase F partial — read_url, arxiv_search
+10. Packaging — Dockerfile, pipx
+11. Phase F remaining — SearXNG, pdf_reader, youtube_transcript,
+    browser
+12. Phase G remaining — provider optimisation
+13. Phase H — observability (formalise hooks added in item 6)
+14. Phase I — REST API, webhooks
+15. Web UI — full interface (after Phase E)
+
+User story drives prioritisation: Primary B (analyst) → items 3, 4.
+Secondary A (journalist) → items 3, 4 disputed claims display.
+Tertiary C (developer) → items 9, 7.
 
 ---
 
