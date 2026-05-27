@@ -435,12 +435,10 @@ status, and contradiction history. Two delivery modes:
 
 ---
 
-## Known Issues & Observations
+## Known Issues
 
-- Comparative questions harder for llama3.1 — hits max iterations more often
-- Llama3.1 synthesis shallower than Sonnet — report depth is model-dependent
-- Fallback synthesis rescues questions but produces shorter answers
-- Anthropic web searches cost $0.01 each regardless of LLM provider
-- Tavily citations are per-result not per-sentence — less granular
-- Reflection uses same model as research — Phase D Part 2 independent verifier fixes this
-- report_line mostly null — Phase D Part 2 synthesiser integration fixes this
+See ISSUES.md for the full issues log.
+grep "| Open |" ISSUES.md to list current open items.
+
+Currently open: I001 (editor ReadTimeout), I002 (Ollama verifier timeout)
+Deferred to Phase I: I003 (search globals), I004 (run() footgun)

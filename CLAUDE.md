@@ -219,22 +219,21 @@ Phase D — Parallel Research Architecture: COMPLETE
             verifier robustness
           Pass 3 QA fixes IN PROGRESS — see next section
 
-Pass 3 fixes in progress (do not begin without explicit instruction):
-  Group A (regressions and correctness):
-    H1 — XSS fix regression: replace html.escape with bleach post-rendering
-    H2 — Index write race: fcntl.flock + NamedTemporaryFile
-    H3+M1+M2 — ResearchResult.verification three-state field, thread through
-    H4 — _is_refuted exact frozenset match
-    H5 — _validate_tool_input shared helper for Researcher and Verifier
-    H6+M8 — reflect() and decompose() JSON shape validation
-  Group B (robustness and quality — after Group A confirmed):
-    M3+M5 — Editor similarity check via difflib
-    M4 — Delete prompts/planner.md, add D015 TODO
-    M6 — verifier.md JSON schema, drop fallback value-scan
-    M7 — Verifier seen_queries guard, lower max_iterations to 4
-    L1, L2, L3, L5
+## Open issues and known gaps
 
-Next after Pass 3 — do not begin without explicit instruction:
+See ISSUES.md for the full issues log including all QA findings and
+their status. grep "| Open |" ISSUES.md to list current open items.
+
+Currently open:
+  I001 (High) — agent/editor.py: ReadTimeout not caught, crashes pipeline
+  I002 (Medium) — agent/verifier.py: Ollama timeout under concurrent load
+
+Deferred to Phase I:
+  I003 — agent/tools.py: module-level search globals block FastAPI
+  I004 — agent/orchestrator.py: run() footgun in async contexts
+
+Next — do not begin without explicit instruction:
+  Pass 4 Group B fixes (see current prompt from Lead Architect)
   Phase C remaining output mode renderers (parallel workstream)
   Phase F partial — read_url, arxiv_search tools
 
