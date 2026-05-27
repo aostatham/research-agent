@@ -555,6 +555,42 @@ def test_orchestrator_defaults_config_when_none(mock_llm, mock_pool):
     assert isinstance(orch.config, Config)
 
 
+def test_orchestrator_search_count_initialises_to_zero(mock_llm, config, mock_pool):
+    """search_count starts at 0 before any run."""
+    orch = Orchestrator(llm=mock_llm, agent_pool=mock_pool, config=config)
+    assert orch.search_count == 0
+
+
+def test_run_accumulates_search_count_from_research_results(orchestrator, mock_llm):
+    """search_count is the sum of each ResearchResult.search_count after run()."""
+    mock_llm.chat.side_effect = [
+        make_text_response('["Q1?", "Q2?", "Q3?", "Q4?"]'),
+        make_text_response('{"sufficient": true, "missing": []}'),
+    ]
+    async def fake_rqa(q, sem):
+        rr = make_rr(question=q, answer=f"Answer for {q}")
+        rr.search_count = 2
+        return rr
+    with patch.object(orchestrator, 'research_question_async', side_effect=fake_rqa):
+        orchestrator.run("nuclear fusion")
+    assert orchestrator.search_count == 8  # 4 questions × 2 searches each
+
+
+def test_run_search_count_excludes_verifier_searches(orchestrator, mock_llm):
+    """search_count counts only researcher searches — ResearchResult.search_count is the source."""
+    mock_llm.chat.side_effect = [
+        make_text_response('["Q1?"]'),
+        make_text_response('{"sufficient": true, "missing": []}'),
+    ]
+    async def fake_rqa(q, sem):
+        rr = make_rr(question=q, answer="ans")
+        rr.search_count = 3  # researcher did 3 searches
+        return rr
+    with patch.object(orchestrator, 'research_question_async', side_effect=fake_rqa):
+        orchestrator.run("topic")
+    assert orchestrator.search_count == 3
+
+
 # ── Integration tests ─────────────────────────────────────────────────────────
 
 @pytest.mark.integration

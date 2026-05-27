@@ -200,8 +200,8 @@ def main():
     # orchestrator.run() returns ({question: answer}, {question: [sources]})
     results, sources = orchestrator.run(topic)
 
-    # Count total web searches across all questions
-    search_count = sum(len(s) for s in sources.values())
+    # Count researcher web searches (excludes verifier searches)
+    search_count = orchestrator.search_count
 
     # Synthesise — full report or executive summary
     report = synthesiser.synthesise(

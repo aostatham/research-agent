@@ -333,3 +333,30 @@ def test_research_non_dict_tool_input_does_not_raise():
     with patch("agent.researcher.execute_tool_with_sources", return_value=("r", [])):
         result = research(agent, "What is fusion?")
     assert isinstance(result, ResearchResult)
+
+
+# ── search_count tracking ─────────────────────────────────────────────────────
+
+def test_research_search_count_is_zero_on_immediate_text():
+    """search_count is 0 when the LLM answers immediately without searching."""
+    mock_llm = MagicMock()
+    mock_llm.chat.return_value = make_text_response("Direct answer.")
+    agent = make_agent(mock_llm)
+    result = research(agent, "What is fusion?")
+    assert result.search_count == 0
+
+
+def test_research_search_count_counts_tool_calls():
+    """search_count equals the number of distinct searches executed."""
+    mock_llm = MagicMock()
+    mock_llm.chat.side_effect = [
+        LLMResponse(type="tool_call", tool_name="web_search",
+                    tool_input={"query": "fusion energy"}),
+        LLMResponse(type="tool_call", tool_name="web_search",
+                    tool_input={"query": "nuclear fusion reactors"}),
+        make_text_response("Fusion is clean energy."),
+    ]
+    agent = make_agent(mock_llm, max_iterations=5)
+    with patch("agent.researcher.execute_tool_with_sources", return_value=("results", [])):
+        result = research(agent, "What is fusion?")
+    assert result.search_count == 2

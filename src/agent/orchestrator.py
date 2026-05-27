@@ -83,6 +83,7 @@ class Orchestrator:
         self.agent_pool = agent_pool
         self.config = config or Config()
         self._last_research_results: list = []
+        self.search_count: int = 0
 
     def decompose(self, topic: str) -> list[str]:
         """
@@ -334,6 +335,7 @@ class Orchestrator:
             sources.update(gap_sources)
 
         self._last_research_results = all_rr
+        self.search_count = sum(rr.search_count for rr in all_rr)
         print(f"\n✅ Research complete — {len(results)} questions answered")
         return results, sources
 

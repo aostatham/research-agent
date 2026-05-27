@@ -42,6 +42,7 @@ def research(agent: Agent, question: str, max_tokens: int = 2048) -> ResearchRes
     all_sources = []
     seen_queries: set[str] = set()
     accumulated_results = []
+    search_count = 0
 
     while iteration < agent.max_iterations:
         iteration += 1
@@ -82,6 +83,7 @@ def research(agent: Agent, question: str, max_tokens: int = 2048) -> ResearchRes
             )
             all_sources.extend(sources)
             seen_queries.add(current_query)
+            search_count += 1
             accumulated_results.append(f"Search: '{current_query}'\n{tool_result}")
 
             messages.append({
@@ -127,6 +129,7 @@ def research(agent: Agent, question: str, max_tokens: int = 2048) -> ResearchRes
                 answer=content,
                 sources=unique_sources,
                 message_history=messages,
+                search_count=search_count,
             )
 
     # Max iterations reached — attempt fallback synthesis
@@ -153,6 +156,7 @@ def research(agent: Agent, question: str, max_tokens: int = 2048) -> ResearchRes
                 answer=fallback_response.content,
                 sources=_dedup_sources(all_sources),
                 message_history=messages,
+                search_count=search_count,
             )
 
     elapsed = time.time() - start
@@ -162,6 +166,7 @@ def research(agent: Agent, question: str, max_tokens: int = 2048) -> ResearchRes
         answer=f"Unable to retrieve information on: {question}",
         sources=[],
         message_history=messages,
+        search_count=search_count,
     )
 
 
