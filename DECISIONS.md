@@ -679,6 +679,11 @@ on one screen. Resist scope creep during implementation. Checkpoints written
 to output/.checkpoints/, gitignored.
 **Date:** RunState implementation
 
+### D036 — Observability hooks: JSON lines to file, no backend
+**Decision:** log_event() writes structured JSON lines to output/.logs/events_YYYYMMDD.jsonl. Called at agent boundaries (researcher, verifier, editor complete; orchestrator pipeline start/complete). configure_observability() called once at startup in main(). log_event() is a no-op if not configured — observability never crashes the pipeline. No external backend in this phase — Phase H formalises with structured logging backends, dashboards, and cost tracking.
+**Rationale:** Phase E debugging without traces will be miserable. Minimum viable observability added before Phase E complexity lands. JSON lines format is simple, appendable, and parseable with any tool. run_id links events to RunState checkpoints for correlation. --no-observability flag disables for runs where file logging is unwanted.
+**Date:** Observability hooks implementation
+
 ---
 
 ## Testing

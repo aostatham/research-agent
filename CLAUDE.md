@@ -31,6 +31,9 @@ src/
     writer.py             # save_report(), update_index()
     provenance.py         # Claim extraction, confidence scoring, source
                           # classification, provenance file writer
+  observability/
+    __init__.py
+    events.py             # log_event(), configure_observability()
 config.yaml               # Default runtime config (provider, models, search, limits)
 prompts/                  # Agent system prompts (versioned in git)
   researcher.md           # Researcher Agent system prompt
@@ -175,6 +178,14 @@ RunState and checkpointing:
   - --resume RUN_ID CLI flag passes run_id to run_async()
   - v1: always runs all stages, run_id preserved for consistency
   - Skip-ahead resume logic deferred to Phase E (D035)
+
+Observability:
+  - log_event() writes JSON lines to output/.logs/events_YYYYMMDD.jsonl
+  - configure_observability() called once in main() before pipeline
+  - log_event() is a no-op if configure_observability() not called
+  - Never raises — observability must not crash the pipeline (D036)
+  - Phase H will add backends, dashboards, cost tracking
+  - --no-observability flag disables for that run
 
 Output pipeline:
   - formatter.py: build_metadata(), convert_to_html(), convert_to_pdf()
