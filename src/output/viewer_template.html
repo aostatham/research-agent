@@ -913,29 +913,29 @@
 
   /* ── Filter buttons ─────────────────────────────────────────────── */
 
-  var filters = [
-    { key: "all",        label: "All" },
-    { key: "disputed",   label: "Disputed" },
-    { key: "verified",   label: "Verified" },
-    { key: "unverified", label: "Unverified" },
-    { key: "omitted",    label: "Omitted" },
+  var FILTERS = [
+    { id: "all",        label: "All",        predicate: function(c) { return true; } },
+    { id: "disputed",   label: "Disputed",   predicate: function(c) { return c.verification_status === "disputed"; } },
+    { id: "verified",   label: "Verified",   predicate: function(c) { return c.verification_status === "verified"; } },
+    { id: "unverified", label: "Unverified", predicate: function(c) { return c.verification_status === "unverified"; } },
+    { id: "omitted",    label: "Omitted",    predicate: function(c) { return c.synthesis_status === "omitted"; } },
   ];
 
   var filterGroup = document.getElementById("filter-group");
   var filterBtns  = {};
 
-  filters.forEach(function(f) {
+  FILTERS.forEach(function(f) {
     var btn = document.createElement("button");
-    btn.className = "filter-btn" + (f.key === "all" ? " active" : "");
+    btn.className = "filter-btn" + (f.id === "all" ? " active" : "");
     setText(btn, f.label);
     btn.addEventListener("click", function() {
-      activeFilter = f.key;
+      activeFilter = f.id;
       Object.keys(filterBtns).forEach(function(k) {
-        filterBtns[k].classList.toggle("active", k === f.key);
+        filterBtns[k].classList.toggle("active", k === f.id);
       });
       renderList();
     });
-    filterBtns[f.key] = btn;
+    filterBtns[f.id] = btn;
     filterGroup.appendChild(btn);
   });
 
@@ -952,12 +952,8 @@
   var countEl = document.getElementById("results-count");
 
   function filterClaims(list) {
-    if (activeFilter === "all")        return list;
-    if (activeFilter === "disputed")   return list.filter(function(c) { return c.verification_status === "disputed"; });
-    if (activeFilter === "verified")   return list.filter(function(c) { return c.verification_status === "verified"; });
-    if (activeFilter === "unverified") return list.filter(function(c) { return c.verification_status === "unverified"; });
-    if (activeFilter === "omitted")    return list.filter(function(c) { return c.synthesis_status === "omitted"; });
-    return list;
+    var f = FILTERS.filter(function(f) { return f.id === activeFilter; })[0];
+    return f ? list.filter(f.predicate) : list;
   }
 
   function sortClaims(list) {
