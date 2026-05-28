@@ -104,3 +104,39 @@ def test_log_event_does_not_raise_on_write_failure(tmp_path):
     with patch("builtins.open", side_effect=IOError("permission denied")):
         # Must not raise
         log_event("run1", "researcher", "research", "complete")
+
+
+# ── Agent boundary tests ──────────────────────────────────────────────────────
+
+def test_researcher_calls_log_event_on_complete():
+    """log_event is called with agent='researcher' and event='complete' after research()."""
+    import sys
+    import os
+    sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
+    from unittest.mock import MagicMock, call
+    from llm.base import LLMResponse
+    from agent.base import Agent
+    from agent.researcher import research
+    from evidence.schema import ResearchResult
+
+    mock_llm = MagicMock()
+    mock_llm.chat.return_value = LLMResponse(type="text", content="The answer is 42.")
+
+    agent = Agent(
+        name="researcher",
+        role="Researcher",
+        description="Test researcher",
+        llm=mock_llm,
+        system_prompt="You are a researcher.",
+        tools=(),
+        max_iterations=5,
+    )
+
+    with patch("agent.researcher.log_event") as mock_log, \
+         patch("agent.researcher.execute_tool_with_sources"):
+        result = research(agent, "What is the answer?", max_tokens=512)
+
+    mock_log.assert_called_once()
+    call_kwargs = mock_log.call_args
+    assert call_kwargs[1]["agent"] == "researcher" or call_kwargs[0][1] == "researcher"
+    assert call_kwargs[1]["event"] == "complete" or call_kwargs[0][3] == "complete"

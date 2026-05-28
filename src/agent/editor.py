@@ -11,8 +11,10 @@ Public API:
 
 import difflib
 import logging
+import time
 
 from agent.base import Agent
+from observability.events import log_event
 
 
 def edit(agent: Agent, report: str, max_tokens: int = 8192) -> str:
@@ -50,6 +52,21 @@ def edit(agent: Agent, report: str, max_tokens: int = 8192) -> str:
         Edited report string, or the original report if the response is
         rejected by either acceptance check.
     """
+    start = time.time()
+
+    def _finish(result: str) -> str:
+        log_event(
+            run_id="unknown",
+            agent="editor",
+            stage="edit",
+            event="complete",
+            duration_ms=int((time.time() - start) * 1000),
+            metadata={"original_len": len(report),
+                      "edited_len": len(result),
+                      "changed": result != report},
+        )
+        return result
+
     try:
         response = agent.chat(
             messages=[{"role": "user", "content": report}],
@@ -60,9 +77,9 @@ def edit(agent: Agent, report: str, max_tokens: int = 8192) -> str:
             "Editor pass failed (%s: %s) — using original report",
             type(e).__name__, e,
         )
-        return report
+        return _finish(report)
     if response.type != "text":
-        return report
+        return _finish(report)
     edited = response.content.strip()
 
     # M5: strip preamble when the model prefixes the report with boilerplate.
@@ -72,7 +89,7 @@ def edit(agent: Agent, report: str, max_tokens: int = 8192) -> str:
     if not edited.startswith(original_prefix):
         idx = edited.find(report.strip())
         if idx > 0:
-            return edited[idx:].strip()
+            return _finish(edited[idx:].strip())
 
     # M6: <= instead of < so an exactly-50%-length response is also rejected.
     if len(edited) <= 0.5 * len(report):
@@ -80,13 +97,13 @@ def edit(agent: Agent, report: str, max_tokens: int = 8192) -> str:
             "Editor response rejected: %d chars < 50%% of original %d chars",
             len(edited), len(report),
         )
-        return report
+        return _finish(report)
     # Skip similarity check for very long strings to bound O(N*M) cost.
     if len(report) > 100000 or len(edited) > 100000:
         logging.debug(
             "Editor: skipping similarity check — strings exceed 100000 char cap"
         )
-        return edited
+        return _finish(edited)
     sm = difflib.SequenceMatcher(None, report, edited, autojunk=False)
     ratio = sm.ratio()
     if ratio < 0.5:
@@ -95,5 +112,5 @@ def edit(agent: Agent, report: str, max_tokens: int = 8192) -> str:
             "(original %d chars, edited %d chars)",
             ratio, len(report), len(edited),
         )
-        return report
-    return edited
+        return _finish(report)
+    return _finish(edited)

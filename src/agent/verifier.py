@@ -12,6 +12,7 @@ Public API:
 import json
 import logging
 import re
+import time
 import warnings
 from typing import Optional
 
@@ -19,6 +20,7 @@ from agent.base import Agent
 from agent.tool_utils import _validate_tool_input
 from agent.tools import ALL_TOOLS, execute_tool_with_sources
 from evidence.schema import ResearchResult
+from observability.events import log_event
 
 
 # Exact status strings that represent a refuted claim.
@@ -168,12 +170,23 @@ def verify(
     Returns:
         The same ResearchResult with verification field updated.
     """
+    start = time.time()
     suspicious = _extract_suspicious_claims(rr.answer, rr.question)
     if not suspicious:
         # No claims flagged by heuristic — leave as "unverified" not
         # falsely "verified". A heuristic miss does not equal a
         # verification pass.
         rr.verification = "unverified"
+        log_event(
+            run_id=getattr(agent, "run_id", "unknown"),
+            agent="verifier",
+            stage="verify",
+            event="complete",
+            duration_ms=int((time.time() - start) * 1000),
+            metadata={"question": rr.question[:80],
+                      "verification": rr.verification,
+                      "claims_checked": 0},
+        )
         return rr
 
     claims_list = "\n".join(f"- {c}" for c in suspicious)
@@ -272,7 +285,27 @@ def verify(
             except (json.JSONDecodeError, TypeError, AttributeError) as e:
                 warnings.warn(f"Verifier JSON parse failed: {e}", stacklevel=2)
                 # M1: parse failure leaves verification="unverified" — not verified
+            log_event(
+                run_id=getattr(agent, "run_id", "unknown"),
+                agent="verifier",
+                stage="verify",
+                event="complete",
+                duration_ms=int((time.time() - start) * 1000),
+                metadata={"question": rr.question[:80],
+                          "verification": rr.verification,
+                          "claims_checked": len(suspicious)},
+            )
             return rr
 
     # Max iterations reached without a text response — leave "unverified"
+    log_event(
+        run_id=getattr(agent, "run_id", "unknown"),
+        agent="verifier",
+        stage="verify",
+        event="complete",
+        duration_ms=int((time.time() - start) * 1000),
+        metadata={"question": rr.question[:80],
+                  "verification": rr.verification,
+                  "claims_checked": len(suspicious)},
+    )
     return rr

@@ -14,6 +14,7 @@ from agent.base import Agent
 from agent.tool_utils import _validate_tool_input
 from agent.tools import ALL_TOOLS, execute_tool_with_sources
 from evidence.schema import ResearchResult
+from observability.events import log_event
 
 
 def research(agent: Agent, question: str, max_tokens: int = 2048) -> ResearchResult:
@@ -134,12 +135,24 @@ def research(agent: Agent, question: str, max_tokens: int = 2048) -> ResearchRes
             elapsed = time.time() - start
             print(f"  ✅ Answer found ({len(content)} chars, {elapsed:.1f}s)")
             unique_sources = _dedup_sources(all_sources)
-            return ResearchResult(
+            result = ResearchResult(
                 question=question,
                 answer=content,
                 sources=unique_sources,
                 message_history=messages,
             )
+            log_event(
+                run_id=getattr(agent, "run_id", "unknown"),
+                agent="researcher",
+                stage="research",
+                event="complete",
+                duration_ms=int(elapsed * 1000),
+                metadata={"question": question[:80],
+                          "answer_len": len(result.answer),
+                          "sources": len(result.sources),
+                          "verification": result.verification},
+            )
+            return result
 
     # Max iterations reached — attempt fallback synthesis
     if accumulated_results:
@@ -160,21 +173,45 @@ def research(agent: Agent, question: str, max_tokens: int = 2048) -> ResearchRes
         if fallback_response.type == "text" and len(fallback_response.content.strip()) > 50:
             elapsed = time.time() - start
             print(f"  ✅ Fallback synthesis succeeded ({len(fallback_response.content)} chars, {elapsed:.1f}s)")
-            return ResearchResult(
+            result = ResearchResult(
                 question=question,
                 answer=fallback_response.content,
                 sources=_dedup_sources(all_sources),
                 message_history=messages,
             )
+            log_event(
+                run_id=getattr(agent, "run_id", "unknown"),
+                agent="researcher",
+                stage="research",
+                event="complete",
+                duration_ms=int((time.time() - start) * 1000),
+                metadata={"question": question[:80],
+                          "answer_len": len(result.answer),
+                          "sources": len(result.sources),
+                          "verification": result.verification},
+            )
+            return result
 
     elapsed = time.time() - start
     print(f"  ❌ Research failed for: '{question}' ({elapsed:.1f}s)")
-    return ResearchResult(
+    result = ResearchResult(
         question=question,
         answer=f"Unable to retrieve information on: {question}",
         sources=[],
         message_history=messages,
     )
+    log_event(
+        run_id=getattr(agent, "run_id", "unknown"),
+        agent="researcher",
+        stage="research",
+        event="complete",
+        duration_ms=int(elapsed * 1000),
+        metadata={"question": question[:80],
+                  "answer_len": len(result.answer),
+                  "sources": len(result.sources),
+                  "verification": result.verification},
+    )
+    return result
 
 
 def _dedup_sources(sources: list) -> list:

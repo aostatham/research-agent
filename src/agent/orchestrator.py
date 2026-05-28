@@ -17,6 +17,7 @@ import asyncio
 import dataclasses
 import json
 import logging
+import time
 import uuid
 from datetime import datetime, timezone
 from llm.base import LLMClient
@@ -24,6 +25,7 @@ from config import Config
 from evidence.schema import ResearchResult
 from agent.tools import get_and_reset_search_count
 from agent.runstate import RunState, save_checkpoint
+from observability.events import log_event
 
 
 DECOMPOSE_PROMPT = """You are a research planning assistant.
@@ -348,6 +350,7 @@ class Orchestrator:
         # before reaching the final get_and_reset_search_count() call would otherwise
         # leak its count into the next run.
         get_and_reset_search_count()
+        pipeline_start = time.time()
 
         state = RunState(
             run_id=run_id or uuid.uuid4().hex,
@@ -360,6 +363,13 @@ class Orchestrator:
             last_checkpoint_at="",
         )
         save_checkpoint(state)
+        log_event(
+            run_id=state.run_id,
+            agent="orchestrator",
+            stage="pipeline",
+            event="start",
+            metadata={"topic": topic[:80]},
+        )
 
         questions = self.decompose(topic)
         state.current_stage = "research"
@@ -404,6 +414,15 @@ class Orchestrator:
         save_checkpoint(state)
 
         self.search_count = get_and_reset_search_count()
+        log_event(
+            run_id=state.run_id,
+            agent="orchestrator",
+            stage="pipeline",
+            event="complete",
+            duration_ms=int((time.time() - pipeline_start) * 1000),
+            metadata={"questions_answered": len(self._last_research_results),
+                      "search_count": self.search_count},
+        )
         print(f"\n✅ Research complete — {len(results)} questions answered")
         return (results, sources), state.run_id
 
