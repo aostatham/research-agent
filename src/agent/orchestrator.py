@@ -19,6 +19,7 @@ import json
 import logging
 import time
 import uuid
+from pathlib import Path
 from datetime import datetime, timezone
 from llm.base import LLMClient
 from config import Config
@@ -27,16 +28,7 @@ from agent.tools import get_and_reset_search_count
 from agent.runstate import RunState, save_checkpoint
 from observability.events import log_event
 
-
-DECOMPOSE_PROMPT = """You are a research planning assistant.
-
-Given a topic, decompose it into sub-questions that together provide comprehensive coverage.
-
-You MUST respond ONLY with a raw JSON array of strings. No markdown, no code fences, no preamble, no explanation.
-
-Example:
-["What is X?", "How does X work?", "What are the limitations of X?"]
-"""
+_DECOMPOSE_PROMPT_PATH = Path(__file__).parent.parent.parent / "prompts" / "tasks" / "decomposer.md"
 
 REFLECT_PROMPT = """You are a rigorous research critic reviewing findings before a report is written.
 
@@ -91,6 +83,11 @@ class Orchestrator:
         self.config = config or Config()
         self._last_research_results: list = []
         self.search_count: int = 0
+        if not _DECOMPOSE_PROMPT_PATH.exists():
+            raise FileNotFoundError(
+                f"Decomposer prompt not found: {_DECOMPOSE_PROMPT_PATH}"
+            )
+        self._decompose_prompt: str = _DECOMPOSE_PROMPT_PATH.read_text(encoding="utf-8")
 
     def decompose(self, topic: str) -> list[str]:
         """
@@ -110,7 +107,7 @@ class Orchestrator:
         print(f"\n📋 Decomposing topic: '{topic}'")
 
         prompt = (
-            DECOMPOSE_PROMPT +
+            self._decompose_prompt +
             f"\n\nGenerate between {self.config.min_questions} and "
             f"{self.config.max_questions} sub-questions."
             f"\n\nTopic: {topic}"

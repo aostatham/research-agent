@@ -141,6 +141,23 @@ def test_decompose_uses_config_max_tokens(orchestrator, mock_llm, config):
     assert mock_llm.chat.call_args[1]["max_tokens"] == 512
 
 
+def test_decompose_prompt_loaded_from_file(orchestrator, mock_llm):
+    """Prompt sent to LLM includes content loaded from prompts/tasks/decomposer.md."""
+    mock_llm.chat.return_value = make_text_response('["Q1?", "Q2?", "Q3?", "Q4?"]')
+    orchestrator.decompose("nuclear fusion")
+    call_content = mock_llm.chat.call_args[1]["messages"][0]["content"]
+    assert "research planning assistant" in call_content
+    assert "JSON array" in call_content
+
+
+def test_orchestrator_raises_on_missing_decompose_prompt(mock_llm, config, mock_pool, tmp_path):
+    """Orchestrator.__init__ raises FileNotFoundError if decomposer.md is absent."""
+    missing = tmp_path / "no_such_file.md"
+    with patch("agent.orchestrator._DECOMPOSE_PROMPT_PATH", missing):
+        with pytest.raises(FileNotFoundError, match="Decomposer prompt not found"):
+            Orchestrator(llm=mock_llm, agent_pool=mock_pool, config=config)
+
+
 # ── _research_question_sync() tests ──────────────────────────────────────────
 # Verify delegation to the Researcher Agent.
 

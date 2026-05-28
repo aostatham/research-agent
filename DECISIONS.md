@@ -625,8 +625,9 @@ pattern to adopt before adding Phase E complexity.
 **Rationale:** Two-category D019 had a fuzzy boundary that caused
 arguments at every borderline case. Three categories with an explicit
 discriminator and a promotion trigger are stable.
-**First application:** decompose() prompt to move to
-prompts/tasks/decomposer.md.
+**First application:** decompose() prompt moved to
+prompts/tasks/decomposer.md. Loaded in Orchestrator.__init__ via pathlib;
+FileNotFoundError raised if file is absent.
 **Date:** Phase E pre-flight review
 
 ### D032 — Viewer fully inline, no CDN
