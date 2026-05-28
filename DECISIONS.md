@@ -687,6 +687,99 @@ to output/.checkpoints/, gitignored.
 
 ---
 
+## Phase E — Knowledge Store and Persistence
+
+### D037 — Temporal handling in knowledge graph
+**Decision:** Three requirements: (a) retrieved-date persisted on
+every Claim node from the source's retrieved field; (b)
+check_contradiction() returns both claims' timestamps as
+claim_retrieved and contradicting_retrieved; (c) SUPERSEDES edge
+added as the fifth relationship type (Claim SUPERSEDES Claim).
+Heuristic population: same topic, same named entity, newer timestamp,
+contradictory value → candidate supersession. Staleness threshold
+configurable via knowledge_staleness_threshold_days in Config,
+default 90 days. Graph Verifier treats claims more than this
+threshold apart as potential staleness (unresolved) rather than
+contradiction.
+**Rationale:** The dominant failure mode in accumulating graph memory
+is stale-data false contradictions, not wrong-data contradictions.
+A provenance tool that generates false disputes trains users to ignore
+disputes — the more the graph is used, the worse the signal. Fix is
+cheap at schema-design time and expensive after the graph is
+populated. Adding SUPERSEDES now avoids a graph migration later.
+**Date:** Phase E design
+
+### D038 — Follow-up mode bypasses decompose()
+**Decision:** --follow-up RUN_ID loads prior RunState, extracts gap
+questions from reflect() output, passes them directly to
+research_all_async() without calling decompose(). decompose() stays
+single-contract: topic → questions, always.
+**Rationale:** Gap questions are already sub-questions. Feeding them
+into decompose() creates a two-input-contract function and violates
+D015's intent. Bypass is less code, cleaner, and respects the
+single-contract principle.
+**Date:** Phase E design
+
+### D039 — Analyst requires knowledge graph
+**Decision:** Analyst is populated in AgentPool only when
+knowledge_store != "none". No graph-free Analyst mode. Analyst field
+on AgentPool: analyst: Agent = None.
+**Rationale:** An Analyst without graph access has no information the
+Editor lacks. Its distinct value is cross-run evidence: prior
+contradictions, corroboration depth, source patterns across runs.
+Without the graph it is a third agent processing single-run data —
+the self-critique failure rejected in D010.
+**Date:** Phase E design
+
+### D040 — Analyst scope: claim_id-constrained restructuring advisor
+**Decision:** The Analyst reads the synthesised report and the
+provenance file and emits a list of recommendations — each one
+pointing at a specific claim_id and naming a specific defect (low
+confidence, thin sourcing, or an unsurfaced contradiction) — without
+ever proposing new prose beyond a suggested qualifier phrase.
+IT DOES NOT: rewrite the report directly (produces a JSON
+recommendation list the Synthesiser applies); add new information
+(works only from existing claims and graph); evaluate the research
+question itself (does not judge whether the topic or approach was
+correct).
+Output schema: JSON list, each item: {type: qualify|strengthen|
+surface_contradiction, claim_id, reason, suggested_qualifier (optional)}.
+Runs after Editor, before final save. Populated only when
+knowledge_store != "none".
+**Rationale:** Scope locked before prompt drafting per D011 pattern.
+The claim_id constraint is the structural limit that prevents Analyst
+from drifting into Synthesiser territory — it can only speak about
+claims that already exist.
+**Date:** Phase E design
+
+### D041 — Graph Verifier three-state handoff to web Verifier
+**Decision:** Graph Verifier returns per-claim result:
+resolved_confirmed, resolved_contradicted, or unresolved. Web
+Verifier runs on unresolved claims only. resolved_confirmed and
+resolved_contradicted claims do not go to the web Verifier.
+"Unresolved" covers: no graph evidence, timestamps suggest staleness
+(gap exceeds knowledge_staleness_threshold_days), or graph
+unavailable.
+**Rationale:** Concrete handoff boundary prevents ambiguity at
+implementation time and ensures the two Verifiers are not
+double-checking the same claims.
+**Date:** Phase E design
+
+### D042 — kg_write_claim validates before writing
+**Decision:** kg_write_claim rejects claims that are: empty text,
+markdown headers (starts with #), LLM refusal phrases, longer than
+500 characters, multi-paragraph, or sourceless. Uses the same
+predicate as _is_valid_claim() in provenance.py. Returns rejected
+status with reason rather than raising.
+**Rationale:** The graph is permanent. Write-time validation is the
+cheapest point to prevent permanent contamination. A claim that
+passes _is_valid_claim() at extraction time may still arrive at
+the graph write boundary via a code path that bypasses extraction —
+the gate must exist at both points.
+**Date:** Phase E design
+
+---
+
 ## Testing
 
 ### T001 — Free providers as default for integration tests

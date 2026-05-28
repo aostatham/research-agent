@@ -230,11 +230,10 @@ Source classification maintenance:
 
 ## Current development phase
 
-Phase D — Parallel Research Architecture: COMPLETE
+Phase D — Parallel Research Architecture: COMPLETE (605 tests)
 
   Part 1  COMPLETE — asyncio workers, --max-workers, worker failure handling
   Part 2  COMPLETE — multi-agent architecture
-          See test baseline at top of this file for current count
           Pass 1 QA fixes: system prompt injection, gather exception handling,
             verifier outcome propagation, editor response validation,
             cross-run state reset
@@ -242,6 +241,12 @@ Phase D — Parallel Research Architecture: COMPLETE
             XSS sanitisation, configurable search model, atomic index write,
             verifier robustness
           Phase D Part 2 COMPLETE — see ISSUES.md for open items
+
+Phase E — Knowledge Store and Persistence: DESIGN APPROVED
+  Pre-requisites complete: RunState, observability hooks,
+    decompose prompt in prompts/tasks/, schema_version field
+  Key decisions: D024-D042
+  Implementation begins after Opus confirmation
 
 ## Open issues and known gaps
 

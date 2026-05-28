@@ -106,6 +106,12 @@ class Config:
     # Trigger: domain misclassified in 3+ real research runs.
     source_classification: Optional[dict] = None
 
+    # ── Knowledge store ───────────────────────────────────────────────────────
+
+    # Days threshold for treating a prior claim as stale vs. contradictory.
+    # Graph Verifier uses this to route unresolved claims to the web Verifier.
+    knowledge_staleness_threshold_days: int = 90
+
     # ── Output mode ───────────────────────────────────────────────────────────
 
     # report (default): full narrative report

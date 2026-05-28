@@ -63,6 +63,10 @@ class AgentPool:
     Frozen to prevent accidental reassignment after construction.
     Grows by field rather than expanding argument lists — see D005.
     Planner deferred to Phase E — see DECISIONS.md D015.
+
+    Five fields (three required, two optional) is the comfortable
+    ceiling for this dataclass. The next optional agent triggers a
+    registry review — see DECISIONS.md D005.
     """
 
     researcher: Agent

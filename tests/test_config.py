@@ -57,6 +57,22 @@ def test_verifier_max_iterations_loads_from_config_dict(tmp_path, monkeypatch):
     assert config.verifier_max_iterations == 6
 
 
+def test_default_knowledge_staleness_threshold_days():
+    """knowledge_staleness_threshold_days defaults to 90."""
+    config = Config()
+    assert config.knowledge_staleness_threshold_days == 90
+
+
+def test_knowledge_staleness_threshold_days_loads_from_config_dict(tmp_path, monkeypatch):
+    """knowledge_staleness_threshold_days loads from config.yaml when present."""
+    monkeypatch.chdir(tmp_path)
+    config_data = {"knowledge_staleness_threshold_days": 180}
+    with open(tmp_path / "config.yaml", "w") as f:
+        yaml.dump(config_data, f)
+    config = load_config("config.yaml")
+    assert config.knowledge_staleness_threshold_days == 180
+
+
 def test_default_max_tokens_research():
     config = Config()
     assert config.max_tokens_research == 2048
