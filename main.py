@@ -28,6 +28,7 @@ from agent.builder import build_agents
 from agent.tools import configure_search
 from config import load_config
 from llm.builder import build_llms
+from observability.events import configure_observability
 from output.formatter import build_metadata
 from output.writer import save_report, update_index, save_viewer
 from output.provenance import (
@@ -103,6 +104,11 @@ def parse_args():
         "--resume", metavar="RUN_ID", default=None,
         help="Resume an interrupted run from its last checkpoint"
     )
+    parser.add_argument(
+        "--no-observability",
+        action="store_true",
+        help="Disable observability event logging"
+    )
 
     return parser.parse_args()
 
@@ -122,6 +128,9 @@ def main():
     logging.basicConfig(level=logging.WARNING, format="%(levelname)s:%(name)s:%(message)s")
 
     args = parse_args()
+
+    if not args.no_observability:
+        configure_observability()
 
     # Resolve which provider each tier will use (CLI args only — config.yaml not yet loaded)
     resolved_orch_provider = args.orchestration_provider or args.provider or None

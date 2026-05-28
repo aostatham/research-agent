@@ -1149,6 +1149,46 @@ def test_run_id_printed_in_output_summary(tmp_path, monkeypatch, capsys):
     assert "myspecialrunid" in captured.out
 
 
+# ── Observability wiring tests ────────────────────────────────────────────────
+
+def test_configure_observability_called_during_normal_run(tmp_path, monkeypatch):
+    """configure_observability() is called when --no-observability is not set."""
+    monkeypatch.chdir(tmp_path)
+    mock_orchestrator = MagicMock()
+    mock_synthesiser = MagicMock()
+    mock_orchestrator.run.return_value = ((SAMPLE_RESULTS, {}), "test-run-id-123")
+    mock_synthesiser.synthesise.return_value = SAMPLE_REPORT
+
+    with patch("sys.argv", ["main.py", "nuclear fusion"]), \
+         patch("llm.builder.AnthropicClient"), \
+         patch("main.Orchestrator", return_value=mock_orchestrator), \
+         patch("main.Synthesiser", return_value=mock_synthesiser), \
+         patch("main.configure_observability") as mock_obs:
+        from main import main
+        main()
+
+    mock_obs.assert_called_once()
+
+
+def test_configure_observability_not_called_with_no_observability_flag(tmp_path, monkeypatch):
+    """configure_observability() is not called when --no-observability is set."""
+    monkeypatch.chdir(tmp_path)
+    mock_orchestrator = MagicMock()
+    mock_synthesiser = MagicMock()
+    mock_orchestrator.run.return_value = ((SAMPLE_RESULTS, {}), "test-run-id-123")
+    mock_synthesiser.synthesise.return_value = SAMPLE_REPORT
+
+    with patch("sys.argv", ["main.py", "nuclear fusion", "--no-observability"]), \
+         patch("llm.builder.AnthropicClient"), \
+         patch("main.Orchestrator", return_value=mock_orchestrator), \
+         patch("main.Synthesiser", return_value=mock_synthesiser), \
+         patch("main.configure_observability") as mock_obs:
+        from main import main
+        main()
+
+    mock_obs.assert_not_called()
+
+
 # ── Provenance pipeline ordering tests ───────────────────────────────────────
 
 def test_main_synthesise_receives_claims_when_provenance_file(tmp_path, monkeypatch):
