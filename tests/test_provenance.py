@@ -348,6 +348,29 @@ def test_score_confidence_mixed_sources():
     assert score_confidence(mixed) > score_confidence(gov_only)
 
 
+def test_score_confidence_returns_different_values_for_different_type_combinations():
+    """Different source type combinations produce different confidence scores."""
+    from output.provenance import score_confidence
+    general_score = score_confidence([{"source_type": "general"}])
+    news_score = score_confidence([{"source_type": "news"}])
+    gov_score = score_confidence([{"source_type": "government"}])
+    assert len({general_score, news_score, gov_score}) == 3
+
+
+def test_score_confidence_three_government_beats_one_general():
+    """A claim with 3 government sources scores higher than a claim with 1 general source."""
+    from output.provenance import score_confidence
+    gov = [{"source_type": "government"}] * 3
+    gen = [{"source_type": "general"}]
+    assert score_confidence(gov) > score_confidence(gen)
+
+
+def test_score_confidence_zero_sources_returns_base():
+    """A claim with 0 sources returns the base score of 0.4."""
+    from output.provenance import score_confidence
+    assert score_confidence([]) == pytest.approx(0.4)
+
+
 # ── _is_valid_claim() tests ──────────────────────────────────────────────────
 
 def test_is_valid_claim_false_for_markdown_header():
@@ -938,12 +961,12 @@ def test_score_confidence_video_minimal_increase():
     assert score_confidence(sources) < score_confidence([{"source_type": "news"}])
 
 
-def test_score_confidence_forum_no_increase():
-    """A forum source gives no increase above base (same as general)."""
+def test_score_confidence_forum_scores_below_general():
+    """A forum source scores below a general source (forum has 0 per-source bonus)."""
     from output.provenance import score_confidence
     forum = [{"source_type": "forum"}]
     general = [{"source_type": "general"}]
-    assert score_confidence(forum) == score_confidence(general)
+    assert score_confidence(forum) < score_confidence(general)
 
 
 def test_score_confidence_industry_minimal_increase():
@@ -962,10 +985,12 @@ def test_classify_unknown_domain_still_returns_general():
     assert classify_source_type("https://some-random-unknown-site.xyz/page") == "general"
 
 
-def test_score_confidence_general_no_increase():
-    """General sources give no increase above base score."""
+def test_score_confidence_general_gives_small_gradient():
+    """General sources give a small gradient bonus above base score."""
     from output.provenance import score_confidence
-    assert score_confidence([{"source_type": "general"}]) == pytest.approx(0.4)
+    score = score_confidence([{"source_type": "general"}])
+    assert score > 0.4
+    assert score < 0.5
 
 
 # ── ResearchResult ────────────────────────────────────────────────────────────

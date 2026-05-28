@@ -340,7 +340,7 @@ def score_confidence(sources: list) -> float:
       Per industry source:                   +0.02 (max +0.04)
       Per video source:                      +0.01 (max +0.02)
       Per forum source:                      +0.00
-      Per general source:                    +0.00
+      Per general source:                    +0.03 (max +0.09)
       Corroboration bonus (2 sources):       +0.05
       Corroboration bonus (3+ sources):      +0.10
       Cap:                                    1.00
@@ -366,6 +366,11 @@ def score_confidence(sources: list) -> float:
     for stype, (per_source, cap) in type_bonuses.items():
         count = sum(1 for s in sources if s.get("source_type") == stype)
         score += min(count * per_source, cap)
+
+    # General sources earn a small gradient bonus so claims backed only
+    # by general-type sources still separate from zero-source claims.
+    general_count = sum(1 for s in sources if s.get("source_type") == "general")
+    score += min(general_count * 0.03, 0.09)
 
     if len(sources) >= 3:
         score += 0.10
