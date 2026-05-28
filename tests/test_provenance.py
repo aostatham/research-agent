@@ -379,6 +379,13 @@ def test_is_valid_claim_false_for_markdown_header():
     assert _is_valid_claim("## Background") is False
 
 
+def test_is_valid_claim_false_for_whitespace_before_header():
+    """_is_valid_claim returns False when leading whitespace precedes a '#' header marker."""
+    from output.provenance import _is_valid_claim
+    assert _is_valid_claim("  ## Background section") is False
+    assert _is_valid_claim("\n# Introduction") is False
+
+
 def test_is_valid_claim_false_for_llm_refusal():
     """_is_valid_claim returns False for known LLM clarification opener phrases."""
     from output.provenance import _is_valid_claim
