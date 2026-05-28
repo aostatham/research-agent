@@ -540,13 +540,18 @@
   }
 
   function safeHref(url) {
-    // Only permit http/https — anything else is rendered as plain text
-    if (typeof url !== "string") return null;
+    if (typeof url !== "string" || !url) return null;
+    // Permit absolute http/https URLs
     try {
       var u = new URL(url);
       if (u.protocol === "http:" || u.protocol === "https:") return url;
-    } catch (e) {}
-    return null;
+      return null;
+    } catch (e) {
+      // Permit relative paths ending in .html or .html#anchor
+      // These are report links in the same output directory
+      if (/^[\w\-]+\.html(#[\w\-]+)?$/.test(url)) return url;
+      return null;
+    }
   }
 
   function pct(n, total) {
