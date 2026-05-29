@@ -286,15 +286,16 @@ def main():
             custom_domains=config.source_classification,
         )
 
-    # Graph Verifier pass — runs after claim extraction so rr.claims is populated.
-    # Moved from orchestrator.run_async() where rr.claims was always empty (H2).
-    if agent_pool.graph_verifier is not None:
+    # Graph Verifier pass — operates on the flat claims list from build_claims_from_results().
+    # The prior per-rr loop was a no-op because rr.claims is never populated by
+    # build_claims_from_results() (it returns a new list, not a writeback).
+    if agent_pool.graph_verifier is not None and claims:
         from agent.verifier import graph_verify
-        updated_results = []
-        for rr in orchestrator._last_research_results:
-            updated_results.append(graph_verify(agent_pool.graph_verifier, rr, topic))
-        orchestrator._last_research_results = updated_results
-        print("  ✅ Graph verification complete")
+        claims = graph_verify(agent_pool.graph_verifier, claims, topic)
+        disputed = sum(
+            1 for c in claims if c.get("verification_status") == "disputed"
+        )
+        print(f"  ✅ Graph verification complete ({len(claims)} claims, {disputed} disputed)")
 
     # Synthesise — full report or executive summary
     report = synthesiser.synthesise(

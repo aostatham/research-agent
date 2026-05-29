@@ -312,19 +312,20 @@ def verify(
 
 def graph_verify(
     agent: Agent,
-    result: ResearchResult,
+    claims: list,
     topic: str,
-) -> ResearchResult:
+) -> list:
     """
-    Run the Graph Verifier Agent on a ResearchResult.
+    Run the Graph Verifier Agent on the flat claims list from build_claims_from_results().
 
-    Called from main.py after build_claims_from_results(), not from the
-    orchestrator. rr.claims is populated at this point — calling earlier
-    (as the orchestrator did) made this a no-op because claims were empty.
+    Called from main.py after build_claims_from_results(). The flat claims
+    list is the correct input — the prior ResearchResult-based signature was
+    a no-op because rr.claims is never populated by build_claims_from_results()
+    (it returns a new list; it does not write back to each ResearchResult).
 
-    Checks all claims in result.claims against the knowledge graph (D041).
-    The graph is cheap to query so all claims are checked, not just suspicious
-    ones (unlike the web Verifier which uses heuristic selection — D010).
+    Checks all claims against the knowledge graph (D041). The graph is cheap
+    to query so all claims are checked, not just suspicious ones (unlike the
+    web Verifier which uses heuristic selection — D010).
 
     Note: CONTRADICTS edges are not yet created by any code path —
     check_contradiction returns no_contradiction in all cases until a future
@@ -332,27 +333,23 @@ def graph_verify(
     branch is currently unreachable. See I048 in ISSUES.md.
 
     For each claim returned as resolved_contradicted by the graph verifier:
-      - claim.verification_status is set to "disputed"
-      - claim.confidence is decreased by 0.10 (floor 0.0)
+      - claim["verification_status"] is set to "disputed"
+      - claim["confidence"] is decreased by 0.10 (floor 0.0)
 
-    Sets result.verification = "refuted" if any claim was resolved_contradicted;
-    otherwise leaves result.verification unchanged.
-
-    On any exception the original unmodified ResearchResult is returned and
+    On any exception the original unmodified claims list is returned and
     a WARNING is logged — the graph verifier must not crash the pipeline.
 
     Args:
-        agent:  Graph Verifier Agent with kg_ tools and max_iterations configured.
-        result: ResearchResult from the Researcher + web Verifier pipeline.
-        topic:  The research topic (passed to kg_ tools as context).
+        agent:   Graph Verifier Agent with kg_ tools and max_iterations configured.
+        claims:  Flat list of EvidenceClaim dicts from build_claims_from_results().
+        topic:   The research topic (passed to kg_ tools as context).
 
     Returns:
-        Updated ResearchResult (modified in place, also returned for convenience).
+        Updated claims list (dicts modified in place; same list returned).
     """
     try:
-        claims = result.claims
         if not claims:
-            return result
+            return claims
 
         # Build numbered claim list for the agent
         claims_text = "\n".join(
@@ -361,7 +358,6 @@ def graph_verify(
         )
         user_msg = (
             f"Topic: {topic}\n\n"
-            f"Research question: {result.question}\n\n"
             f"Claims to verify against the knowledge graph:\n{claims_text}\n\n"
             "Check each claim against the knowledge graph using the available tools. "
             "Return a JSON array with one object per claim as described in your instructions."
@@ -405,14 +401,12 @@ def graph_verify(
                 try:
                     gv_results = json.loads(content)
                     if not isinstance(gv_results, list):
-                        return result
-                    any_contradicted = False
+                        return claims
                     for gv in gv_results:
                         if not isinstance(gv, dict):
                             continue
                         if gv.get("result") != "resolved_contradicted":
                             continue
-                        # Find the matching claim by claim_id
                         cid = gv.get("claim_id")
                         for claim in claims:
                             if claim.get("id") == cid:
@@ -429,16 +423,13 @@ def graph_verify(
                                     0.0,
                                     float(claim.get("confidence", 0.5)) - 0.10
                                 )
-                                any_contradicted = True
                                 break
-                    if any_contradicted:
-                        result.verification = "refuted"
                 except (json.JSONDecodeError, TypeError, ValueError) as e:
                     logging.warning("GraphVerifier: JSON parse failed: %s", e)
-                return result
+                return claims
 
-        return result
+        return claims
 
     except Exception as e:
-        logging.warning("GraphVerifier: unexpected error — returning original result: %s", e)
-        return result
+        logging.warning("GraphVerifier: unexpected error — returning original claims: %s", e)
+        return claims

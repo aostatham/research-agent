@@ -472,16 +472,13 @@ def _make_gv_agent(chat_return):
     )
 
 
-def _make_rr_with_claims(*claims_text):
-    """Build a ResearchResult with EvidenceClaim-like dicts."""
-    claims = [
+def _make_claims(*claims_text):
+    """Build a flat list of EvidenceClaim-like dicts for graph_verify() tests."""
+    return [
         {"id": i + 1, "claim": t, "confidence": 0.7,
          "verification_status": "unverified", "sources": []}
         for i, t in enumerate(claims_text)
     ]
-    return ResearchResult(
-        question="What is X?", answer="X is something.", claims=claims
-    )
 
 
 def test_graph_verify_sets_disputed_on_resolved_contradicted():
@@ -493,13 +490,12 @@ def test_graph_verify_sets_disputed_on_resolved_contradicted():
         {"claim_id": 1, "result": "resolved_contradicted", "reason": "Found contradiction."}
     ])
     agent = _make_gv_agent(LLMResponse(type="text", content=gv_response))
-    rr = _make_rr_with_claims("X is definitely the largest.")
+    claims = _make_claims("X is definitely the largest.")
 
-    result = graph_verify(agent, rr, "topic X")
+    result = graph_verify(agent, claims, "topic X")
 
-    assert result.claims[0]["verification_status"] == "disputed"
-    assert result.claims[0]["confidence"] < 0.7
-    assert result.verification == "refuted"
+    assert result[0]["verification_status"] == "disputed"
+    assert result[0]["confidence"] < 0.7
 
 
 def test_graph_verify_leaves_unresolved_claims_unchanged():
@@ -511,34 +507,49 @@ def test_graph_verify_leaves_unresolved_claims_unchanged():
         {"claim_id": 1, "result": "unresolved", "reason": "No graph evidence."}
     ])
     agent = _make_gv_agent(LLMResponse(type="text", content=gv_response))
-    rr = _make_rr_with_claims("X is a large number.")
+    claims = _make_claims("X is a large number.")
 
-    result = graph_verify(agent, rr, "topic X")
+    result = graph_verify(agent, claims, "topic X")
 
-    assert result.claims[0]["verification_status"] == "unverified"
-    assert result.claims[0]["confidence"] == 0.7
-    assert result.verification == "unverified"
+    assert result[0]["verification_status"] == "unverified"
+    assert result[0]["confidence"] == 0.7
 
 
-def test_graph_verify_returns_original_result_on_exception():
-    """graph_verify() returns the original ResearchResult unmodified on any exception."""
+def test_graph_verify_returns_original_claims_on_exception():
+    """graph_verify() returns the original claims list unmodified on any exception."""
     from agent.verifier import graph_verify
     from agent.base import Agent
 
-    # Agent whose chat() raises RuntimeError
     bad_llm = MagicMock()
     bad_llm.chat.side_effect = RuntimeError("network failure")
     bad_agent = Agent(
         name="graph_verifier", role="r", description="d",
         llm=bad_llm, system_prompt="s", tools=(), max_iterations=4,
     )
-    rr = _make_rr_with_claims("Some claim.")
-    original_vstatus = rr.claims[0]["verification_status"]
+    claims = _make_claims("Some claim.")
+    original_vstatus = claims[0]["verification_status"]
 
-    result = graph_verify(bad_agent, rr, "topic")
+    result = graph_verify(bad_agent, claims, "topic")
 
-    assert result is rr
-    assert result.claims[0]["verification_status"] == original_vstatus
+    assert result is claims
+    assert result[0]["verification_status"] == original_vstatus
+
+
+def test_graph_verify_returns_empty_list_unchanged():
+    """graph_verify() returns an empty claims list immediately without calling the agent."""
+    from agent.verifier import graph_verify
+    from agent.base import Agent
+
+    mock_llm = MagicMock()
+    agent = Agent(
+        name="graph_verifier", role="r", description="d",
+        llm=mock_llm, system_prompt="s", tools=(), max_iterations=4,
+    )
+
+    result = graph_verify(agent, [], "topic")
+
+    assert result == []
+    mock_llm.chat.assert_not_called()
 
 
 def test_graph_verify_confidence_floor_at_zero():
@@ -550,12 +561,12 @@ def test_graph_verify_confidence_floor_at_zero():
         {"claim_id": 1, "result": "resolved_contradicted", "reason": "Contradiction found."}
     ])
     agent = _make_gv_agent(LLMResponse(type="text", content=gv_response))
-    rr = _make_rr_with_claims("Some claim.")
-    rr.claims[0]["confidence"] = 0.05  # would go below 0 without floor
+    claims = _make_claims("Some claim.")
+    claims[0]["confidence"] = 0.05  # would go below 0 without floor
 
-    result = graph_verify(agent, rr, "topic")
+    result = graph_verify(agent, claims, "topic")
 
-    assert result.claims[0]["confidence"] == 0.0
+    assert result[0]["confidence"] == 0.0
 
 
 def test_graph_verify_logs_info_when_overriding_verified_status(caplog):
@@ -568,17 +579,37 @@ def test_graph_verify_logs_info_when_overriding_verified_status(caplog):
         {"claim_id": 1, "result": "resolved_contradicted", "reason": "Contradiction found."}
     ])
     agent = _make_gv_agent(LLMResponse(type="text", content=gv_response))
-    rr = _make_rr_with_claims("X is definitely the largest.")
-    rr.claims[0]["verification_status"] = "verified"  # previously web-verified
+    claims = _make_claims("X is definitely the largest.")
+    claims[0]["verification_status"] = "verified"  # previously web-verified
 
     with caplog.at_level(logging.INFO):
-        result = graph_verify(agent, rr, "topic X")
+        result = graph_verify(agent, claims, "topic X")
 
-    assert result.claims[0]["verification_status"] == "disputed"
+    assert result[0]["verification_status"] == "disputed"
     assert any(
         "web-verified" in r.message and "prior: verified" in r.message
         for r in caplog.records
     )
+
+
+def test_graph_verify_disputed_count_correct():
+    """graph_verify() correctly marks multiple resolved_contradicted claims as disputed."""
+    from agent.verifier import graph_verify
+    from llm.base import LLMResponse
+
+    gv_response = json.dumps([
+        {"claim_id": 1, "result": "resolved_contradicted", "reason": "Contradiction."},
+        {"claim_id": 2, "result": "unresolved", "reason": "No evidence."},
+        {"claim_id": 3, "result": "resolved_contradicted", "reason": "Contradiction."},
+    ])
+    agent = _make_gv_agent(LLMResponse(type="text", content=gv_response))
+    claims = _make_claims("Claim A.", "Claim B.", "Claim C.")
+
+    result = graph_verify(agent, claims, "topic")
+
+    disputed = [c for c in result if c["verification_status"] == "disputed"]
+    assert len(disputed) == 2
+    assert result[1]["verification_status"] == "unverified"
 
 
 # ── Orchestrator verifier integration ────────────────────────────────────────

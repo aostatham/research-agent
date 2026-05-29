@@ -1342,16 +1342,17 @@ def test_main_synthesise_receives_claims_when_provenance_file(tmp_path, monkeypa
 
 
 def test_graph_verify_called_in_main_after_claim_extraction(tmp_path, monkeypatch):
-    """graph_verify is called from main() after build_claims_from_results(), not from orchestrator."""
+    """graph_verify is called from main() with the flat claims list after build_claims_from_results()."""
     monkeypatch.chdir(tmp_path)
     (tmp_path / "config.yaml").write_text("knowledge_store: kuzu\n")
 
     mock_orchestrator = MagicMock()
     mock_synthesiser = MagicMock()
     mock_orchestrator.run.return_value = ((SAMPLE_RESULTS, {}), "test-run-id-123")
-    mock_orchestrator._last_research_results = [MagicMock()]
+    mock_orchestrator._last_research_results = []
     mock_synthesiser.synthesise.return_value = SAMPLE_REPORT
     mock_store = MagicMock()
+    fake_claims = [{"id": 1, "claim": "Fusion releases enormous energy.", "report_line": None}]
 
     mock_agent_pool = MagicMock()
     mock_agent_pool.graph_verifier = MagicMock()
@@ -1363,12 +1364,13 @@ def test_graph_verify_called_in_main_after_claim_extraction(tmp_path, monkeypatc
          patch("main.build_agents", return_value=mock_agent_pool), \
          patch("main.configure_knowledge"), \
          patch("main.get_store", return_value=mock_store), \
-         patch("main.build_claims_from_results", return_value=[]), \
-         patch("agent.verifier.graph_verify", return_value=mock_orchestrator._last_research_results[0]) as mock_gv:
+         patch("main.build_claims_from_results", return_value=fake_claims), \
+         patch("agent.verifier.graph_verify", return_value=fake_claims) as mock_gv:
         from main import main
         main()
 
     mock_gv.assert_called_once()
+    assert mock_gv.call_args.args[1]  # claims list passed is non-empty
 
 
 def test_annotate_report_lines_called_when_knowledge_store_kuzu_provenance_none(tmp_path, monkeypatch):
