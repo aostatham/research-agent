@@ -370,3 +370,11 @@ def test_get_run_history_returns_empty_for_unknown_run(store):
     """get_run_history returns [] when run has no predecessors."""
     history = store.get_run_history("nonexistent-run-id")
     assert history == []
+
+
+# ── _create_contradiction_edges ───────────────────────────────────────────────
+
+def test_create_contradiction_edges_is_callable_with_no_args(store):
+    """_create_contradiction_edges() takes no arguments and returns None without error."""
+    result = store._create_contradiction_edges()
+    assert result is None

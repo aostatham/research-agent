@@ -326,9 +326,10 @@ def graph_verify(
     The graph is cheap to query so all claims are checked, not just suspicious
     ones (unlike the web Verifier which uses heuristic selection — D010).
 
-    Note: check_contradiction returns no_contradiction until CONTRADICTS edges
-    are populated. The resolved_contradicted branch is currently unreachable —
-    CONTRADICTS edge creation is deferred to a future phase (I048).
+    Note: CONTRADICTS edges are not yet created by any code path —
+    check_contradiction returns no_contradiction in all cases until a future
+    phase implements Graph Verifier edge proposal. The resolved_contradicted
+    branch is currently unreachable. See I048 in ISSUES.md.
 
     For each claim returned as resolved_contradicted by the graph verifier:
       - claim.verification_status is set to "disputed"
