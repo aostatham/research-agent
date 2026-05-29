@@ -1341,6 +1341,63 @@ def test_main_synthesise_receives_claims_when_provenance_file(tmp_path, monkeypa
     assert call_kwargs.get("claims") == fake_claims
 
 
+def test_graph_verify_called_in_main_after_claim_extraction(tmp_path, monkeypatch):
+    """graph_verify is called from main() after build_claims_from_results(), not from orchestrator."""
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "config.yaml").write_text("knowledge_store: kuzu\n")
+
+    mock_orchestrator = MagicMock()
+    mock_synthesiser = MagicMock()
+    mock_orchestrator.run.return_value = ((SAMPLE_RESULTS, {}), "test-run-id-123")
+    mock_orchestrator._last_research_results = [MagicMock()]
+    mock_synthesiser.synthesise.return_value = SAMPLE_REPORT
+    mock_store = MagicMock()
+
+    mock_agent_pool = MagicMock()
+    mock_agent_pool.graph_verifier = MagicMock()
+
+    with patch("sys.argv", ["main.py", "nuclear fusion"]), \
+         patch("llm.builder.AnthropicClient"), \
+         patch("main.Orchestrator", return_value=mock_orchestrator), \
+         patch("main.Synthesiser", return_value=mock_synthesiser), \
+         patch("main.build_agents", return_value=mock_agent_pool), \
+         patch("main.configure_knowledge"), \
+         patch("main.get_store", return_value=mock_store), \
+         patch("main.build_claims_from_results", return_value=[]), \
+         patch("agent.verifier.graph_verify", return_value=mock_orchestrator._last_research_results[0]) as mock_gv:
+        from main import main
+        main()
+
+    mock_gv.assert_called_once()
+
+
+def test_annotate_report_lines_called_when_knowledge_store_kuzu_provenance_none(tmp_path, monkeypatch):
+    """annotate_report_lines runs when knowledge_store=kuzu even when provenance=none."""
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "config.yaml").write_text("knowledge_store: kuzu\n")
+
+    mock_orchestrator = MagicMock()
+    mock_synthesiser = MagicMock()
+    mock_orchestrator.run.return_value = ((SAMPLE_RESULTS, {}), "test-run-id-123")
+    mock_orchestrator._last_research_results = []
+    mock_synthesiser.synthesise.return_value = SAMPLE_REPORT
+    mock_store = MagicMock()
+    fake_claims = [{"id": 1, "claim": "test", "report_line": 1}]
+
+    with patch("sys.argv", ["main.py", "nuclear fusion"]), \
+         patch("llm.builder.AnthropicClient"), \
+         patch("main.Orchestrator", return_value=mock_orchestrator), \
+         patch("main.Synthesiser", return_value=mock_synthesiser), \
+         patch("main.configure_knowledge"), \
+         patch("main.get_store", return_value=mock_store), \
+         patch("main.build_claims_from_results", return_value=fake_claims), \
+         patch("main.annotate_report_lines", return_value=(SAMPLE_REPORT, fake_claims)) as mock_ann:
+        from main import main
+        main()
+
+    mock_ann.assert_called_once()
+
+
 def test_main_synthesise_receives_no_claims_when_provenance_none(tmp_path, monkeypatch):
     """When provenance is none (default), synthesise() is called with claims=None."""
     monkeypatch.chdir(tmp_path)

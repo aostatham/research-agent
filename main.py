@@ -286,6 +286,16 @@ def main():
             custom_domains=config.source_classification,
         )
 
+    # Graph Verifier pass — runs after claim extraction so rr.claims is populated.
+    # Moved from orchestrator.run_async() where rr.claims was always empty (H2).
+    if agent_pool.graph_verifier is not None:
+        from agent.verifier import graph_verify
+        updated_results = []
+        for rr in orchestrator._last_research_results:
+            updated_results.append(graph_verify(agent_pool.graph_verifier, rr, topic))
+        orchestrator._last_research_results = updated_results
+        print("  ✅ Graph verification complete")
+
     # Synthesise — full report or executive summary
     report = synthesiser.synthesise(
         topic=topic,
@@ -302,7 +312,7 @@ def main():
 
     elapsed = time.time() - start_time
 
-    if config.provenance in ("file", "graph"):
+    if config.knowledge_store != "none" or config.provenance in ("file", "graph"):
         if config.output_mode != "data":
             report, claims = annotate_report_lines(report, claims)
 

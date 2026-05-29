@@ -459,18 +459,6 @@ class Orchestrator:
 
         self._last_research_results = all_rr
 
-        # Graph verification pass (D041).
-        if self.agent_pool.graph_verifier is not None:
-            from agent.verifier import graph_verify
-            total_claims = sum(len(rr.claims) for rr in self._last_research_results)
-            updated = []
-            for rr in self._last_research_results:
-                updated.append(graph_verify(self.agent_pool.graph_verifier, rr, topic))
-            self._last_research_results = updated
-            logging.info(
-                "Graph verification complete — %d claims checked", total_claims
-            )
-
         state.current_stage = "synthesise"
         state.accumulated_research_results = [
             dataclasses.asdict(rr) for rr in self._last_research_results
@@ -574,13 +562,6 @@ class Orchestrator:
             sources.update(gap_sources)
 
         self._last_research_results = all_rr
-
-        if self.agent_pool.graph_verifier is not None:
-            from agent.verifier import graph_verify
-            updated = []
-            for rr in self._last_research_results:
-                updated.append(graph_verify(self.agent_pool.graph_verifier, rr, topic))
-            self._last_research_results = updated
 
         state.current_stage = "synthesise"
         state.gap_questions = list(missing) if (not sufficient and missing) else []

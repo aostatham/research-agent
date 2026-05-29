@@ -318,9 +318,17 @@ def graph_verify(
     """
     Run the Graph Verifier Agent on a ResearchResult.
 
+    Called from main.py after build_claims_from_results(), not from the
+    orchestrator. rr.claims is populated at this point — calling earlier
+    (as the orchestrator did) made this a no-op because claims were empty.
+
     Checks all claims in result.claims against the knowledge graph (D041).
     The graph is cheap to query so all claims are checked, not just suspicious
     ones (unlike the web Verifier which uses heuristic selection — D010).
+
+    Note: check_contradiction returns no_contradiction until CONTRADICTS edges
+    are populated. The resolved_contradicted branch is currently unreachable —
+    CONTRADICTS edge creation is deferred to a future phase (I048).
 
     For each claim returned as resolved_contradicted by the graph verifier:
       - claim.verification_status is set to "disputed"

@@ -849,32 +849,15 @@ def test_run_async_uses_provided_run_id(orchestrator, mock_llm):
     assert returned_id == fixed_id
 
 
-def test_run_async_calls_graph_verify_when_graph_verifier_set(orchestrator, mock_llm):
-    """run_async() calls graph_verify() for each ResearchResult when graph_verifier is not None."""
+def test_run_async_does_not_call_graph_verify(orchestrator, mock_llm):
+    """run_async() never calls graph_verify() — it was moved to main.py (H2 fix)."""
     mock_llm.chat.side_effect = [
-        make_text_response('["Q1?", "Q2?"]'),
+        make_text_response('["Q1?"]'),
         make_text_response('{"sufficient": true, "missing": []}'),
     ]
-    rr1 = make_rr(question="Q1?", answer="ans1")
-    rr2 = make_rr(question="Q2?", answer="ans2")
-    async def fake_rqa(q, sem):
-        return rr1 if q == "Q1?" else rr2
     orchestrator.agent_pool.graph_verifier = MagicMock()
-    with patch.object(orchestrator, 'research_question_async', side_effect=fake_rqa):
-        with patch("agent.verifier.graph_verify", side_effect=lambda agent, rr, topic: rr) as mock_gv:
-            asyncio.run(orchestrator.run_async("nuclear fusion"))
-    assert mock_gv.call_count == 2
-
-
-def test_run_async_skips_graph_verify_when_graph_verifier_none(orchestrator, mock_llm):
-    """run_async() does not call graph_verify() when graph_verifier is None."""
-    mock_llm.chat.side_effect = [
-        make_text_response('["Q1?", "Q2?"]'),
-        make_text_response('{"sufficient": true, "missing": []}'),
-    ]
     async def fake_rqa(q, sem):
         return make_rr(question=q, answer="ans")
-    orchestrator.agent_pool.graph_verifier = None
     with patch.object(orchestrator, 'research_question_async', side_effect=fake_rqa):
         with patch("agent.verifier.graph_verify") as mock_gv:
             asyncio.run(orchestrator.run_async("nuclear fusion"))
