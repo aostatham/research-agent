@@ -193,3 +193,70 @@ def test_analyse_skips_claims_without_report_line():
     # claim 11 was included (has report_line=1), so qualifier applied
     assert "Reportedly, " in first_line
     # claim 10 (no report_line) must not appear as a lookup key causing errors
+
+
+# ── Deterministic multi-recommendation ordering ───────────────────────────────
+
+def test_analyse_surface_contradiction_applied_before_qualify_regardless_of_input_order():
+    """surface_contradiction is applied before qualify on the same line regardless of input order."""
+    # Input order is wrong (qualify first) — output must still have ⚠️ before qualifier.
+    recs = [
+        {"type": "qualify", "report_line": 1, "claim_id": 1,
+         "suggested_qualifier": "Reportedly, "},
+        {"type": "surface_contradiction", "report_line": 1, "claim_id": 1},
+    ]
+    mock_llm = MagicMock()
+    mock_llm.chat.return_value = make_text_response(json.dumps(recs))
+    agent = make_analyst_agent(mock_llm)
+    result_report, _ = analyse(agent, SAMPLE_REPORT, SAMPLE_CLAIMS, make_config())
+    first_line = result_report.split("\n")[0]
+    # surface_contradiction first → ⚠️ marker; qualify second → qualifier inserted
+    assert first_line.startswith("⚠️ (disputed) Reportedly, ")
+    assert "Line one content." in first_line
+
+
+def test_analyse_duplicate_same_type_same_line_applies_first_logs_warning(caplog):
+    """Two qualify recs on the same line: first by claim_id applied, second skipped with WARNING."""
+    import logging
+    claims = [
+        {"id": 1, "claim": "Line one content.", "confidence": 0.3,
+         "sources": [{"type": "forum"}], "verification_status": "unverified", "report_line": 1},
+        {"id": 2, "claim": "other claim text", "confidence": 0.9,
+         "sources": [{"type": "academic"}], "verification_status": "verified", "report_line": 1},
+    ]
+    recs = [
+        {"type": "qualify", "report_line": 1, "claim_id": 1, "suggested_qualifier": "First: "},
+        {"type": "qualify", "report_line": 1, "claim_id": 2, "suggested_qualifier": "Second: "},
+    ]
+    mock_llm = MagicMock()
+    mock_llm.chat.return_value = make_text_response(json.dumps(recs))
+    agent = make_analyst_agent(mock_llm)
+    with caplog.at_level(logging.WARNING):
+        result_report, _ = analyse(agent, SAMPLE_REPORT, claims, make_config())
+    first_line = result_report.split("\n")[0]
+    assert first_line.startswith("First: ")
+    assert "Second:" not in first_line
+    assert any("Multiple qualify" in r.message for r in caplog.records)
+
+
+def test_analyse_surface_contradiction_plus_qualify_on_same_line_combined():
+    """surface_contradiction + qualify on same line produce correct combined output."""
+    claims = [
+        {"id": 1, "claim": "Line one content.", "confidence": 0.3,
+         "sources": [{"type": "forum"}], "verification_status": "unverified", "report_line": 1},
+        {"id": 2, "claim": "Line one content.", "confidence": 0.4,
+         "sources": [{"type": "forum"}], "verification_status": "unverified", "report_line": 1},
+    ]
+    recs = [
+        {"type": "qualify", "report_line": 1, "claim_id": 1,
+         "suggested_qualifier": "Reportedly, "},
+        {"type": "surface_contradiction", "report_line": 1, "claim_id": 2},
+    ]
+    mock_llm = MagicMock()
+    mock_llm.chat.return_value = make_text_response(json.dumps(recs))
+    agent = make_analyst_agent(mock_llm)
+    result_report, _ = analyse(agent, SAMPLE_REPORT, claims, make_config())
+    first_line = result_report.split("\n")[0]
+    assert "⚠️ (disputed)" in first_line
+    assert "Reportedly," in first_line
+    assert "Line one content." in first_line

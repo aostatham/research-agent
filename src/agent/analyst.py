@@ -98,19 +98,50 @@ def analyse(agent: Agent, report: str, claims: list, config) -> tuple:
         claim_by_id = {c.get("id"): c for c in filtered_claims}
         modified_lines = list(lines)
 
+        # surface_contradiction first, qualify second, strengthen third.
+        # Within each type, ascending claim_id for determinism.
+        _TYPE_ORDER = {"surface_contradiction": 0, "qualify": 1, "strengthen": 2}
+
+        valid_recs = []
         for rec in recommendations:
             if not isinstance(rec, dict):
                 continue
+            if rec.get("report_line") is None:
+                continue
+            line_idx = rec["report_line"] - 1
+            if not (0 <= line_idx < len(modified_lines)):
+                continue
+            valid_recs.append(rec)
+
+        sorted_recs = sorted(
+            valid_recs,
+            key=lambda r: (_TYPE_ORDER.get(r.get("type", ""), 99),
+                           r.get("claim_id") or 0),
+        )
+
+        # Per (line, type): keep first by claim_id, warn on extras.
+        seen: dict = {}
+        deduped_recs = []
+        for rec in sorted_recs:
             rec_type = rec.get("type")
             report_line = rec.get("report_line")
             claim_id = rec.get("claim_id")
-
-            if report_line is None:
+            key = (report_line, rec_type)
+            if key in seen:
+                logging.warning(
+                    "Analyst: Multiple %s recommendations for line %d "
+                    "— applying claim_id %s only",
+                    rec_type, report_line, seen[key],
+                )
                 continue
+            seen[key] = claim_id
+            deduped_recs.append(rec)
+
+        for rec in deduped_recs:
+            rec_type = rec.get("type")
+            report_line = rec.get("report_line")
+            claim_id = rec.get("claim_id")
             line_idx = report_line - 1
-            if not (0 <= line_idx < len(modified_lines)):
-                continue
-
             claim = claim_by_id.get(claim_id)
             claim_text = claim.get("claim", "") if claim else ""
 
