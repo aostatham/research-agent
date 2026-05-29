@@ -12,3 +12,4 @@ build/
 
 output/.checkpoints/
 output/.logs/
+output/.knowledge/
