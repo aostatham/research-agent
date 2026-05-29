@@ -1259,6 +1259,53 @@ def test_no_knowledge_write_flag_skips_write_run(tmp_path, monkeypatch):
     mock_store.write_run.assert_not_called()
 
 
+# ── Claim extraction gating tests ────────────────────────────────────────────
+
+def test_build_claims_called_when_knowledge_store_kuzu_provenance_none(tmp_path, monkeypatch):
+    """build_claims_from_results is called when knowledge_store=kuzu even when provenance=none."""
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "config.yaml").write_text("knowledge_store: kuzu\n")
+
+    mock_orchestrator = MagicMock()
+    mock_synthesiser = MagicMock()
+    mock_orchestrator.run.return_value = ((SAMPLE_RESULTS, {}), "test-run-id-123")
+    mock_orchestrator._last_research_results = []
+    mock_synthesiser.synthesise.return_value = SAMPLE_REPORT
+    mock_store = MagicMock()
+
+    with patch("sys.argv", ["main.py", "nuclear fusion"]), \
+         patch("llm.builder.AnthropicClient"), \
+         patch("main.Orchestrator", return_value=mock_orchestrator), \
+         patch("main.Synthesiser", return_value=mock_synthesiser), \
+         patch("main.configure_knowledge"), \
+         patch("main.get_store", return_value=mock_store), \
+         patch("main.build_claims_from_results", return_value=[]) as mock_build_claims:
+        from main import main
+        main()
+
+    mock_build_claims.assert_called_once()
+
+
+def test_build_claims_not_called_when_knowledge_store_none_provenance_none(tmp_path, monkeypatch):
+    """build_claims_from_results is not called when both knowledge_store and provenance are none."""
+    monkeypatch.chdir(tmp_path)
+    mock_llm = MagicMock()
+    mock_orchestrator = MagicMock()
+    mock_synthesiser = MagicMock()
+    mock_orchestrator.run.return_value = ((SAMPLE_RESULTS, {}), "test-run-id-123")
+    mock_synthesiser.synthesise.return_value = SAMPLE_REPORT
+
+    with patch("sys.argv", ["main.py", "nuclear fusion"]), \
+         patch("llm.builder.AnthropicClient", return_value=mock_llm), \
+         patch("main.Orchestrator", return_value=mock_orchestrator), \
+         patch("main.Synthesiser", return_value=mock_synthesiser), \
+         patch("main.build_claims_from_results") as mock_build_claims:
+        from main import main
+        main()
+
+    mock_build_claims.assert_not_called()
+
+
 # ── Provenance pipeline ordering tests ───────────────────────────────────────
 
 def test_main_synthesise_receives_claims_when_provenance_file(tmp_path, monkeypatch):

@@ -273,10 +273,12 @@ def main():
     # Count researcher web searches (excludes verifier searches)
     search_count = orchestrator.search_count
 
-    # Extract provenance claims before synthesis so the synthesiser can anchor them
+    # Extract provenance claims before synthesis so the synthesiser can anchor them.
+    # Also extract when knowledge_store is active so the Analyst and graph write
+    # receive claims even when no provenance file is requested.
     claims = []
     prov_path = None
-    if config.provenance in ("file", "graph"):
+    if config.knowledge_store != "none" or config.provenance in ("file", "graph"):
         claims = build_claims_from_results(
             orchestrator._last_research_results, synth_llm,
             topic=topic,
