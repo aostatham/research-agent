@@ -33,7 +33,7 @@ from observability.events import log_event
 
 _DECOMPOSE_PROMPT_PATH = Path(__file__).parent.parent.parent / "prompts" / "tasks" / "decomposer.md"
 
-STAGE_ORDER = ["decompose", "research", "reflect", "synthesise", "edit", "complete"]
+STAGE_ORDER = ["decompose", "research", "reflect", "synthesise"]
 
 REFLECT_PROMPT = """You are a rigorous research critic reviewing findings before a report is written.
 
@@ -366,9 +366,10 @@ class Orchestrator:
         else:
             resume_stage = None
 
-        if resume_stage == "complete":
-            logging.info("Run %s already complete — rerunning from start", run_id)
-            resume_stage = None
+        # "edit" and "complete" were in old STAGE_ORDER but run_async() never
+        # emits them. Treat both as "synthesise" — the last meaningful resume point.
+        if resume_stage in ("edit", "complete"):
+            resume_stage = "synthesise"
 
         if resume_stage is not None:
             print(f"  Resuming from stage: {resume_stage}")

@@ -919,21 +919,46 @@ def test_run_async_runs_all_stages_when_no_run_id(orchestrator, mock_llm):
     assert mock_rqa.call_count >= 1
 
 
-def test_run_async_reruns_all_stages_when_resume_stage_is_complete(orchestrator, mock_llm):
-    """When checkpoint shows 'complete', all stages rerun as a fresh run."""
-    mock_llm.chat.side_effect = [
-        make_text_response('["Q1?"]'),
-        make_text_response('{"sufficient": true, "missing": []}'),
-    ]
-    async def fake_rqa(q, sem):
-        return make_rr(question=q, answer="fresh")
+def test_run_async_resumes_from_synthesise_when_checkpoint_is_complete(orchestrator):
+    """When checkpoint shows 'complete', treat as synthesise — skip research."""
+    prior = RunState(
+        run_id="done123", current_stage="complete", topic="nuclear fusion",
+        questions=["Q1?"],
+        accumulated_research_results=[{
+            "question": "Q1?", "answer": "cached answer", "claims": [],
+            "sources": [], "message_history": [], "verification": "unverified",
+        }],
+        report_text="", started_at="2026-01-01T00:00:00+00:00", last_checkpoint_at="",
+    )
     with patch("agent.orchestrator.get_resume_stage", return_value="complete"):
-        with patch.object(orchestrator, "research_question_async", side_effect=fake_rqa) as mock_rqa:
-            (results, sources), run_id = asyncio.run(
-                orchestrator.run_async("nuclear fusion", run_id="done123")
-            )
-    assert mock_rqa.call_count >= 1
-    assert mock_llm.chat.call_count >= 1  # decompose was called
+        with patch("agent.orchestrator.load_checkpoint", return_value=prior):
+            with patch.object(orchestrator, "research_question_async") as mock_rqa:
+                (results, sources), run_id = asyncio.run(
+                    orchestrator.run_async("nuclear fusion", run_id="done123")
+                )
+    mock_rqa.assert_not_called()
+    assert results.get("Q1?") == "cached answer"
+
+
+def test_run_async_resumes_from_synthesise_when_checkpoint_is_edit(orchestrator):
+    """When checkpoint shows 'edit' (future-version stage), treat as synthesise — skip research."""
+    prior = RunState(
+        run_id="edit123", current_stage="edit", topic="nuclear fusion",
+        questions=["Q1?"],
+        accumulated_research_results=[{
+            "question": "Q1?", "answer": "edit answer", "claims": [],
+            "sources": [], "message_history": [], "verification": "unverified",
+        }],
+        report_text="", started_at="2026-01-01T00:00:00+00:00", last_checkpoint_at="",
+    )
+    with patch("agent.orchestrator.get_resume_stage", return_value="edit"):
+        with patch("agent.orchestrator.load_checkpoint", return_value=prior):
+            with patch.object(orchestrator, "research_question_async") as mock_rqa:
+                (results, sources), run_id = asyncio.run(
+                    orchestrator.run_async("nuclear fusion", run_id="edit123")
+                )
+    mock_rqa.assert_not_called()
+    assert results.get("Q1?") == "edit answer"
 
 
 # ── run_followup_async() tests ────────────────────────────────────────────────
