@@ -100,6 +100,16 @@ def test_write_run_skips_invalid_claims(store):
     assert result == []
 
 
+def test_write_run_logs_warning_with_claim_id_when_skipping(store, caplog):
+    """write_run() logs a WARNING including the claim id when an invalid claim is skipped."""
+    import logging
+    invalid = _claim(42, "")
+    invalid["claim"] = ""
+    with caplog.at_level(logging.WARNING, logger="knowledge.store"):
+        store.write_run("run1", "test topic", [invalid], [], "2026-01-15T10:00:00Z")
+    assert any("42" in r.message for r in caplog.records)
+
+
 def test_write_run_does_not_raise_when_unavailable(tmp_path):
     """write_run() on an unavailable store is a silent no-op."""
     store = KuzuStore("/dev/null/invalid/path/cannot/exist")

@@ -199,8 +199,10 @@ class KuzuStore:
             for idx, claim in enumerate(claims):
                 if not self._is_valid_graph_claim(claim):
                     logger.warning(
-                        "KuzuStore.write_run: skipping invalid claim: %r",
-                        str(claim.get("claim", ""))[:60],
+                        "kg write_run: skipping invalid claim (id=%s, len=%d, topic=%s)",
+                        claim.get("id", "unknown"),
+                        len(str(claim.get("claim", ""))),
+                        topic[:40],
                     )
                     continue
                 claim_id = f"{run_id}_{claim.get('id', idx)}"
