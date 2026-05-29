@@ -936,6 +936,72 @@ def test_run_async_reruns_all_stages_when_resume_stage_is_complete(orchestrator,
     assert mock_llm.chat.call_count >= 1  # decompose was called
 
 
+# ── run_followup_async() tests ────────────────────────────────────────────────
+
+def test_run_followup_async_uses_gap_questions_not_decompose(orchestrator, mock_llm):
+    """run_followup_async() researches prior gap questions without calling decompose()."""
+    prior = RunState(
+        run_id="prior99", current_stage="synthesise", topic="nuclear fusion",
+        questions=["Q1?"], accumulated_research_results=[],
+        report_text="", started_at="2026-01-01T00:00:00+00:00", last_checkpoint_at="",
+        gap_questions=["gap Q1?", "gap Q2?"],
+    )
+    mock_llm.chat.return_value = make_text_response('{"sufficient": true, "missing": []}')
+
+    async def fake_rqa(q, sem):
+        return make_rr(question=q, answer="gap answer")
+
+    with patch("agent.orchestrator.load_checkpoint", return_value=prior):
+        with patch.object(orchestrator, "research_question_async", side_effect=fake_rqa) as mock_rqa:
+            (results, sources), new_run_id = asyncio.run(
+                orchestrator.run_followup_async("nuclear fusion", "prior99")
+            )
+    assert mock_rqa.call_count == 2
+    # decompose not called — llm.chat only used once by reflect()
+    assert mock_llm.chat.call_count == 1
+    assert "gap Q1?" in results
+    assert "gap Q2?" in results
+
+
+def test_run_followup_async_falls_back_when_no_gap_questions(orchestrator):
+    """run_followup_async() calls run_async() when prior checkpoint has no gap_questions."""
+    prior = RunState(
+        run_id="prior99", current_stage="synthesise", topic="nuclear fusion",
+        questions=["Q1?"], accumulated_research_results=[],
+        report_text="", started_at="2026-01-01T00:00:00+00:00", last_checkpoint_at="",
+        gap_questions=[],
+    )
+
+    async def fake_run_async(topic, run_id=None):
+        return ({"Q?": "fresh answer"}, "newid")
+
+    with patch("agent.orchestrator.load_checkpoint", return_value=prior):
+        with patch.object(orchestrator, "run_async", side_effect=fake_run_async) as mock_run:
+            asyncio.run(orchestrator.run_followup_async("nuclear fusion", "prior99"))
+    mock_run.assert_called_once()
+
+
+def test_run_followup_async_generates_new_run_id(orchestrator, mock_llm):
+    """run_followup_async() returns a new run_id distinct from the prior run_id."""
+    prior = RunState(
+        run_id="prior99", current_stage="synthesise", topic="nuclear fusion",
+        questions=["Q1?"], accumulated_research_results=[],
+        report_text="", started_at="2026-01-01T00:00:00+00:00", last_checkpoint_at="",
+        gap_questions=["gap Q1?"],
+    )
+    mock_llm.chat.return_value = make_text_response('{"sufficient": true, "missing": []}')
+
+    async def fake_rqa(q, sem):
+        return make_rr(question=q, answer="gap answer")
+
+    with patch("agent.orchestrator.load_checkpoint", return_value=prior):
+        with patch.object(orchestrator, "research_question_async", side_effect=fake_rqa):
+            (results, sources), new_run_id = asyncio.run(
+                orchestrator.run_followup_async("nuclear fusion", "prior99")
+            )
+    assert new_run_id != "prior99"
+
+
 # ── Integration tests ─────────────────────────────────────────────────────────
 
 @pytest.mark.integration

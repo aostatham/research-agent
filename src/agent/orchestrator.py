@@ -474,6 +474,8 @@ class Orchestrator:
         state.accumulated_research_results = [
             dataclasses.asdict(rr) for rr in self._last_research_results
         ]
+        # Store gap questions so follow-up mode can retrieve them (D038).
+        state.gap_questions = list(missing) if (not sufficient and missing) else []
         save_checkpoint(state)
 
         self.search_count = get_and_reset_search_count()
@@ -488,6 +490,115 @@ class Orchestrator:
         )
         print(f"\n✅ Research complete — {len(results)} questions answered")
         return (results, sources), state.run_id
+
+    async def run_followup_async(
+        self, topic: str, prior_run_id: str
+    ) -> tuple:
+        """
+        Research the gap questions identified in a prior run's reflect() pass.
+
+        Bypasses decompose() entirely (D038) — the gap questions from the prior
+        checkpoint become the question list directly.  Falls back to a fresh
+        run on the same topic when the prior checkpoint has no gap_questions.
+
+        A new run_id is generated for the follow-up run.  Results are linked to
+        the prior Topic node via PRECEDED_BY edges in the knowledge graph when
+        write_run() is called by the caller (main.py) with both run_ids.
+
+        Args:
+            topic:        The research topic (used for reflect and graph context).
+            prior_run_id: run_id of the completed run whose gaps to follow up on.
+
+        Returns:
+            Tuple of ((results, sources), new_run_id).
+        """
+        self._last_research_results = []
+        get_and_reset_search_count()
+
+        try:
+            prior_state = load_checkpoint(prior_run_id)
+            gap_questions = prior_state.gap_questions
+        except FileNotFoundError:
+            logging.warning(
+                "run_followup_async: no checkpoint for %s — running fresh", prior_run_id
+            )
+            gap_questions = []
+
+        if not gap_questions:
+            logging.warning(
+                "run_followup_async: no gap_questions in prior run %s — running fresh",
+                prior_run_id,
+            )
+            return await self.run_async(topic)
+
+        new_run_id = uuid.uuid4().hex
+        state = RunState(
+            run_id=new_run_id,
+            current_stage="research",
+            topic=topic,
+            questions=gap_questions,
+            accumulated_research_results=[],
+            report_text="",
+            started_at=datetime.now(timezone.utc).isoformat(),
+            last_checkpoint_at="",
+        )
+        save_checkpoint(state)
+        log_event(
+            run_id=new_run_id,
+            agent="orchestrator",
+            stage="pipeline",
+            event="followup_start",
+            metadata={"topic": topic[:80], "prior_run_id": prior_run_id,
+                      "gap_count": len(gap_questions)},
+        )
+
+        print(f"\n🚀 Following up on {len(gap_questions)} gap questions "
+              f"(workers: {self.config.max_workers})...")
+        results, sources = await self.research_all_async(gap_questions)
+        all_rr = list(self._last_research_results)
+
+        state.current_stage = "reflect"
+        state.accumulated_research_results = [
+            dataclasses.asdict(rr) for rr in self._last_research_results
+        ]
+        save_checkpoint(state)
+
+        sufficient, missing = self.reflect(topic, results)
+        if not sufficient and missing:
+            print(f"\n🔄 Researching {len(missing)} further gaps "
+                  f"(workers: {self.config.max_workers})...")
+            gap_results, gap_sources = await self.research_all_async(missing)
+            all_rr.extend(self._last_research_results)
+            results.update(gap_results)
+            sources.update(gap_sources)
+
+        self._last_research_results = all_rr
+
+        if self.agent_pool.graph_verifier is not None:
+            from agent.verifier import graph_verify
+            updated = []
+            for rr in self._last_research_results:
+                updated.append(graph_verify(self.agent_pool.graph_verifier, rr, topic))
+            self._last_research_results = updated
+
+        state.current_stage = "synthesise"
+        state.gap_questions = list(missing) if (not sufficient and missing) else []
+        state.accumulated_research_results = [
+            dataclasses.asdict(rr) for rr in self._last_research_results
+        ]
+        save_checkpoint(state)
+
+        self.search_count = get_and_reset_search_count()
+        log_event(
+            run_id=new_run_id,
+            agent="orchestrator",
+            stage="pipeline",
+            event="followup_complete",
+            metadata={"questions_answered": len(self._last_research_results),
+                      "search_count": self.search_count},
+        )
+        print(f"\n✅ Follow-up research complete — {len(results)} questions answered")
+        return (results, sources), new_run_id
 
     def run(self, topic: str, run_id: str = None) -> tuple:
         """

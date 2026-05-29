@@ -106,6 +106,10 @@ def parse_args():
         help="Resume an interrupted run from its last checkpoint"
     )
     parser.add_argument(
+        "--follow-up", metavar="RUN_ID", default=None,
+        help="Research gaps from a prior run identified by RUN_ID"
+    )
+    parser.add_argument(
         "--no-observability",
         action="store_true",
         help="Disable observability event logging"
@@ -247,11 +251,24 @@ def main():
     orchestrator = Orchestrator(llm=orch_llm, agent_pool=agent_pool, config=config)
     synthesiser = Synthesiser(llm=synth_llm, config=config)
 
+    if args.resume and args.follow_up:
+        print("❌ --resume and --follow-up cannot be used together.", file=sys.stderr)
+        sys.exit(1)
+
     if args.resume:
         print(f"  Resuming run: {args.resume}")
 
-    # orchestrator.run() returns ((results, sources), run_id)
-    (results, sources), run_id = orchestrator.run(topic, run_id=args.resume)
+    if args.follow_up:
+        print(f"  Following up on run: {args.follow_up}")
+
+    # orchestrator.run() / run_followup_async() returns ((results, sources), run_id)
+    import asyncio as _asyncio
+    if args.follow_up:
+        (results, sources), run_id = _asyncio.run(
+            orchestrator.run_followup_async(topic, prior_run_id=args.follow_up)
+        )
+    else:
+        (results, sources), run_id = orchestrator.run(topic, run_id=args.resume)
 
     # Count researcher web searches (excludes verifier searches)
     search_count = orchestrator.search_count

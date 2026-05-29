@@ -37,6 +37,7 @@ class RunState:
     report_text: str                     # set after synthesise; empty until then
     started_at: str                      # ISO8601 UTC timestamp
     last_checkpoint_at: str              # ISO8601 UTC timestamp; updated on save
+    gap_questions: list = field(default_factory=list)  # gaps from reflect(); used by follow-up mode
 
 
 def save_checkpoint(

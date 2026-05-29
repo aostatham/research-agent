@@ -20,7 +20,7 @@ Integration tests require a live Anthropic API key and are marked accordingly.
 import pytest
 import sys
 import os
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, AsyncMock, patch
 from llm.base import LLMResponse
 
 
@@ -1312,6 +1312,42 @@ def test_main_synthesise_receives_no_claims_when_provenance_none(tmp_path, monke
 
     call_kwargs = mock_synthesiser.synthesise.call_args[1]
     assert call_kwargs.get("claims") is None
+
+
+# ── --follow-up flag tests ────────────────────────────────────────────────────
+
+def test_follow_up_flag_is_accepted_without_error(tmp_path, monkeypatch):
+    """--follow-up RUN_ID is accepted and run_followup_async() is called."""
+    monkeypatch.chdir(tmp_path)
+    mock_orchestrator = MagicMock()
+    mock_synthesiser = MagicMock()
+    mock_orchestrator.run_followup_async = AsyncMock(
+        return_value=((SAMPLE_RESULTS, {}), "followup-run-id")
+    )
+    mock_synthesiser.synthesise.return_value = SAMPLE_REPORT
+
+    with patch("sys.argv", ["main.py", "nuclear fusion", "--follow-up", "prior123"]), \
+         patch("llm.builder.AnthropicClient"), \
+         patch("main.Orchestrator", return_value=mock_orchestrator), \
+         patch("main.Synthesiser", return_value=mock_synthesiser):
+        from main import main
+        main()
+
+    mock_orchestrator.run_followup_async.assert_called_once_with(
+        "nuclear fusion", prior_run_id="prior123"
+    )
+
+
+def test_follow_up_and_resume_together_exit_with_error(tmp_path, monkeypatch):
+    """--follow-up and --resume cannot be used together — exits with code 1."""
+    monkeypatch.chdir(tmp_path)
+    with patch("sys.argv",
+               ["main.py", "nuclear fusion", "--follow-up", "prior123", "--resume", "other456"]), \
+         patch("llm.builder.AnthropicClient"):
+        with pytest.raises(SystemExit) as exc_info:
+            from main import main
+            main()
+    assert exc_info.value.code == 1
 
 
 # ── Integration tests ─────────────────────────────────────────────────────────
