@@ -84,3 +84,4 @@ grep examples:
 | I045 | Low | agent/tools.py | Anthropic/Tavily search count asymmetry undocumented | Pass 6 QA | Closed | Pass 6 final |
 | I046 | Low | CLAUDE.md | Pass 3 IN PROGRESS marker stale by three passes | Pass 6 QA | Closed | Pass 6 final |
 | I047 | Low | src/llm/anthropic_client.py, src/agent/tools.py | Anthropic and Tavily SDK imports are eager — non-Anthropic runs require all provider packages installed | Raised in review | Open | |
+| I048 | Medium | knowledge/store.py | CONTRADICTS edges never created — check_contradiction always returns no_contradiction; resolved_contradicted branch unreachable | Phase E QA Pass 2 | Open | |

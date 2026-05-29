@@ -214,9 +214,9 @@ class KuzuStore:
                 )
                 written.append((claim_id, claim))
 
-            # Post-process temporal and contradiction edges
+            # Post-process temporal edges; contradiction edges deferred (I048).
             self._create_temporal_edges(topic, written)
-            self._create_contradiction_edges(topic, written)
+            self._create_contradiction_edges()
 
             # Merge flat sources list
             for source in sources:
@@ -525,9 +525,8 @@ class KuzuStore:
             except Exception as e:
                 logger.debug("KuzuStore._create_temporal_edges: %s", e)
 
-    def _create_contradiction_edges(self, topic: str,
-                                    written: list[tuple[str, dict]]) -> None:
-        """Automatic CONTRADICTS edge creation disabled — edges proposed by Graph Verifier."""
+    def _create_contradiction_edges(self) -> None:
+        """Automatic CONTRADICTS edge creation disabled — edges deferred to a future phase (I048)."""
         logger.debug(
             "Automatic CONTRADICTS edge creation disabled — "
             "edges will be proposed by Graph Verifier in a future phase"

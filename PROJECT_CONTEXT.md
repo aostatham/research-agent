@@ -473,5 +473,10 @@ status, and contradiction history. Two delivery modes:
 See ISSUES.md for the full issues log.
 grep "| Open |" ISSUES.md to list current open items.
 
-No open issues at close of Phase D.
+Currently open:
+  I047 (Low) — eager SDK imports
+  I048 (Medium) — CONTRADICTS edges never created; contradiction
+    detection deferred to a future phase. Graph Verifier contradiction
+    detection deferred — CONTRADICTS edges not yet created;
+    check_contradiction returns no_contradiction in all cases.
 Deferred to Phase I: I003 (search globals), I004 (run() footgun)
