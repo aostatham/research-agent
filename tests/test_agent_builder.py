@@ -111,9 +111,12 @@ def test_build_agent_reads_prompt_with_utf8_encoding(tmp_path):
 # ── build_agents() ────────────────────────────────────────────────────────────
 
 def _make_prompt_dir(tmp_path):
-    """Write the four prompt files needed by build_agents()."""
+    """Write the prompt files needed by build_agents()."""
     for name in ("researcher", "verifier", "editor", "graph_verifier"):
         (tmp_path / f"{name}.md").write_text(f"{name} prompt")
+    tasks_dir = tmp_path / "tasks"
+    tasks_dir.mkdir()
+    (tasks_dir / "analyst.md").write_text("analyst prompt")
     return tmp_path
 
 

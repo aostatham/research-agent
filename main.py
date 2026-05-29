@@ -303,6 +303,11 @@ def main():
         if config.output_mode != "data":
             report, claims = annotate_report_lines(report, claims)
 
+    if agent_pool.analyst is not None and claims:
+        from agent.analyst import analyse
+        print("  ✍️  Running Analyst Agent pass...")
+        report, claims = analyse(agent_pool.analyst, report, claims, config)
+
     # Build metadata table and save outputs
     metadata = build_metadata(
         topic=topic,

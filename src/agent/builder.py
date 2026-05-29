@@ -141,12 +141,17 @@ def build_agents(
         graph_verifier_agent = build_graph_verifier(config, synth_llm,
                                                     prompt_dir=prompt_dir)
 
+    # Analyst Agent — populated when knowledge store is configured (D043).
+    analyst_agent = None
+    if getattr(config, "knowledge_store", "none") != "none":
+        analyst_agent = build_analyst(config, synth_llm, prompt_dir=prompt_dir)
+
     return AgentPool(
         researcher=researcher,
         verifier=verifier,
         editor=editor,
         graph_verifier=graph_verifier_agent,
-        analyst=None,
+        analyst=analyst_agent,
     )
 
 
@@ -184,6 +189,41 @@ def build_graph_verifier(
         tools=("kg_check_contradiction", "kg_query_claims_for_topic",
                "kg_get_related_topics"),
         max_iterations=4,
+    )
+
+
+def build_analyst(
+    config,
+    synth_llm: LLMClient,
+    prompt_dir: Union[str, Path, None] = None,
+) -> "Agent":
+    """
+    Build the Analyst agent.
+
+    Loads prompts/tasks/analyst.md. The Analyst uses synth_llm and has access
+    to kg_query_claims_for_topic and kg_write_claim tools. It is only built
+    when the knowledge store is configured — callers must check before calling.
+
+    Args:
+        config:     Config instance (reserved for future tuning).
+        synth_llm:  Pre-built synthesis LLM client.
+        prompt_dir: Base prompts directory (default: Path("prompts")).
+
+    Returns:
+        Agent configured for evidence-informed report quality recommendations.
+
+    Raises:
+        FileNotFoundError: If prompts/tasks/analyst.md does not exist.
+    """
+    task_dir = Path(prompt_dir or "prompts") / "tasks"
+    return build_agent(
+        name="analyst",
+        role="Analyst — evidence-informed report quality recommendations",
+        description="Reviews report claims against provenance metadata for quality recommendations",
+        llm=synth_llm,
+        prompt_dir=task_dir,
+        tools=("kg_query_claims_for_topic", "kg_write_claim"),
+        max_iterations=2,
     )
 
 
