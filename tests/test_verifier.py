@@ -233,6 +233,27 @@ def test_verify_fenced_json_is_parsed():
     assert result.verification == "verified"
 
 
+def test_verify_passes_tools_from_agent_tools():
+    """verify() passes build_tool_list(agent.tools) to agent.chat(), not ALL_TOOLS."""
+    from agent.tools import WEB_SEARCH_TOOL
+    mock_llm = MagicMock()
+    mock_llm.chat.return_value = make_text_response('[{"status": "verified"}]')
+    agent = Agent(
+        name="verifier",
+        role="Research verifier",
+        description="Verifies claims",
+        llm=mock_llm,
+        system_prompt="You are a verifier.",
+        tools=("web_search",),
+        max_iterations=5,
+    )
+    rr = ResearchResult(question="What is fusion?", answer="Fusion produces 500 MW.")
+    with patch("agent.verifier.execute_tool_with_sources", return_value=("r", [])):
+        verify(agent, rr)
+    call_kwargs = mock_llm.chat.call_args.kwargs
+    assert call_kwargs.get("tools") == [WEB_SEARCH_TOOL]
+
+
 def test_verify_uses_agent_llm():
     """verify() calls the agent's LLM, not a global one."""
     mock_llm_a = MagicMock()

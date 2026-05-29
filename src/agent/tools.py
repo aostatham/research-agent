@@ -15,6 +15,7 @@ Tool definitions use a provider-agnostic format so each LLM client can
 translate them to its own schema (Anthropic input_schema vs OpenAI function).
 """
 
+import logging
 import os
 import anthropic
 from dotenv import load_dotenv
@@ -50,6 +51,83 @@ WEB_SEARCH_TOOL = {
 
 # Passed to LLMClient.chat() to advertise available tools to the model.
 ALL_TOOLS = [WEB_SEARCH_TOOL]
+
+# Descriptors for knowledge-graph tools, keyed by tool name.
+KG_TOOL_DESCRIPTORS = {
+    "kg_query_claims_for_topic": {
+        "name": "kg_query_claims_for_topic",
+        "description": "Query the knowledge graph for claims related to a topic.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "topic": {"type": "string", "description": "The research topic to query"},
+            },
+            "required": ["topic"],
+        },
+    },
+    "kg_check_contradiction": {
+        "name": "kg_check_contradiction",
+        "description": "Check for contradicting claims in the knowledge graph.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "claim": {"type": "string", "description": "The claim text to check"},
+                "topic": {"type": "string", "description": "The topic context"},
+            },
+            "required": ["claim", "topic"],
+        },
+    },
+    "kg_get_related_topics": {
+        "name": "kg_get_related_topics",
+        "description": "Get topics related to the given topic from the knowledge graph.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "topic": {"type": "string", "description": "The topic to find relations for"},
+            },
+            "required": ["topic"],
+        },
+    },
+    "kg_write_claim": {
+        "name": "kg_write_claim",
+        "description": "Write a validated claim to the knowledge graph.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "claim_json": {
+                    "type": "string",
+                    "description": "JSON-encoded claim dict with claim, confidence, sources fields",
+                },
+            },
+            "required": ["claim_json"],
+        },
+    },
+}
+
+
+def build_tool_list(tool_names: tuple) -> list:
+    """
+    Build the list of tool descriptors for an agent LLM call.
+
+    Each agent's research/verify/analyse function must call this with
+    agent.tools rather than using the module-level ALL_TOOLS constant,
+    so each agent receives exactly the tools assigned to it by the builder.
+
+    Args:
+        tool_names: Tuple of tool name strings from Agent.tools.
+
+    Returns:
+        List of tool descriptor dicts. Unknown names are skipped with a WARNING.
+    """
+    result = []
+    for name in tool_names:
+        if name == "web_search":
+            result.append(WEB_SEARCH_TOOL)
+        elif name in KG_TOOL_DESCRIPTORS:
+            result.append(KG_TOOL_DESCRIPTORS[name])
+        else:
+            logging.warning("build_tool_list: unknown tool name %r — skipping", name)
+    return result
 
 
 # ── Search provider state ─────────────────────────────────────────────────────

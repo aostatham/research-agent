@@ -17,7 +17,7 @@ from typing import Optional
 
 from agent.base import Agent
 from agent.tool_utils import _validate_tool_input
-from agent.tools import ALL_TOOLS, execute_tool_with_sources
+from agent.tools import build_tool_list, execute_tool_with_sources
 from evidence.schema import ResearchResult
 from observability.events import log_event
 
@@ -203,7 +203,7 @@ def verify(
 
     while iteration < agent.max_iterations:
         iteration += 1
-        response = agent.chat(messages=messages, tools=ALL_TOOLS, max_tokens=max_tokens)
+        response = agent.chat(messages=messages, tools=build_tool_list(agent.tools), max_tokens=max_tokens)
 
         if response.type == "tool_call":
             # M3: malformed tool_input must not crash the verifier loop.
@@ -360,44 +360,10 @@ def graph_verify(
 
         messages = [{"role": "user", "content": user_msg}]
 
-        # Build kg_ tool descriptors for the agent call
-        kg_tools = [
-            {
-                "name": "kg_check_contradiction",
-                "description": "Check for contradicting claims in the knowledge graph.",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "claim": {"type": "string"},
-                        "topic": {"type": "string"},
-                    },
-                    "required": ["claim", "topic"],
-                },
-            },
-            {
-                "name": "kg_query_claims_for_topic",
-                "description": "Query existing claims for a topic from the knowledge graph.",
-                "parameters": {
-                    "type": "object",
-                    "properties": {"topic": {"type": "string"}},
-                    "required": ["topic"],
-                },
-            },
-            {
-                "name": "kg_get_related_topics",
-                "description": "Get topics related to the given topic from the knowledge graph.",
-                "parameters": {
-                    "type": "object",
-                    "properties": {"topic": {"type": "string"}},
-                    "required": ["topic"],
-                },
-            },
-        ]
-
         iteration = 0
         while iteration < agent.max_iterations:
             iteration += 1
-            response = agent.chat(messages=messages, tools=kg_tools,
+            response = agent.chat(messages=messages, tools=build_tool_list(agent.tools),
                                   max_tokens=2048)
 
             if response.type == "tool_call":

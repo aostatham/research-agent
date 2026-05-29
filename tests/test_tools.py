@@ -475,6 +475,34 @@ def test_web_search_routes_to_tavily():
     mock_anthropic.assert_not_called()
 
 
+# ── build_tool_list() tests ──────────────────────────────────────────────────
+
+def test_build_tool_list_web_search_returns_web_search_descriptor():
+    """build_tool_list(('web_search',)) returns [WEB_SEARCH_TOOL]."""
+    from agent.tools import build_tool_list, WEB_SEARCH_TOOL
+    result = build_tool_list(("web_search",))
+    assert result == [WEB_SEARCH_TOOL]
+
+
+def test_build_tool_list_kg_tool_returns_kg_descriptor():
+    """build_tool_list(('kg_check_contradiction',)) returns the kg_ descriptor."""
+    from agent.tools import build_tool_list, KG_TOOL_DESCRIPTORS
+    result = build_tool_list(("kg_check_contradiction",))
+    assert len(result) == 1
+    assert result[0]["name"] == "kg_check_contradiction"
+    assert result[0] is KG_TOOL_DESCRIPTORS["kg_check_contradiction"]
+
+
+def test_build_tool_list_unknown_name_logs_warning_and_is_skipped(caplog):
+    """build_tool_list() logs a WARNING for unknown tool names and skips them."""
+    import logging
+    from agent.tools import build_tool_list
+    with caplog.at_level(logging.WARNING, logger="root"):
+        result = build_tool_list(("web_search", "unknown_tool_xyz"))
+    assert len(result) == 1
+    assert any("unknown_tool_xyz" in r.message for r in caplog.records)
+
+
 # ── kg_ tool routing tests ───────────────────────────────────────────────────
 
 def test_kg_query_claims_returns_unavailable_when_no_store():

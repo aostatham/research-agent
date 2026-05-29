@@ -241,6 +241,26 @@ def test_research_main_loop_uses_agent_system_prompt():
     assert call_kwargs["system"] == agent.system_prompt
 
 
+def test_research_passes_tools_from_agent_tools():
+    """research() passes build_tool_list(agent.tools) to agent.chat(), not ALL_TOOLS."""
+    from agent.tools import WEB_SEARCH_TOOL
+    mock_llm = MagicMock()
+    mock_llm.chat.return_value = make_text_response("Answer.")
+    agent = Agent(
+        name="researcher",
+        role="researcher",
+        description="Researcher agent",
+        llm=mock_llm,
+        system_prompt="You are a researcher.",
+        tools=("web_search",),
+        max_iterations=5,
+    )
+    with patch("agent.researcher.execute_tool_with_sources", return_value=("results", [])):
+        research(agent, "What is fusion?")
+    call_kwargs = mock_llm.chat.call_args.kwargs
+    assert call_kwargs.get("tools") == [WEB_SEARCH_TOOL]
+
+
 def test_research_fallback_synthesis_uses_agent_system_prompt():
     """research() fallback synthesis calls agent.chat, injecting system=agent.system_prompt."""
     fallback_text = "This is a comprehensive fallback answer with more than fifty characters here."
