@@ -106,16 +106,27 @@ def build_tool_list(tool_names: tuple) -> list:
         tool_names: Tuple of tool name strings from Agent.tools.
 
     Returns:
-        List of tool descriptor dicts. Unknown names are skipped with a WARNING.
+        List of tool descriptor dicts.
+
+    Raises:
+        ValueError: If any tool name is not recognised. This is a startup
+                    failure — descriptor skew (e.g. adding a tool to Agent.tools
+                    without a matching KG_TOOL_DESCRIPTORS entry) is caught at
+                    build time rather than silently omitted at LLM call time.
     """
+    known = {"web_search"} | set(KG_TOOL_DESCRIPTORS)
+    unknown = [t for t in tool_names if t not in known]
+    if unknown:
+        raise ValueError(
+            f"Unknown tool names in Agent.tools: {unknown}. "
+            f"Add descriptors to KG_TOOL_DESCRIPTORS in tools.py."
+        )
     result = []
     for name in tool_names:
         if name == "web_search":
             result.append(WEB_SEARCH_TOOL)
         elif name in KG_TOOL_DESCRIPTORS:
             result.append(KG_TOOL_DESCRIPTORS[name])
-        else:
-            logging.warning("build_tool_list: unknown tool name %r — skipping", name)
     return result
 
 

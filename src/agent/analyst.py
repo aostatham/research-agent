@@ -39,6 +39,11 @@ def analyse(agent: Agent, report: str, claims: list, config) -> tuple:
       surface_contradiction — inserts "⚠️ (disputed) " before the matched
                            claim text on the relevant report line.
 
+    When a line has both surface_contradiction and qualify recommendations,
+    the output is: "⚠️ (disputed) According to available sources, claim_text".
+    This is intentional — surface_contradiction fires first per deterministic
+    ordering (surface_contradiction → qualify → strengthen).
+
     Claims are never modified; only the report text changes.
 
     On any exception (including agent failure or JSON parse error), logs a

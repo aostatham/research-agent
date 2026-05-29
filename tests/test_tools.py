@@ -495,14 +495,12 @@ def test_build_tool_list_kg_tool_returns_kg_descriptor():
     assert result[0] is KG_TOOL_DESCRIPTORS["kg_check_contradiction"]
 
 
-def test_build_tool_list_unknown_name_logs_warning_and_is_skipped(caplog):
-    """build_tool_list() logs a WARNING for unknown tool names and skips them."""
-    import logging
+def test_build_tool_list_unknown_name_raises_value_error():
+    """build_tool_list() raises ValueError for unknown tool names."""
+    import pytest
     from agent.tools import build_tool_list
-    with caplog.at_level(logging.WARNING, logger="root"):
-        result = build_tool_list(("web_search", "unknown_tool_xyz"))
-    assert len(result) == 1
-    assert any("unknown_tool_xyz" in r.message for r in caplog.records)
+    with pytest.raises(ValueError, match="Unknown tool names"):
+        build_tool_list(("web_search", "unknown_tool_xyz"))
 
 
 # ── kg_ tool routing tests ───────────────────────────────────────────────────
