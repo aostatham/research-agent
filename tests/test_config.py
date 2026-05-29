@@ -328,3 +328,37 @@ def test_editor_fields_load_from_config_dict(tmp_path, monkeypatch):
     assert config.editor_provider == "anthropic"
     assert config.anthropic_editor_model == "claude-haiku-4-5-20251001"
     assert config.ollama_editor_model == "llama3.2"
+
+
+# ── Analyst agent config ───────────────────────────────────────────────────────
+
+def test_default_analyst_qualify_threshold():
+    """analyst_qualify_threshold defaults to 0.5."""
+    config = Config()
+    assert config.analyst_qualify_threshold == 0.5
+
+
+def test_default_analyst_strengthen_source_types():
+    """analyst_strengthen_source_types defaults to ['forum']."""
+    config = Config()
+    assert config.analyst_strengthen_source_types == ["forum"]
+
+
+def test_analyst_qualify_threshold_loads_from_config_dict(tmp_path, monkeypatch):
+    """analyst_qualify_threshold loads from config.yaml when present."""
+    monkeypatch.chdir(tmp_path)
+    config_data = {"analyst_qualify_threshold": 0.7}
+    with open(tmp_path / "config.yaml", "w") as f:
+        yaml.dump(config_data, f)
+    config = load_config("config.yaml")
+    assert config.analyst_qualify_threshold == 0.7
+
+
+def test_analyst_strengthen_source_types_loads_from_config_dict(tmp_path, monkeypatch):
+    """analyst_strengthen_source_types loads from config.yaml when present."""
+    monkeypatch.chdir(tmp_path)
+    config_data = {"analyst_strengthen_source_types": ["forum", "social"]}
+    with open(tmp_path / "config.yaml", "w") as f:
+        yaml.dump(config_data, f)
+    config = load_config("config.yaml")
+    assert config.analyst_strengthen_source_types == ["forum", "social"]

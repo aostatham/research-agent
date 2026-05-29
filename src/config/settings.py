@@ -116,6 +116,13 @@ class Config:
     # Graph Verifier uses this to route unresolved claims to the web Verifier.
     knowledge_staleness_threshold_days: int = 90
 
+    # ── Analyst agent ─────────────────────────────────────────────────────────
+
+    # Minimum confidence score below which the Analyst inserts qualifying language.
+    analyst_qualify_threshold: float = 0.5
+    # Source types that trigger a strengthening note when used as the sole source.
+    analyst_strengthen_source_types: list = field(default_factory=lambda: ["forum"])
+
     # ── Output mode ───────────────────────────────────────────────────────────
 
     # report (default): full narrative report

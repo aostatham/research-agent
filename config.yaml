@@ -48,6 +48,10 @@ retry_max_delay: 30.0
 # knowledge_db_path: output/.knowledge/research_agent.db
 # knowledge_staleness_threshold_days: 90
 
+# Analyst agent
+# analyst_qualify_threshold: 0.5
+# analyst_strengthen_source_types: [forum]
+
 # Custom source classification — add project-specific domains here.
 # Trigger: domain misclassified in 3+ runs and LLM fallback unavailable
 # or incorrect. Do not add speculatively.
