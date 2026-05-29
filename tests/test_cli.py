@@ -1398,6 +1398,26 @@ def test_annotate_report_lines_called_when_knowledge_store_kuzu_provenance_none(
     mock_ann.assert_called_once()
 
 
+def test_annotate_report_lines_not_called_when_knowledge_store_none_provenance_none(tmp_path, monkeypatch):
+    """annotate_report_lines is not called when knowledge_store=none and provenance=none."""
+    monkeypatch.chdir(tmp_path)
+    mock_orchestrator = MagicMock()
+    mock_synthesiser = MagicMock()
+    mock_orchestrator.run.return_value = (([], {}), "test-run-id")
+    mock_orchestrator._last_research_results = []
+    mock_synthesiser.synthesise.return_value = "# Report\n\nSome content."
+
+    with patch("sys.argv", ["main.py", "nuclear fusion"]), \
+         patch("llm.builder.AnthropicClient"), \
+         patch("main.Orchestrator", return_value=mock_orchestrator), \
+         patch("main.Synthesiser", return_value=mock_synthesiser), \
+         patch("main.annotate_report_lines") as mock_ann:
+        from main import main
+        main()
+
+    mock_ann.assert_not_called()
+
+
 def test_main_synthesise_receives_no_claims_when_provenance_none(tmp_path, monkeypatch):
     """When provenance is none (default), synthesise() is called with claims=None."""
     monkeypatch.chdir(tmp_path)
