@@ -183,18 +183,26 @@ def test_check_contradiction_no_contradiction_for_unknown_topic(store):
 
 
 def test_check_contradiction_returns_contradiction_found(store):
-    """check_contradiction returns contradiction_found when a CONTRADICTS edge exists."""
+    """check_contradiction returns contradiction_found when a CONTRADICTS edge exists
+    and claim_text is a substring of one of the contradicting claims."""
     claims = [
-        _claim(1, "X is definitively confirmed true.",
+        _claim(1, "Fusion produces net energy.",
                vstatus="verified", confidence=0.9,
                timestamp="2026-05-01T00:00:00Z"),
-        _claim(2, "X is definitively confirmed false.",
-               vstatus="refuted", confidence=0.8,
+        _claim(2, "Fusion does not produce net energy.",
+               vstatus="unverified", confidence=0.8,
                timestamp="2026-05-02T00:00:00Z"),
     ]
     store.write_run("run1", "contradiction topic", claims, [],
                     "2026-05-01T00:00:00Z")
-    result = json.loads(store.check_contradiction("some claim", "contradiction topic"))
+    # Manually create CONTRADICTS edge — auto-creation is disabled
+    store._create_edge(
+        "MATCH (a:Claim {claim_id: $a}), (b:Claim {claim_id: $b}) "
+        "CREATE (a)-[:CONTRADICTS]->(b)",
+        {"a": "run1_1", "b": "run1_2"},
+    )
+    # "produces net energy" is a substring of claim 1
+    result = json.loads(store.check_contradiction("produces net energy", "contradiction topic"))
     assert result["status"] == "contradiction_found"
     assert "contradicting_claim" in result
     assert "claim_retrieved" in result
@@ -205,20 +213,49 @@ def test_check_contradiction_returns_contradiction_found(store):
 def test_check_contradiction_returns_unresolved_when_staleness_exceeded(store):
     """check_contradiction returns unresolved when timestamps are > staleness_days apart."""
     claims = [
-        _claim(1, "X is definitively confirmed true.",
+        _claim(1, "Staleness claim is definitively true.",
                vstatus="verified", confidence=0.9,
                timestamp="2020-01-01T00:00:00Z"),   # very old
-        _claim(2, "X is definitively confirmed false.",
+        _claim(2, "Staleness claim is definitively false.",
                vstatus="refuted", confidence=0.8,
                timestamp="2026-05-01T00:00:00Z"),   # recent
     ]
     store.write_run("run1", "staleness topic", claims, [],
                     "2026-05-01T00:00:00Z")
+    # Manually create CONTRADICTS edge — auto-creation is disabled
+    store._create_edge(
+        "MATCH (a:Claim {claim_id: $a}), (b:Claim {claim_id: $b}) "
+        "CREATE (a)-[:CONTRADICTS]->(b)",
+        {"a": "run1_1", "b": "run1_2"},
+    )
+    # "Staleness claim" is a substring of both claims
     result = json.loads(
-        store.check_contradiction("some claim", "staleness topic", staleness_days=90)
+        store.check_contradiction("Staleness claim", "staleness topic", staleness_days=90)
     )
     assert result["status"] == "unresolved"
     assert "staleness" in result.get("reason", "")
+
+
+def test_check_contradiction_no_match_returns_no_contradiction(store):
+    """check_contradiction returns no_contradiction when CONTRADICTS edges exist on the topic
+    but claim_text is not a substring of any contradicting claim."""
+    claims = [
+        _claim(1, "Solar panels are efficient.",
+               vstatus="verified", confidence=0.9,
+               timestamp="2026-05-01T00:00:00Z"),
+        _claim(2, "Solar panels are inefficient.",
+               vstatus="refuted", confidence=0.8,
+               timestamp="2026-05-02T00:00:00Z"),
+    ]
+    store.write_run("run1", "solar topic", claims, [], "2026-05-01T00:00:00Z")
+    store._create_edge(
+        "MATCH (a:Claim {claim_id: $a}), (b:Claim {claim_id: $b}) "
+        "CREATE (a)-[:CONTRADICTS]->(b)",
+        {"a": "run1_1", "b": "run1_2"},
+    )
+    # "nuclear fusion" doesn't appear in any solar claim
+    result = json.loads(store.check_contradiction("nuclear fusion", "solar topic"))
+    assert result["status"] == "no_contradiction"
 
 
 def test_check_contradiction_returns_unresolved_when_unavailable():

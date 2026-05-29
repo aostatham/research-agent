@@ -316,10 +316,12 @@ class KuzuStore:
                 "MATCH (c1:Claim)-[:BELONGS_TO]->(t:Topic {name: $topic}), "
                 "(c2:Claim)-[:BELONGS_TO]->(t), "
                 "(c1)-[:CONTRADICTS]->(c2) "
+                "WHERE c1.claim_text CONTAINS $claim_text "
+                "   OR c2.claim_text CONTAINS $claim_text "
                 "RETURN c1.claim_text, c1.retrieved, c2.claim_text, c2.retrieved, "
                 "c1.confidence, c2.confidence "
                 "LIMIT 1",
-                {"topic": topic},
+                {"topic": topic, "claim_text": claim_text},
             )
             if not result.has_next():
                 return json.dumps({"status": "no_contradiction"})
@@ -510,29 +512,12 @@ class KuzuStore:
 
     def _create_contradiction_edges(self, topic: str,
                                     written: list[tuple[str, dict]]) -> None:
-        """Create CONTRADICTS edges between verified and refuted claims on the topic."""
-        for claim_id, claim in written:
-            vstatus = claim.get("verification_status", "")
-            if vstatus not in ("verified", "refuted"):
-                continue
-            opposite = "refuted" if vstatus == "verified" else "verified"
-            try:
-                res = self.conn.execute(
-                    "MATCH (c:Claim {verification_status: $status})"
-                    "-[:BELONGS_TO]->(t:Topic {name: $topic}) "
-                    "WHERE c.claim_id <> $cid "
-                    "RETURN c.claim_id LIMIT 1",
-                    {"status": opposite, "topic": topic, "cid": claim_id},
-                )
-                if res.has_next():
-                    other_cid = res.get_next()[0]
-                    self._create_edge(
-                        "MATCH (a:Claim {claim_id: $a}), (b:Claim {claim_id: $b}) "
-                        "CREATE (a)-[:CONTRADICTS]->(b)",
-                        {"a": claim_id, "b": other_cid},
-                    )
-            except Exception as e:
-                logger.debug("KuzuStore._create_contradiction_edges: %s", e)
+        """Automatic CONTRADICTS edge creation disabled — edges proposed by Graph Verifier."""
+        logger.debug(
+            "Automatic CONTRADICTS edge creation disabled — "
+            "edges will be proposed by Graph Verifier in a future phase"
+        )
+        return
 
 
 def _rejection_reason(claim: dict) -> str:
