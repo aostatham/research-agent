@@ -72,3 +72,5 @@ class AgentPool:
     researcher: Agent
     verifier: Agent
     editor: Agent
+    graph_verifier: object = None   # Agent | None — populated when knowledge_store != "none"
+    analyst: object = None          # Agent | None — Phase E Phase 5

@@ -135,7 +135,56 @@ def build_agents(
     # Planner Agent deferred to Phase E (D015). When implemented,
     # decompose() will be redesigned with a reconciled prompt and parser.
 
-    return AgentPool(researcher=researcher, verifier=verifier, editor=editor)
+    # Graph Verifier — populated when knowledge store is configured (D039).
+    graph_verifier_agent = None
+    if getattr(config, "knowledge_store", "none") != "none":
+        graph_verifier_agent = build_graph_verifier(config, synth_llm,
+                                                    prompt_dir=prompt_dir)
+
+    return AgentPool(
+        researcher=researcher,
+        verifier=verifier,
+        editor=editor,
+        graph_verifier=graph_verifier_agent,
+        analyst=None,
+    )
+
+
+def build_graph_verifier(
+    config,
+    synth_llm: LLMClient,
+    prompt_dir: Union[str, Path, None] = None,
+) -> "Agent":
+    """
+    Build the Graph Verifier agent.
+
+    Loads prompts/graph_verifier.md. The Graph Verifier uses synth_llm and
+    has access to the three kg_ read tools. It is only built when the knowledge
+    store is configured — callers must check before calling.
+
+    Args:
+        config:     Config instance (unused directly; reserved for future tuning).
+        synth_llm:  Pre-built synthesis LLM client.
+        prompt_dir: Directory containing .md prompt files (default: Path("prompts")).
+
+    Returns:
+        Agent configured for graph verification.
+
+    Raises:
+        FileNotFoundError: If prompts/graph_verifier.md does not exist.
+    """
+    if prompt_dir is None:
+        prompt_dir = Path("prompts")
+    return build_agent(
+        name="graph_verifier",
+        role="Graph Verifier — checks claims against knowledge graph",
+        description="Verifies claims against prior-run graph evidence before web verification",
+        llm=synth_llm,
+        prompt_dir=prompt_dir,
+        tools=("kg_check_contradiction", "kg_query_claims_for_topic",
+               "kg_get_related_topics"),
+        max_iterations=4,
+    )
 
 
 def _resolve_editor_llm(config, synth_llm: LLMClient) -> LLMClient:

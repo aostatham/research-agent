@@ -1,11 +1,10 @@
 """
-Verification loop for the Verifier Agent.
-
-Extracts suspicious claims from a ResearchResult answer using cheap heuristics
-(D010) and runs targeted web searches to confirm or refute them.
+Verification loop for the Verifier Agent and Graph Verifier Agent.
 
 Public API:
-  verify()                    — run the Verifier Agent on a ResearchResult
+  verify()                    — web Verifier Agent on a ResearchResult (D010)
+  graph_verify()              — Graph Verifier Agent: checks claims against
+                                knowledge graph before web verification (D041)
   _extract_suspicious_claims() — heuristic claim selector (testable)
 """
 
@@ -309,3 +308,154 @@ def verify(
                   "claims_checked": len(suspicious)},
     )
     return rr
+
+
+def graph_verify(
+    agent: Agent,
+    result: ResearchResult,
+    topic: str,
+) -> ResearchResult:
+    """
+    Run the Graph Verifier Agent on a ResearchResult.
+
+    Checks all claims in result.claims against the knowledge graph (D041).
+    The graph is cheap to query so all claims are checked, not just suspicious
+    ones (unlike the web Verifier which uses heuristic selection — D010).
+
+    For each claim returned as resolved_contradicted by the graph verifier:
+      - claim.verification_status is set to "disputed"
+      - claim.confidence is decreased by 0.10 (floor 0.0)
+
+    Sets result.verification = "refuted" if any claim was resolved_contradicted;
+    otherwise leaves result.verification unchanged.
+
+    On any exception the original unmodified ResearchResult is returned and
+    a WARNING is logged — the graph verifier must not crash the pipeline.
+
+    Args:
+        agent:  Graph Verifier Agent with kg_ tools and max_iterations configured.
+        result: ResearchResult from the Researcher + web Verifier pipeline.
+        topic:  The research topic (passed to kg_ tools as context).
+
+    Returns:
+        Updated ResearchResult (modified in place, also returned for convenience).
+    """
+    try:
+        claims = result.claims
+        if not claims:
+            return result
+
+        # Build numbered claim list for the agent
+        claims_text = "\n".join(
+            f"{i + 1}. (claim_id={c.get('id', i + 1)}) {c.get('claim', '')}"
+            for i, c in enumerate(claims)
+        )
+        user_msg = (
+            f"Topic: {topic}\n\n"
+            f"Research question: {result.question}\n\n"
+            f"Claims to verify against the knowledge graph:\n{claims_text}\n\n"
+            "Check each claim against the knowledge graph using the available tools. "
+            "Return a JSON array with one object per claim as described in your instructions."
+        )
+
+        messages = [{"role": "user", "content": user_msg}]
+
+        # Build kg_ tool descriptors for the agent call
+        kg_tools = [
+            {
+                "name": "kg_check_contradiction",
+                "description": "Check for contradicting claims in the knowledge graph.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "claim": {"type": "string"},
+                        "topic": {"type": "string"},
+                    },
+                    "required": ["claim", "topic"],
+                },
+            },
+            {
+                "name": "kg_query_claims_for_topic",
+                "description": "Query existing claims for a topic from the knowledge graph.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {"topic": {"type": "string"}},
+                    "required": ["topic"],
+                },
+            },
+            {
+                "name": "kg_get_related_topics",
+                "description": "Get topics related to the given topic from the knowledge graph.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {"topic": {"type": "string"}},
+                    "required": ["topic"],
+                },
+            },
+        ]
+
+        iteration = 0
+        while iteration < agent.max_iterations:
+            iteration += 1
+            response = agent.chat(messages=messages, tools=kg_tools,
+                                  max_tokens=2048)
+
+            if response.type == "tool_call":
+                tool_name = response.tool_name
+                tool_input = response.tool_input or {}
+                try:
+                    tool_result, _ = execute_tool_with_sources(tool_name, tool_input)
+                except (ValueError, KeyError, AttributeError) as e:
+                    logging.warning("GraphVerifier: tool %r failed: %s", tool_name, e)
+                    tool_result = '{"error": "tool call failed"}'
+                messages.append({
+                    "role": "assistant",
+                    "content": f"Called {tool_name}.",
+                })
+                messages.append({
+                    "role": "user",
+                    "content": (
+                        f"Tool result for {tool_name}:\n{tool_result}\n\n"
+                        "Continue checking remaining claims or return your JSON array."
+                    ),
+                })
+
+            elif response.type == "text":
+                content = response.content.strip()
+                if content.startswith("```"):
+                    lines = content.splitlines()[1:]
+                    if lines and lines[-1].strip() == "```":
+                        lines = lines[:-1]
+                    content = "\n".join(lines)
+                try:
+                    gv_results = json.loads(content)
+                    if not isinstance(gv_results, list):
+                        return result
+                    any_contradicted = False
+                    for gv in gv_results:
+                        if not isinstance(gv, dict):
+                            continue
+                        if gv.get("result") != "resolved_contradicted":
+                            continue
+                        # Find the matching claim by claim_id
+                        cid = gv.get("claim_id")
+                        for claim in claims:
+                            if claim.get("id") == cid:
+                                claim["verification_status"] = "disputed"
+                                claim["confidence"] = max(
+                                    0.0,
+                                    float(claim.get("confidence", 0.5)) - 0.10
+                                )
+                                any_contradicted = True
+                                break
+                    if any_contradicted:
+                        result.verification = "refuted"
+                except (json.JSONDecodeError, TypeError, ValueError) as e:
+                    logging.warning("GraphVerifier: JSON parse failed: %s", e)
+                return result
+
+        return result
+
+    except Exception as e:
+        logging.warning("GraphVerifier: unexpected error — returning original result: %s", e)
+        return result

@@ -26,7 +26,8 @@ def make_mock_llm():
     return mock
 
 
-def make_config(editor_provider=None, anthropic_editor_model=None, ollama_editor_model=None):
+def make_config(editor_provider=None, anthropic_editor_model=None,
+                ollama_editor_model=None, knowledge_store="none"):
     """Build a minimal mock Config object."""
     cfg = MagicMock()
     cfg.max_iterations = 5
@@ -39,6 +40,9 @@ def make_config(editor_provider=None, anthropic_editor_model=None, ollama_editor
     cfg.anthropic_editor_model = anthropic_editor_model
     cfg.ollama_editor_model = ollama_editor_model
     cfg.ollama_base_url = "http://localhost:11434"
+    # Set explicitly: MagicMock auto-generates truthy attributes, which would
+    # make knowledge_store != "none" evaluate to True for all mock configs.
+    cfg.knowledge_store = knowledge_store
     return cfg
 
 
@@ -107,8 +111,8 @@ def test_build_agent_reads_prompt_with_utf8_encoding(tmp_path):
 # ── build_agents() ────────────────────────────────────────────────────────────
 
 def _make_prompt_dir(tmp_path):
-    """Write the three prompt files needed by build_agents()."""
-    for name in ("researcher", "verifier", "editor"):
+    """Write the four prompt files needed by build_agents()."""
+    for name in ("researcher", "verifier", "editor", "graph_verifier"):
         (tmp_path / f"{name}.md").write_text(f"{name} prompt")
     return tmp_path
 
@@ -206,3 +210,17 @@ def test_build_agents_prompts_loaded_correctly(tmp_path):
     assert pool.researcher.system_prompt == "researcher prompt"
     assert pool.verifier.system_prompt == "verifier prompt"
     assert pool.editor.system_prompt == "editor prompt"
+
+
+def test_build_agents_graph_verifier_populated_when_knowledge_store_kuzu(tmp_path):
+    """build_agents() sets graph_verifier when knowledge_store is 'kuzu'."""
+    cfg = make_config(knowledge_store="kuzu")
+    pool = build_agents(cfg, make_mock_llm(), make_mock_llm(), prompt_dir=_make_prompt_dir(tmp_path))
+    assert pool.graph_verifier is not None
+
+
+def test_build_agents_graph_verifier_none_when_knowledge_store_none(tmp_path):
+    """build_agents() leaves graph_verifier as None when knowledge_store is 'none'."""
+    pool = build_agents(make_config(knowledge_store="none"), make_mock_llm(), make_mock_llm(),
+                        prompt_dir=_make_prompt_dir(tmp_path))
+    assert pool.graph_verifier is None

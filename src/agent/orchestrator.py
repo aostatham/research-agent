@@ -404,6 +404,19 @@ class Orchestrator:
 
         self._last_research_results = all_rr
 
+        # Graph verification pass — runs before reflect() so gap analysis
+        # has access to graph-verified claim statuses (D041).
+        if self.agent_pool.graph_verifier is not None:
+            from agent.verifier import graph_verify
+            total_claims = sum(len(rr.claims) for rr in self._last_research_results)
+            updated = []
+            for rr in self._last_research_results:
+                updated.append(graph_verify(self.agent_pool.graph_verifier, rr, topic))
+            self._last_research_results = updated
+            logging.info(
+                "Graph verification complete — %d claims checked", total_claims
+            )
+
         state.current_stage = "synthesise"
         state.accumulated_research_results = [
             dataclasses.asdict(rr) for rr in self._last_research_results
