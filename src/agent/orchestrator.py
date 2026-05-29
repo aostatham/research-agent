@@ -25,10 +25,15 @@ from llm.base import LLMClient
 from config import Config
 from evidence.schema import ResearchResult
 from agent.tools import get_and_reset_search_count
-from agent.runstate import RunState, save_checkpoint
+from agent.runstate import (
+    RunState, save_checkpoint, load_checkpoint,
+    get_resume_stage, restore_research_results,
+)
 from observability.events import log_event
 
 _DECOMPOSE_PROMPT_PATH = Path(__file__).parent.parent.parent / "prompts" / "tasks" / "decomposer.md"
+
+STAGE_ORDER = ["decompose", "research", "reflect", "synthesise", "edit", "complete"]
 
 REFLECT_PROMPT = """You are a rigorous research critic reviewing findings before a report is written.
 
@@ -321,9 +326,15 @@ class Orchestrator:
         Async version of run(). Await this from async contexts (FastAPI, async tests).
 
         Steps:
-          1. Decompose the topic into sub-questions.
-          2. Research all sub-questions in parallel via research_all_async().
-          3. Reflect on completeness; research any identified gaps in parallel.
+          1. Decompose the topic into sub-questions (skipped when resuming).
+          2. Research all sub-questions in parallel via research_all_async()
+             (skipped when resuming from reflect or later).
+          3. Reflect on completeness; research any identified gaps in parallel
+             (skipped when resuming from synthesise or later).
+
+        When run_id refers to an existing checkpoint the pipeline skips completed
+        stages according to STAGE_ORDER (D035).  "complete" checkpoints rerun all
+        stages as a fresh run with the same run_id.
 
         Saves a RunState checkpoint to output/.checkpoints/{run_id}.json after
         each pipeline stage (decompose, research, reflect, synthesise).
@@ -349,6 +360,33 @@ class Orchestrator:
         get_and_reset_search_count()
         pipeline_start = time.time()
 
+        # ── Resume detection ──────────────────────────────────────────────
+        if run_id:
+            resume_stage = get_resume_stage(run_id)
+        else:
+            resume_stage = None
+
+        if resume_stage == "complete":
+            logging.info("Run %s already complete — rerunning from start", run_id)
+            resume_stage = None
+
+        if resume_stage is not None:
+            print(f"  Resuming from stage: {resume_stage}")
+
+        resume_idx = (
+            STAGE_ORDER.index(resume_stage) if resume_stage in STAGE_ORDER else -1
+        )
+
+        # Load prior checkpoint before creating the new state — save_checkpoint
+        # below will overwrite the file, so we must read it first.
+        prior_state = None
+        if resume_stage is not None and run_id:
+            try:
+                prior_state = load_checkpoint(run_id)
+            except FileNotFoundError:
+                prior_state = None
+        # ─────────────────────────────────────────────────────────────────
+
         state = RunState(
             run_id=run_id or uuid.uuid4().hex,
             current_stage="decompose",
@@ -368,23 +406,34 @@ class Orchestrator:
             metadata={"topic": topic[:80]},
         )
 
-        questions = self.decompose(topic)
+        # ── Stage: decompose ──────────────────────────────────────────────
+        if resume_idx >= 1 and prior_state is not None and prior_state.questions:
+            questions = prior_state.questions
+        else:
+            questions = self.decompose(topic)
         state.current_stage = "research"
         state.questions = questions
         save_checkpoint(state)
 
-        synth_provider = self.config.synthesis_provider or self.config.provider
-        if synth_provider == "ollama":
-            print(
-                "Warning: Synthesis provider is Ollama — Verifier will run inside the "
-                "research semaphore to prevent timeouts (Verifier uses synth_llm). "
-                "This adds latency per question."
-            )
-
-        print(f"\n🚀 Researching {len(questions)} questions "
-              f"(workers: {self.config.max_workers})...")
-        results, sources = await self.research_all_async(questions)
-        all_rr = list(self._last_research_results)
+        # ── Stage: research ───────────────────────────────────────────────
+        if resume_idx >= 2 and prior_state is not None:
+            restored = restore_research_results(prior_state, ResearchResult)
+            results = {rr.question: rr.answer for rr in restored}
+            sources = {rr.question: rr.sources for rr in restored}
+            self._last_research_results = restored
+            all_rr = list(restored)
+        else:
+            synth_provider = self.config.synthesis_provider or self.config.provider
+            if synth_provider == "ollama":
+                print(
+                    "Warning: Synthesis provider is Ollama — Verifier will run inside the "
+                    "research semaphore to prevent timeouts (Verifier uses synth_llm). "
+                    "This adds latency per question."
+                )
+            print(f"\n🚀 Researching {len(questions)} questions "
+                  f"(workers: {self.config.max_workers})...")
+            results, sources = await self.research_all_async(questions)
+            all_rr = list(self._last_research_results)
 
         state.current_stage = "reflect"
         state.accumulated_research_results = [
@@ -392,20 +441,24 @@ class Orchestrator:
         ]
         save_checkpoint(state)
 
-        sufficient, missing = self.reflect(topic, results)
-
-        if not sufficient and missing:
-            print(f"\n🔄 Researching {len(missing)} gaps "
-                  f"(workers: {self.config.max_workers})...")
-            gap_results, gap_sources = await self.research_all_async(missing)
-            all_rr.extend(self._last_research_results)
-            results.update(gap_results)
-            sources.update(gap_sources)
+        # ── Stage: reflect ────────────────────────────────────────────────
+        if resume_idx >= 3:
+            # Prior run already completed reflect and gap research — skip.
+            sufficient = True
+            missing = []
+        else:
+            sufficient, missing = self.reflect(topic, results)
+            if not sufficient and missing:
+                print(f"\n🔄 Researching {len(missing)} gaps "
+                      f"(workers: {self.config.max_workers})...")
+                gap_results, gap_sources = await self.research_all_async(missing)
+                all_rr.extend(self._last_research_results)
+                results.update(gap_results)
+                sources.update(gap_sources)
 
         self._last_research_results = all_rr
 
-        # Graph verification pass — runs before reflect() so gap analysis
-        # has access to graph-verified claim statuses (D041).
+        # Graph verification pass (D041).
         if self.agent_pool.graph_verifier is not None:
             from agent.verifier import graph_verify
             total_claims = sum(len(rr.claims) for rr in self._last_research_results)

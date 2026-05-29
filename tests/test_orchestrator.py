@@ -22,6 +22,7 @@ import asyncio
 import pytest
 from unittest.mock import MagicMock, patch
 from agent.orchestrator import Orchestrator
+from agent.runstate import RunState
 from evidence.schema import ResearchResult
 from llm.base import LLMResponse
 from config import Config
@@ -878,6 +879,61 @@ def test_run_async_skips_graph_verify_when_graph_verifier_none(orchestrator, moc
         with patch("agent.verifier.graph_verify") as mock_gv:
             asyncio.run(orchestrator.run_async("nuclear fusion"))
     mock_gv.assert_not_called()
+
+
+# ── Stage-skipping resume tests ───────────────────────────────────────────────
+
+def test_run_async_skips_research_when_resume_stage_is_synthesise(orchestrator):
+    """When resuming from 'synthesise', decompose, research, and reflect are skipped."""
+    prior = RunState(
+        run_id="prior123", current_stage="synthesise", topic="nuclear fusion",
+        questions=["Q1?"],
+        accumulated_research_results=[{
+            "question": "Q1?", "answer": "cached answer", "claims": [],
+            "sources": [], "message_history": [], "verification": "unverified",
+        }],
+        report_text="", started_at="2026-01-01T00:00:00+00:00", last_checkpoint_at="",
+    )
+    with patch("agent.orchestrator.get_resume_stage", return_value="synthesise"):
+        with patch("agent.orchestrator.load_checkpoint", return_value=prior):
+            with patch.object(orchestrator, "research_question_async") as mock_rqa:
+                (results, sources), run_id = asyncio.run(
+                    orchestrator.run_async("nuclear fusion", run_id="prior123")
+                )
+    mock_rqa.assert_not_called()
+    assert results.get("Q1?") == "cached answer"
+
+
+def test_run_async_runs_all_stages_when_no_run_id(orchestrator, mock_llm):
+    """When run_id is not provided, get_resume_stage is not called and all stages run."""
+    mock_llm.chat.side_effect = [
+        make_text_response('["Q1?"]'),
+        make_text_response('{"sufficient": true, "missing": []}'),
+    ]
+    async def fake_rqa(q, sem):
+        return make_rr(question=q, answer="fresh")
+    with patch("agent.orchestrator.get_resume_stage") as mock_grs:
+        with patch.object(orchestrator, "research_question_async", side_effect=fake_rqa) as mock_rqa:
+            (results, sources), run_id = asyncio.run(orchestrator.run_async("nuclear fusion"))
+    mock_grs.assert_not_called()
+    assert mock_rqa.call_count >= 1
+
+
+def test_run_async_reruns_all_stages_when_resume_stage_is_complete(orchestrator, mock_llm):
+    """When checkpoint shows 'complete', all stages rerun as a fresh run."""
+    mock_llm.chat.side_effect = [
+        make_text_response('["Q1?"]'),
+        make_text_response('{"sufficient": true, "missing": []}'),
+    ]
+    async def fake_rqa(q, sem):
+        return make_rr(question=q, answer="fresh")
+    with patch("agent.orchestrator.get_resume_stage", return_value="complete"):
+        with patch.object(orchestrator, "research_question_async", side_effect=fake_rqa) as mock_rqa:
+            (results, sources), run_id = asyncio.run(
+                orchestrator.run_async("nuclear fusion", run_id="done123")
+            )
+    assert mock_rqa.call_count >= 1
+    assert mock_llm.chat.call_count >= 1  # decompose was called
 
 
 # ── Integration tests ─────────────────────────────────────────────────────────

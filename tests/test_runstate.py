@@ -131,3 +131,59 @@ def test_roundtrip_save_load_produces_identical_fields(tmp_path):
     assert loaded.started_at == original.started_at
     # last_checkpoint_at was updated by save_checkpoint — just verify it's non-empty
     assert loaded.last_checkpoint_at != ""
+
+
+# ── get_resume_stage() ────────────────────────────────────────────────────────
+
+def test_get_resume_stage_returns_correct_stage(tmp_path):
+    """get_resume_stage() returns current_stage from an existing checkpoint."""
+    from agent.runstate import save_checkpoint, get_resume_stage
+    state = _make_state("res_run")
+    state.current_stage = "reflect"
+    save_checkpoint(state, checkpoint_dir=str(tmp_path))
+    assert get_resume_stage("res_run", checkpoint_dir=str(tmp_path)) == "reflect"
+
+
+def test_get_resume_stage_returns_none_for_unknown_run_id(tmp_path):
+    """get_resume_stage() returns None when no checkpoint exists for run_id."""
+    from agent.runstate import get_resume_stage
+    assert get_resume_stage("no-such-run", checkpoint_dir=str(tmp_path)) is None
+
+
+# ── restore_research_results() ────────────────────────────────────────────────
+
+def test_restore_research_results_converts_dicts_to_instances():
+    """restore_research_results() returns ResearchResult instances from stored dicts."""
+    from agent.runstate import restore_research_results
+    from evidence.schema import ResearchResult
+    state = _make_state()
+    state.accumulated_research_results = [{
+        "question": "Q1?", "answer": "A1.", "claims": [],
+        "sources": [], "message_history": [], "verification": "unverified",
+    }]
+    results = restore_research_results(state, ResearchResult)
+    assert len(results) == 1
+    assert isinstance(results[0], ResearchResult)
+    assert results[0].question == "Q1?"
+    assert results[0].answer == "A1."
+
+
+def test_restore_research_results_returns_empty_list_for_empty_input():
+    """restore_research_results() returns [] when accumulated_research_results is empty."""
+    from agent.runstate import restore_research_results
+    from evidence.schema import ResearchResult
+    state = _make_state()
+    assert restore_research_results(state, ResearchResult) == []
+
+
+def test_restore_research_results_handles_missing_fields_with_defaults():
+    """restore_research_results() fills in default values for missing optional fields."""
+    from agent.runstate import restore_research_results
+    from evidence.schema import ResearchResult
+    state = _make_state()
+    state.accumulated_research_results = [{"question": "Q?", "answer": "A."}]
+    results = restore_research_results(state, ResearchResult)
+    assert len(results) == 1
+    assert results[0].claims == []
+    assert results[0].sources == []
+    assert results[0].verification == "unverified"

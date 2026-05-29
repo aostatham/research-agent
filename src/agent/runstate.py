@@ -87,4 +87,59 @@ def load_checkpoint(
         )
     with open(path, "r", encoding="utf-8") as f:
         data = json.load(f)
-    return RunState(**data)
+    # Filter to known fields so checkpoints written by older versions
+    # (missing new optional fields) load without error.
+    valid = {f.name for f in dataclasses.fields(RunState)}
+    return RunState(**{k: v for k, v in data.items() if k in valid})
+
+
+def get_resume_stage(
+    run_id: str,
+    checkpoint_dir: str = "output/.checkpoints",
+) -> "str | None":
+    """
+    Return the current_stage from an existing checkpoint, or None if not found.
+
+    Never raises — any exception (file missing, parse error, etc.) returns None.
+
+    Args:
+        run_id:         The run_id to look up.
+        checkpoint_dir: Directory containing checkpoint files.
+
+    Returns:
+        The current_stage string if the checkpoint exists, None otherwise.
+    """
+    try:
+        state = load_checkpoint(run_id, checkpoint_dir=checkpoint_dir)
+        return state.current_stage
+    except Exception:
+        return None
+
+
+def restore_research_results(state: RunState, research_result_class) -> list:
+    """
+    Convert state.accumulated_research_results (list of dicts) to instances
+    of research_result_class.
+
+    Uses dataclasses.fields() to filter each dict to known field names so
+    missing optional fields use the class defaults and unknown keys are ignored.
+
+    Args:
+        state:                  RunState whose accumulated_research_results to convert.
+        research_result_class:  Dataclass type (e.g. ResearchResult) to instantiate.
+
+    Returns:
+        List of research_result_class instances. Empty if input is empty.
+        Dicts that cannot be converted are silently skipped.
+    """
+    if not state.accumulated_research_results:
+        return []
+    valid_fields = {f.name for f in dataclasses.fields(research_result_class)}
+    results = []
+    for d in state.accumulated_research_results:
+        try:
+            filtered = {k: v for k, v in d.items() if k in valid_fields}
+            results.append(research_result_class(**filtered))
+        except Exception:
+            pass
+    return results
