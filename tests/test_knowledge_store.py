@@ -188,7 +188,7 @@ def test_query_claims_returns_error_json_when_unavailable():
 
 def test_check_contradiction_no_contradiction_for_unknown_topic(store):
     """check_contradiction returns no_contradiction when topic has no claims."""
-    result = json.loads(store.check_contradiction("some claim", "unknown topic"))
+    result = json.loads(store.check_contradiction("some claim text long enough here", "unknown topic"))
     assert result["status"] == "no_contradiction"
 
 
@@ -211,8 +211,8 @@ def test_check_contradiction_returns_contradiction_found(store):
         "CREATE (a)-[:CONTRADICTS]->(b)",
         {"a": "run1_1", "b": "run1_2"},
     )
-    # "produces net energy" is a substring of claim 1
-    result = json.loads(store.check_contradiction("produces net energy", "contradiction topic"))
+    # "produces net energy." (22 chars) is a substring of claim 1
+    result = json.loads(store.check_contradiction("produces net energy.", "contradiction topic"))
     assert result["status"] == "contradiction_found"
     assert "contradicting_claim" in result
     assert "claim_retrieved" in result
@@ -238,9 +238,9 @@ def test_check_contradiction_returns_unresolved_when_staleness_exceeded(store):
         "CREATE (a)-[:CONTRADICTS]->(b)",
         {"a": "run1_1", "b": "run1_2"},
     )
-    # "Staleness claim" is a substring of both claims
+    # "Staleness claim is definit" (26 chars) is a substring of both claims
     result = json.loads(
-        store.check_contradiction("Staleness claim", "staleness topic", staleness_days=90)
+        store.check_contradiction("Staleness claim is definit", "staleness topic", staleness_days=90)
     )
     assert result["status"] == "unresolved"
     assert "staleness" in result.get("reason", "")
@@ -263,9 +263,16 @@ def test_check_contradiction_no_match_returns_no_contradiction(store):
         "CREATE (a)-[:CONTRADICTS]->(b)",
         {"a": "run1_1", "b": "run1_2"},
     )
-    # "nuclear fusion" doesn't appear in any solar claim
-    result = json.loads(store.check_contradiction("nuclear fusion", "solar topic"))
+    # "nuclear fusion research" (22 chars) doesn't appear in any solar claim
+    result = json.loads(store.check_contradiction("nuclear fusion research", "solar topic"))
     assert result["status"] == "no_contradiction"
+
+
+def test_check_contradiction_returns_unresolved_for_short_claim_text(store):
+    """check_contradiction returns unresolved with reason when claim_text is shorter than 20 chars."""
+    result = json.loads(store.check_contradiction("too short", "any topic"))
+    assert result["status"] == "unresolved"
+    assert "too short" in result.get("reason", "")
 
 
 def test_check_contradiction_returns_unresolved_when_unavailable():

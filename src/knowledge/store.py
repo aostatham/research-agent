@@ -323,6 +323,9 @@ class KuzuStore:
         if not self._available:
             return json.dumps({"status": "unresolved",
                                "reason": "knowledge graph unavailable"})
+        if len(claim_text.strip()) < 20:
+            return json.dumps({"status": "unresolved",
+                               "reason": "claim_text too short for reliable matching"})
         try:
             result = self.conn.execute(
                 "MATCH (c1:Claim)-[:BELONGS_TO]->(t:Topic {name: $topic}), "
