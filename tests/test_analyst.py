@@ -260,3 +260,38 @@ def test_analyse_surface_contradiction_plus_qualify_on_same_line_combined():
     assert "⚠️ (disputed)" in first_line
     assert "Reportedly," in first_line
     assert "Line one content." in first_line
+
+
+# ── string.Template prompt substitution ──────────────────────────────────────
+
+def test_analyse_prompt_contains_substituted_threshold():
+    """The prompt sent to agent.chat() contains the threshold value, not the placeholder."""
+    mock_llm = MagicMock()
+    mock_llm.chat.return_value = make_text_response("[]")
+    agent = make_analyst_agent(mock_llm)
+    cfg = make_config(qualify_threshold=0.42)
+    analyse(agent, SAMPLE_REPORT, SAMPLE_CLAIMS, cfg)
+    # agent.chat() forwards messages as the first positional arg to llm.chat()
+    messages = mock_llm.chat.call_args[0][0]
+    user_content = messages[0]["content"]
+    assert "0.42" in user_content
+    assert "$qualify_threshold" not in user_content
+
+
+def test_analyse_prompt_substitution_ignores_unrelated_dollar_signs():
+    """safe_substitute() leaves unrecognised $ placeholders unchanged — does not raise."""
+    from unittest.mock import patch
+    mock_llm = MagicMock()
+    mock_llm.chat.return_value = make_text_response("[]")
+    agent = make_analyst_agent(mock_llm)
+    # Inject a prompt that contains an unrelated $ sign (e.g. from a JSON example)
+    patched_prompt = (
+        "Qualify below $qualify_threshold. "
+        "Strengthen $strengthen_source_types. "
+        "Example: {\"amount\": \"$100\"}"
+    )
+    with patch("agent.analyst._ANALYST_PROMPT_PATH") as mock_path:
+        mock_path.read_text.return_value = patched_prompt
+        # Should not raise even though $100 is not a recognised placeholder
+        result_report, _ = analyse(agent, SAMPLE_REPORT, SAMPLE_CLAIMS, make_config())
+    assert result_report == SAMPLE_REPORT  # [] recs → unchanged

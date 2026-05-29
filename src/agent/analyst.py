@@ -13,6 +13,7 @@ Public API:
 import json
 import logging
 from pathlib import Path
+from string import Template
 
 from agent.base import Agent
 from agent.tools import build_tool_list
@@ -60,11 +61,10 @@ def analyse(agent: Agent, report: str, claims: list, config) -> tuple:
 
         filtered_claims = [c for c in claims if c.get("report_line") is not None]
 
-        template = _ANALYST_PROMPT_PATH.read_text(encoding="utf-8")
-        analyst_prompt = template.replace(
-            "{qualify_threshold}", str(config.analyst_qualify_threshold)
-        ).replace(
-            "{strengthen_source_types}", str(config.analyst_strengthen_source_types)
+        raw_prompt = _ANALYST_PROMPT_PATH.read_text(encoding="utf-8")
+        analyst_prompt = Template(raw_prompt).safe_substitute(
+            qualify_threshold=str(config.analyst_qualify_threshold),
+            strengthen_source_types=str(config.analyst_strengthen_source_types),
         )
 
         user_msg = (

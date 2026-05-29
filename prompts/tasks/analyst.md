@@ -6,10 +6,10 @@ You will receive:
 
 Your job is to return a JSON array of targeted recommendations. Apply these rules:
 
-**qualify** — When a claim's confidence is below {qualify_threshold}, insert qualifying language before the claim text on its report line.
+**qualify** — When a claim's confidence is below $qualify_threshold, insert qualifying language before the claim text on its report line.
   Fields: type, report_line, claim_id, suggested_qualifier (optional — omit to use the default "According to available sources, ")
 
-**strengthen** — When a claim is supported only by source types in {strengthen_source_types} with no higher-quality corroboration, append a sourcing note after its report line.
+**strengthen** — When a claim is supported only by source types in $strengthen_source_types with no higher-quality corroboration, append a sourcing note after its report line.
   Fields: type, report_line, claim_id
 
 **surface_contradiction** — When a claim has verification_status "disputed", insert a warning before the claim text on its report line.
