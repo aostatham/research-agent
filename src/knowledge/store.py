@@ -428,8 +428,7 @@ class KuzuStore:
     def _merge_run(self, run_id: str, started_at: str) -> None:
         self.conn.execute(
             "MERGE (r:Run {run_id: $run_id}) "
-            "ON CREATE SET r.started_at = $started_at "
-            "ON MATCH SET r.started_at = $started_at",
+            "ON CREATE SET r.started_at = $started_at",
             {"run_id": run_id, "started_at": started_at},
         )
 

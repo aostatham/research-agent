@@ -310,6 +310,30 @@ def test_write_claim_returns_error_when_unavailable():
     assert "reason" in result
 
 
+# ── _merge_run preserves started_at ──────────────────────────────────────────
+
+def test_merge_run_preserves_original_started_at(store):
+    """_merge_run() does not overwrite started_at of an existing Run node."""
+    store._merge_run("runA", "2026-01-01T00:00:00Z")
+    store._merge_run("runA", "2099-01-01T00:00:00Z")  # second call with different timestamp
+    result = store.conn.execute(
+        "MATCH (r:Run {run_id: 'runA'}) RETURN r.started_at"
+    )
+    row = result.get_next()
+    assert row[0] == "2026-01-01T00:00:00Z"
+
+
+def test_write_run_with_prior_run_id_preserves_prior_started_at(store):
+    """Prior run's started_at is unchanged after write_run with prior_run_id."""
+    store.write_run("run1", "topic", [], [], "2026-01-01T00:00:00Z")
+    store.write_run("run2", "topic", [], [], "2026-01-02T00:00:00Z", prior_run_id="run1")
+    result = store.conn.execute(
+        "MATCH (r:Run {run_id: 'run1'}) RETURN r.started_at"
+    )
+    row = result.get_next()
+    assert row[0] == "2026-01-01T00:00:00Z"
+
+
 # ── write_run with prior_run_id ───────────────────────────────────────────────
 
 def test_write_run_with_prior_run_id_creates_preceded_by_edge(store):
