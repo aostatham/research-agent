@@ -125,6 +125,9 @@ def build_tool_list(tool_names: tuple) -> list:
 # Using module globals rather than a singleton class keeps call sites simple:
 # execute_tool_with_sources() needs no context object.
 _search_provider = "anthropic"
+# Staleness threshold for kg_check_contradiction — cached from config at startup
+# by configure_knowledge() so the tool never instantiates a fresh Config().
+_staleness_days: int = 90
 _tavily_api_key = None
 _tavily_max_results = 5
 _search_model = "claude-haiku-4-5-20251001"
@@ -189,6 +192,24 @@ def configure_search(provider: str, tavily_api_key: str = None,
     _tavily_api_key = tavily_api_key
     _tavily_max_results = tavily_max_results
     _search_model = search_model
+
+
+def configure_knowledge(config) -> None:
+    """
+    Configure the knowledge store and cache user settings for kg_ tools.
+
+    Called once at startup from main.py. Caches knowledge_staleness_threshold_days
+    from config so kg_check_contradiction() never has to instantiate a fresh Config.
+    Delegates to knowledge.store.configure_knowledge() for store initialisation.
+
+    Args:
+        config: Config instance with knowledge_store, knowledge_db_path, and
+                knowledge_staleness_threshold_days fields.
+    """
+    global _staleness_days
+    _staleness_days = getattr(config, "knowledge_staleness_threshold_days", 90)
+    from knowledge.store import configure_knowledge as _ks_configure
+    _ks_configure(config)
 
 
 # ── Tool executor ─────────────────────────────────────────────────────────────
@@ -291,12 +312,7 @@ def kg_check_contradiction(claim: str, topic: str) -> str:
     store = get_store()
     if store is None:
         return '{"status": "unresolved", "reason": "knowledge graph unavailable"}'
-    from config.settings import Config
-    config = Config()
-    return store.check_contradiction(
-        claim, topic,
-        staleness_days=config.knowledge_staleness_threshold_days,
-    )
+    return store.check_contradiction(claim, topic, staleness_days=_staleness_days)
 
 
 def kg_write_claim(claim_dict: dict) -> str:

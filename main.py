@@ -27,7 +27,8 @@ from agent import Orchestrator, Synthesiser
 from agent.builder import build_agents
 from agent.tools import configure_search
 from config import load_config
-from knowledge.store import configure_knowledge, get_store
+from agent.tools import configure_knowledge
+from knowledge.store import get_store
 from llm.builder import build_llms
 from observability.events import configure_observability
 from output.formatter import build_metadata

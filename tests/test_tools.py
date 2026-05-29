@@ -33,12 +33,14 @@ def _reset_search_globals():
     orig_max = tools._tavily_max_results
     orig_client = tools._anthropic_client
     orig_model = tools._search_model
+    orig_staleness = tools._staleness_days
     yield
     tools._search_provider = orig_provider
     tools._tavily_api_key = orig_key
     tools._tavily_max_results = orig_max
     tools._anthropic_client = orig_client
     tools._search_model = orig_model
+    tools._staleness_days = orig_staleness
 
 
 # ── configure_search() tests ──────────────────────────────────────────────────
@@ -530,6 +532,20 @@ def test_kg_check_contradiction_returns_unresolved_when_no_store():
         assert result["status"] == "unresolved"
     finally:
         ks._store = orig
+
+
+def test_kg_check_contradiction_uses_configured_staleness():
+    """configure_knowledge() caches staleness_threshold_days into _staleness_days."""
+    from unittest.mock import MagicMock, patch
+    from agent import tools
+
+    mock_config = MagicMock()
+    mock_config.knowledge_staleness_threshold_days = 7
+
+    with patch("knowledge.store.configure_knowledge"):
+        tools.configure_knowledge(mock_config)
+
+    assert tools._staleness_days == 7
 
 
 def test_kg_write_claim_returns_error_when_no_store():
