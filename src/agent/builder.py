@@ -220,7 +220,7 @@ def build_analyst(
         description="Reviews report claims against provenance metadata for quality recommendations",
         llm=synth_llm,
         prompt_dir=task_dir,
-        tools=("kg_query_claims_for_topic", "kg_write_claim"),
+        tools=("kg_query_claims_for_topic",),
         max_iterations=2,
     )
 

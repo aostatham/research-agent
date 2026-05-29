@@ -17,7 +17,6 @@ Your job is to return a JSON array of targeted recommendations. Apply these rule
 
 You may use the following tools to gather additional context before making recommendations:
 - kg_query_claims_for_topic: check what prior runs have found on this topic before recommending qualify or strengthen
-- kg_write_claim: record a new verified claim into the knowledge graph if you identify one during your analysis
 
 Rules:
 - Only recommend changes where a genuine quality issue exists

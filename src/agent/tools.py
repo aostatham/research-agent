@@ -79,16 +79,16 @@ KG_TOOL_DESCRIPTORS = {
     },
     "kg_write_claim": {
         "name": "kg_write_claim",
-        "description": "Write a validated claim to the knowledge graph.",
+        "description": "Write a verified claim to the knowledge graph.",
         "parameters": {
             "type": "object",
             "properties": {
-                "claim_json": {
-                    "type": "string",
-                    "description": "JSON-encoded claim dict with claim, confidence, sources fields",
+                "claim_dict": {
+                    "type": "object",
+                    "description": "Claim dict with keys: claim (str), confidence (float), verification_status (str), sources (list)",
                 },
             },
-            "required": ["claim_json"],
+            "required": ["claim_dict"],
         },
     },
 }

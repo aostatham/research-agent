@@ -581,6 +581,56 @@ def test_execute_tool_with_sources_routes_kg_query(tmp_path):
         store.close()
 
 
+def test_execute_tool_with_sources_kg_write_claim_routes_to_claim_dict(tmp_path):
+    """execute_tool_with_sources("kg_write_claim", {"claim_dict": {...}}) routes correctly."""
+    import json
+    from agent.tools import execute_tool_with_sources
+    from knowledge.store import KuzuStore
+    import knowledge.store as ks
+    store = KuzuStore(str(tmp_path / "test.db"))
+    orig = ks._store
+    ks._store = store
+    try:
+        valid_claim = {
+            "claim": "The speed of light is approximately 3×10⁸ m/s.",
+            "confidence": 0.9,
+            "verification_status": "verified",
+            "sources": [{"url": "https://example.com", "title": "Physics ref"}],
+        }
+        result, sources = execute_tool_with_sources(
+            "kg_write_claim", {"claim_dict": valid_claim}
+        )
+        parsed = json.loads(result)
+        assert parsed["status"] == "written"
+        assert sources == []
+    finally:
+        ks._store = orig
+        store.close()
+
+
+def test_execute_tool_with_sources_kg_write_claim_old_claim_json_returns_rejected(tmp_path):
+    """Calling kg_write_claim with old 'claim_json' key (string) returns rejected, not an exception."""
+    import json
+    from agent.tools import execute_tool_with_sources
+    from knowledge.store import KuzuStore
+    import knowledge.store as ks
+    store = KuzuStore(str(tmp_path / "test.db"))
+    orig = ks._store
+    ks._store = store
+    try:
+        # Old broken path: claim_dict key absent, would have been claim_json string
+        result, sources = execute_tool_with_sources(
+            "kg_write_claim", {"claim_json": '{"claim": "test"}'}
+        )
+        parsed = json.loads(result)
+        # claim_dict defaults to {} → rejected (empty claim text)
+        assert parsed["status"] == "rejected"
+        assert sources == []
+    finally:
+        ks._store = orig
+        store.close()
+
+
 def test_kg_calls_do_not_increment_search_count():
     """kg_ tool calls do not increment _search_call_count."""
     from agent import tools
