@@ -77,17 +77,6 @@ KG_TOOL_DESCRIPTORS = {
             "required": ["claim", "topic"],
         },
     },
-    "kg_get_related_topics": {
-        "name": "kg_get_related_topics",
-        "description": "Get topics related to the given topic from the knowledge graph.",
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "topic": {"type": "string", "description": "The topic to find relations for"},
-            },
-            "required": ["topic"],
-        },
-    },
     "kg_write_claim": {
         "name": "kg_write_claim",
         "description": "Write a validated claim to the knowledge graph.",
@@ -277,9 +266,6 @@ def execute_tool_with_sources(tool_name: str, tool_input: dict) -> tuple[str, li
             tool_input.get("claim", ""), tool_input.get("topic", "")
         )
         return result, []
-    if tool_name == "kg_get_related_topics":
-        result = kg_get_related_topics(tool_input.get("topic", ""))
-        return result, []
     if tool_name == "kg_write_claim":
         result = kg_write_claim(tool_input.get("claim_dict", {}))
         return result, []
@@ -311,15 +297,6 @@ def kg_check_contradiction(claim: str, topic: str) -> str:
         claim, topic,
         staleness_days=config.knowledge_staleness_threshold_days,
     )
-
-
-def kg_get_related_topics(topic: str) -> str:
-    """Query the knowledge graph for topics related to the given topic."""
-    from knowledge.store import get_store
-    store = get_store()
-    if store is None:
-        return '{"error": "knowledge graph unavailable"}'
-    return store.get_related_topics(topic)
 
 
 def kg_write_claim(claim_dict: dict) -> str:

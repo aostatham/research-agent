@@ -300,16 +300,32 @@ def test_write_claim_returns_error_when_unavailable():
     assert "reason" in result
 
 
-# ── get_related_topics ────────────────────────────────────────────────────────
+# ── write_run with prior_run_id ───────────────────────────────────────────────
 
-def test_get_related_topics_returns_empty_for_unknown_topic(store):
-    """get_related_topics returns [] when no PRECEDED_BY edges exist."""
-    result = json.loads(store.get_related_topics("unknown topic"))
-    assert result == []
+def test_write_run_with_prior_run_id_creates_preceded_by_edge(store):
+    """write_run() with prior_run_id creates a RUN_PRECEDED_BY edge."""
+    store.write_run("run1", "topic", [], [], "2026-01-01T00:00:00Z")
+    store.write_run("run2", "topic", [], [], "2026-01-02T00:00:00Z",
+                    prior_run_id="run1")
+    history = store.get_run_history("run2")
+    assert "run1" in history
 
 
-def test_get_related_topics_returns_error_when_unavailable():
-    """get_related_topics returns error JSON when store is unavailable."""
-    store = KuzuStore("/dev/null/invalid/cannot/exist")
-    result = json.loads(store.get_related_topics("topic"))
-    assert "error" in result
+# ── get_run_history ───────────────────────────────────────────────────────────
+
+def test_get_run_history_returns_chain(store):
+    """get_run_history follows RUN_PRECEDED_BY edges across multiple hops."""
+    store.write_run("run1", "topic", [], [], "2026-01-01T00:00:00Z")
+    store.write_run("run2", "topic", [], [], "2026-01-02T00:00:00Z",
+                    prior_run_id="run1")
+    store.write_run("run3", "topic", [], [], "2026-01-03T00:00:00Z",
+                    prior_run_id="run2")
+    history = store.get_run_history("run3")
+    assert "run2" in history
+    assert "run1" in history
+
+
+def test_get_run_history_returns_empty_for_unknown_run(store):
+    """get_run_history returns [] when run has no predecessors."""
+    history = store.get_run_history("nonexistent-run-id")
+    assert history == []

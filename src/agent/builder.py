@@ -103,7 +103,6 @@ def build_agents(
         kg_tools = (
             "kg_query_claims_for_topic",
             "kg_check_contradiction",
-            "kg_get_related_topics",
         )
 
     researcher = build_agent(
@@ -186,8 +185,7 @@ def build_graph_verifier(
         description="Verifies claims against prior-run graph evidence before web verification",
         llm=synth_llm,
         prompt_dir=prompt_dir,
-        tools=("kg_check_contradiction", "kg_query_claims_for_topic",
-               "kg_get_related_topics"),
+        tools=("kg_check_contradiction", "kg_query_claims_for_topic"),
         max_iterations=4,
     )
 

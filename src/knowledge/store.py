@@ -92,7 +92,7 @@ _REL_TABLES = [
     "CREATE REL TABLE IF NOT EXISTS CONTRADICTS(FROM Claim TO Claim)",
     "CREATE REL TABLE IF NOT EXISTS SUPERSEDES(FROM Claim TO Claim)",
     "CREATE REL TABLE IF NOT EXISTS BELONGS_TO(FROM Claim TO Topic)",
-    "CREATE REL TABLE IF NOT EXISTS PRECEDED_BY(FROM Topic TO Topic)",
+    "CREATE REL TABLE IF NOT EXISTS RUN_PRECEDED_BY(FROM Run TO Run)",
 ]
 
 # LLM refusal prefixes — duplicated from provenance.py per D042 (gate at both points).
@@ -158,32 +158,42 @@ class KuzuStore:
     # ── Writes ─────────────────────────────────────────────────────────────────
 
     def write_run(self, run_id: str, topic: str, claims: list,
-                  sources: list, started_at: str) -> None:
+                  sources: list, started_at: str,
+                  prior_run_id: str = None) -> None:
         """
         Persist a research run's claims and sources to the knowledge graph.
 
         Merges (upserts) the Run and Topic nodes. For each valid claim, merges
         the Claim node and creates a BELONGS_TO edge to the Topic. Creates
         SUPERSEDES edges for newer claims over older claims on the same topic.
-        Creates CONTRADICTS edges between verified and refuted claims on the
-        same topic. For each source in the flat sources list and in each
-        claim's sources list, merges the Source node and creates SUPPORTED_BY
-        edges from each claim to its sources.
+        For each source in the flat sources list and in each claim's sources
+        list, merges the Source node and creates SUPPORTED_BY edges from each
+        claim to its sources. If prior_run_id is given, creates a
+        RUN_PRECEDED_BY edge from this run to the prior run.
 
         Invalid claims are skipped with a WARNING log.
 
         Args:
-            run_id:     Unique run identifier.
-            topic:      Research topic string.
-            claims:     List of EvidenceClaim dicts.
-            sources:    Flat deduplicated list of EvidenceSource dicts.
-            started_at: ISO timestamp of when the run started.
+            run_id:       Unique run identifier.
+            topic:        Research topic string.
+            claims:       List of EvidenceClaim dicts.
+            sources:      Flat deduplicated list of EvidenceSource dicts.
+            started_at:   ISO timestamp of when the run started.
+            prior_run_id: Optional run_id of the preceding run (for follow-up runs).
         """
         if not self._available:
             return
         try:
             self._merge_run(run_id, started_at)
             self._merge_topic(topic)
+
+            if prior_run_id:
+                self._merge_run(prior_run_id, "")
+                self._create_edge(
+                    "MATCH (a:Run {run_id: $a}), (b:Run {run_id: $b}) "
+                    "CREATE (a)-[:RUN_PRECEDED_BY]->(b)",
+                    {"a": run_id, "b": prior_run_id},
+                )
 
             written: list[tuple[str, dict]] = []
             for idx, claim in enumerate(claims):
@@ -354,31 +364,32 @@ class KuzuStore:
         except Exception as e:
             return json.dumps({"status": "unresolved", "reason": str(e)})
 
-    def get_related_topics(self, topic: str) -> str:
+    def get_run_history(self, run_id: str) -> list:
         """
-        Return topics reachable via PRECEDED_BY edges.
+        Return the chain of run_ids reachable via RUN_PRECEDED_BY edges.
+
+        Follows the chain from the given run backward through preceding runs,
+        returning them in order from most-recent predecessor to oldest.
 
         Returns:
-            JSON array of topic name strings when related topics exist.
-            '[]' when none.
-            '{"error": "knowledge graph unavailable"}' when unavailable.
+            List of run_id strings (not including run_id itself). Empty list
+            when no predecessors exist or when the store is unavailable.
         """
         if not self._available:
-            return '{"error": "knowledge graph unavailable"}'
+            return []
         try:
             result = self.conn.execute(
-                "MATCH (t1:Topic {name: $topic})-[:PRECEDED_BY*1..3]-(t2:Topic) "
-                "WHERE t2.name <> $topic "
-                "RETURN DISTINCT t2.name",
-                {"topic": topic},
+                "MATCH (r:Run {run_id: $run_id})-[:RUN_PRECEDED_BY*1..10]->(p:Run) "
+                "RETURN p.run_id",
+                {"run_id": run_id},
             )
-            topics = []
+            history = []
             while result.has_next():
-                topics.append(result.get_next()[0])
-            return json.dumps(topics)
+                history.append(result.get_next()[0])
+            return history
         except Exception as e:
-            logger.warning("KuzuStore.get_related_topics: %s", e)
-            return '{"error": "knowledge graph unavailable"}'
+            logger.warning("KuzuStore.get_run_history: %s", e)
+            return []
 
     # ── Validation ─────────────────────────────────────────────────────────────
 

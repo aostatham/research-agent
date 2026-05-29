@@ -377,6 +377,7 @@ def main():
                 claims=claims,
                 sources=all_sources,
                 started_at=datetime.now(timezone.utc).isoformat(),
+                prior_run_id=args.follow_up or None,
             )
             print(f"  Knowledge graph updated")
 

@@ -532,19 +532,6 @@ def test_kg_check_contradiction_returns_unresolved_when_no_store():
         ks._store = orig
 
 
-def test_kg_get_related_topics_returns_unavailable_when_no_store():
-    """kg_get_related_topics returns error JSON when store is not configured."""
-    from agent.tools import kg_get_related_topics
-    import knowledge.store as ks
-    orig = ks._store
-    ks._store = None
-    try:
-        result = kg_get_related_topics("topic")
-        assert "error" in result
-    finally:
-        ks._store = orig
-
-
 def test_kg_write_claim_returns_error_when_no_store():
     """kg_write_claim returns error JSON when store is not configured."""
     import json
