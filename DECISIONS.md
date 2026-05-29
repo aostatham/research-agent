@@ -781,6 +781,28 @@ the graph write boundary via a code path that bypasses extraction —
 the gate must exist at both points.
 **Date:** Phase E design
 
+### D043 — Analyst prompt in prompts/tasks/ with Config-driven thresholds
+**Decision:** The Analyst Agent task prompt lives in prompts/tasks/analyst.md.
+Threshold values (analyst_qualify_threshold, analyst_strengthen_source_types)
+are substituted into the prompt at runtime via str.replace() before the
+agent call, not hardcoded in the prompt file or in source code.
+**Rationale:** Follows D028 (task prompts with interpolation in prompts/tasks/).
+Config-driven thresholds allow operators to tune the Analyst without touching
+source or prompt files. The substitution is simple string replacement; no
+template engine is warranted for two values.
+**Date:** Phase E Component 5
+
+### D044 — Analyst filters claims to those with report_line set
+**Decision:** analyse() filters the claims list to only those where
+report_line is not None before constructing the prompt and looking up
+claims by id. Claims without report_line are not passed to the agent and
+cannot be targeted by recommendations.
+**Rationale:** Recommendations require a valid line to modify. Passing
+unanchored claims would either confuse the agent or result in
+out-of-bounds line indices. The Analyst's job is line-level annotation;
+claims that annotate_report_lines() could not anchor are not actionable.
+**Date:** Phase E Component 5
+
 ---
 
 ## Testing

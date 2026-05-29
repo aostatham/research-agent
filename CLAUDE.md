@@ -13,7 +13,8 @@ src/
     synthesiser.py        # Report generation (two modes: full / short)
     tools.py              # Tool definitions + Anthropic/Tavily search routing
     tool_utils.py         # Shared tool input validation helper
-    builder.py            # build_agent(), build_agents(), AgentPool factory
+    analyst.py            # Analyst Agent — evidence-informed report quality pass
+    builder.py            # build_agent(), build_agents(), build_analyst(), AgentPool factory
     runstate.py           # RunState dataclass, save/load checkpoint
   llm/
     base.py               # LLMClient ABC + LLMResponse dataclass
@@ -39,6 +40,8 @@ prompts/                  # Agent system prompts (versioned in git)
   researcher.md           # Researcher Agent system prompt
   verifier.md             # Verifier Agent system prompt
   editor.md               # Editor Agent system prompt
+  tasks/
+    analyst.md            # Analyst Agent task prompt (Config-driven thresholds, D043)
 tests/                    # Unit tests — one file per source module
 
 
@@ -65,7 +68,7 @@ Run the agent:
 
 ## Test baseline
 
-528 unit tests must pass before every commit.
+677 unit tests must pass before every commit.
 Always run: pytest tests/ -m "not integration" -v
 Never commit with a failing test.
 
@@ -246,12 +249,13 @@ Phase D — Parallel Research Architecture: COMPLETE (605 tests)
 Phase E — Knowledge Store and Persistence: IN PROGRESS
   Pre-requisites complete: RunState, observability hooks,
     decompose prompt in prompts/tasks/, schema_version field
-  Key decisions: D024-D042
+  Key decisions: D024-D044
   Component 1 COMPLETE — KuzuStore, configure_knowledge(), kg_ tool family
   Component 2 COMPLETE — write_run() integration in main.py
   Component 3 COMPLETE — Graph Verifier agent (graph_verify(), prompts/graph_verifier.md)
   Component 4 COMPLETE — Stage-skipping resume (D035) + follow-up mode (D038)
-  Test baseline: 665 unit tests
+  Component 5 COMPLETE — Analyst Agent (analyse(), prompts/tasks/analyst.md, D043-D044)
+  Test baseline: 677 unit tests
 
 ## Open issues and known gaps
 
@@ -288,7 +292,7 @@ AgentPool dataclass (frozen=True):
   verifier: Agent             # Sonnet, web_search, runs per-Researcher in parallel
   editor: Agent               # configurable model (defaults to synthesis model), no tools
   graph_verifier: Agent|None  # synth_llm, kg_ tools; None when knowledge_store="none"
-  analyst: Agent|None         # Phase E Phase 5; None until implemented
+  analyst: Agent|None         # synth_llm, kg_query + kg_write_claim; None when knowledge_store="none"
   # Planner deferred to Phase E (D015)
 
 ResearchResult dataclass (src/evidence/schema.py):
