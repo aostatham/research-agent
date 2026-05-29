@@ -18,7 +18,7 @@ import os
 import logging
 import argparse
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "src"))
 
@@ -27,7 +27,7 @@ from agent import Orchestrator, Synthesiser
 from agent.builder import build_agents
 from agent.tools import configure_search
 from config import load_config
-from knowledge.store import configure_knowledge
+from knowledge.store import configure_knowledge, get_store
 from llm.builder import build_llms
 from observability.events import configure_observability
 from output.formatter import build_metadata
@@ -109,6 +109,11 @@ def parse_args():
         "--no-observability",
         action="store_true",
         help="Disable observability event logging"
+    )
+    parser.add_argument(
+        "--no-knowledge-write",
+        action="store_true",
+        help="Skip writing this run to the knowledge graph"
     )
 
     return parser.parse_args()
@@ -329,6 +334,27 @@ def main():
         print(f"   Viewer saved to    {viewer_path}")
     elif config.provenance == "graph":
         print("   ⚠️  Graph provenance not yet implemented (Phase E)")
+
+    if config.knowledge_store != "none" and not args.no_knowledge_write:
+        store = get_store()
+        if store is not None:
+            # Build flat deduplicated source list across all research results
+            seen_urls: set = set()
+            all_sources = []
+            for rr in orchestrator._last_research_results:
+                for src in getattr(rr, "sources", []):
+                    url = src.get("url", "") if isinstance(src, dict) else ""
+                    if url and url not in seen_urls:
+                        seen_urls.add(url)
+                        all_sources.append(src)
+            store.write_run(
+                run_id=run_id,
+                topic=topic,
+                claims=claims,
+                sources=all_sources,
+                started_at=datetime.now(timezone.utc).isoformat(),
+            )
+            print(f"  Knowledge graph updated")
 
     # Print run summary
     print(f"\n{'─' * 50}")

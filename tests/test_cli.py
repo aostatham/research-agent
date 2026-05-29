@@ -1210,6 +1210,55 @@ def test_configure_knowledge_called_during_normal_run(tmp_path, monkeypatch):
     mock_kg.assert_called_once()
 
 
+def test_store_write_run_called_when_knowledge_store_kuzu(tmp_path, monkeypatch):
+    """store.write_run() is called when knowledge_store is kuzu and run completes."""
+    monkeypatch.chdir(tmp_path)
+    # Write a config that enables kuzu so load_config() returns knowledge_store="kuzu"
+    (tmp_path / "config.yaml").write_text("knowledge_store: kuzu\n")
+
+    mock_orchestrator = MagicMock()
+    mock_synthesiser = MagicMock()
+    mock_orchestrator.run.return_value = ((SAMPLE_RESULTS, {}), "test-run-id-123")
+    mock_orchestrator._last_research_results = []
+    mock_synthesiser.synthesise.return_value = SAMPLE_REPORT
+    mock_store = MagicMock()
+
+    with patch("sys.argv", ["main.py", "nuclear fusion"]), \
+         patch("llm.builder.AnthropicClient"), \
+         patch("main.Orchestrator", return_value=mock_orchestrator), \
+         patch("main.Synthesiser", return_value=mock_synthesiser), \
+         patch("main.configure_knowledge"), \
+         patch("main.get_store", return_value=mock_store):
+        from main import main
+        main()
+
+    mock_store.write_run.assert_called_once()
+
+
+def test_no_knowledge_write_flag_skips_write_run(tmp_path, monkeypatch):
+    """--no-knowledge-write prevents store.write_run() from being called."""
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "config.yaml").write_text("knowledge_store: kuzu\n")
+
+    mock_orchestrator = MagicMock()
+    mock_synthesiser = MagicMock()
+    mock_orchestrator.run.return_value = ((SAMPLE_RESULTS, {}), "test-run-id-123")
+    mock_orchestrator._last_research_results = []
+    mock_synthesiser.synthesise.return_value = SAMPLE_REPORT
+    mock_store = MagicMock()
+
+    with patch("sys.argv", ["main.py", "nuclear fusion", "--no-knowledge-write"]), \
+         patch("llm.builder.AnthropicClient"), \
+         patch("main.Orchestrator", return_value=mock_orchestrator), \
+         patch("main.Synthesiser", return_value=mock_synthesiser), \
+         patch("main.configure_knowledge"), \
+         patch("main.get_store", return_value=mock_store):
+        from main import main
+        main()
+
+    mock_store.write_run.assert_not_called()
+
+
 # ── Provenance pipeline ordering tests ───────────────────────────────────────
 
 def test_main_synthesise_receives_claims_when_provenance_file(tmp_path, monkeypatch):
