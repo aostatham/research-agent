@@ -175,8 +175,13 @@ NetworkX requires manual JSON serialisation. Neo4j requires a running server.
 **Date:** Phase E design
 
 ### K003 — Knowledge graph schema
-**Decision:** Four relationship types: Claim SUPPORTED_BY Source, Claim CONTRADICTS Claim,
-Claim BELONGS_TO Topic, Topic PRECEDED_BY Topic.
+**Decision:** Five relationship types implemented:
+  Claim SUPPORTED_BY Source, Claim CONTRADICTS Claim,
+  Claim BELONGS_TO Topic, Claim SUPERSEDES Claim, Run RUN_PRECEDED_BY Run.
+Run RUN_PRECEDED_BY Run replaces the original Topic PRECEDED_BY Topic design —
+tracking run lineage on Run nodes is more useful than topic lineage.
+CONTRADICTS edges are not yet auto-created (deferred — heuristic created false
+positives; Graph Verifier will populate via tool calls, I048).
 **Rationale:** Minimal schema that supports the core provenance queries — which sources
 support a claim, which claims contradict each other, how claims relate to topics across
 runs. Additional relationship types can be added as Phase E develops.
@@ -578,10 +583,14 @@ should be distributed.
 ### D026 — Graph Verifier as second Verifier instance in Phase E
 **Decision:** Phase E adds a Graph Verifier — same Agent class as the
 web Verifier, different tool set (knowledge graph tools, no web
-search). Runs after all research completes, before synthesis. Order:
-graph verification first against existing knowledge graph; web
-Verifier runs only on claims the graph could not resolve. AgentPool
-gains one field.
+search). Runs in main.py after build_claims_from_results() so rr.claims
+is populated. Order: graph verification first against existing knowledge
+graph; web Verifier runs only on claims the graph could not resolve.
+AgentPool gains one field.
+**Implementation note:** Graph Verifier is NOT called from the orchestrator
+(rr.claims is empty at research time). It is called in main.py after
+claim extraction, before annotate_report_lines(). This is the correct
+call site — confirmed by QA Pass 2 (H2 finding).
 **Rationale:** Verification and analysis are different jobs — is this
 claim true vs what should the report say. Conflating graph
 verification in Analyst makes Analyst's scope vaguer. Two clean
@@ -745,7 +754,13 @@ recommendation list the Synthesiser applies); add new information
 question itself (does not judge whether the topic or approach was
 correct).
 Output schema: JSON list, each item: {type: qualify|strengthen|
-surface_contradiction, claim_id, reason, suggested_qualifier (optional)}.
+surface_contradiction, claim_id, report_line (int, 1-based),
+reason, suggested_qualifier (optional)}.
+report_line is required — claims without a valid report_line are
+filtered before the Analyst sees them (D044).
+Recommendations applied in deterministic order:
+surface_contradiction (0) → qualify (1) → strengthen (2).
+Within each type, ascending claim_id for determinism.
 Runs after Editor, before final save. Populated only when
 knowledge_store != "none".
 **Rationale:** Scope locked before prompt drafting per D011 pattern.
@@ -784,12 +799,14 @@ the gate must exist at both points.
 ### D043 — Analyst prompt in prompts/tasks/ with Config-driven thresholds
 **Decision:** The Analyst Agent task prompt lives in prompts/tasks/analyst.md.
 Threshold values (analyst_qualify_threshold, analyst_strengthen_source_types)
-are substituted into the prompt at runtime via str.replace() before the
-agent call, not hardcoded in the prompt file or in source code.
+are substituted into the prompt at runtime via string.Template.safe_substitute()
+before the agent call, not hardcoded in the prompt file or in source code.
+Placeholders use $variable form (not {variable}) so JSON in the prompt is safe.
 **Rationale:** Follows D028 (task prompts with interpolation in prompts/tasks/).
 Config-driven thresholds allow operators to tune the Analyst without touching
-source or prompt files. The substitution is simple string replacement; no
-template engine is warranted for two values.
+source or prompt files. Template.safe_substitute() chosen over str.replace()
+so JSON curly braces in the prompt template are not misinterpreted as
+placeholders — a lesson from QA Pass 2.
 **Date:** Phase E Component 5
 
 ### D044 — Analyst filters claims to those with report_line set
@@ -826,7 +843,7 @@ already-imported references.
 ### T003 — Growing test count as commit gate
 **Decision:** pytest tests/ -m "not integration" -v must pass all existing tests before
 every commit. Count grows with each phase — treat any reduction as a regression signal.
-Started at 199. Current count maintained in CLAUDE.md.
+Started at 199. Current count: 701. Maintained in CLAUDE.md.
 **Rationale:** Prevents regressions from accumulating.
 **Date:** Ongoing
 

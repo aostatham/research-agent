@@ -68,7 +68,7 @@ Run the agent:
 
 ## Test baseline
 
-677 unit tests must pass before every commit.
+701 unit tests must pass before every commit.
 Always run: pytest tests/ -m "not integration" -v
 Never commit with a failing test.
 
@@ -234,7 +234,7 @@ Source classification maintenance:
 
 ## Current development phase
 
-Phase D — Parallel Research Architecture: COMPLETE (605 tests)
+Phase D — Parallel Research Architecture: COMPLETE
 
   Part 1  COMPLETE — asyncio workers, --max-workers, worker failure handling
   Part 2  COMPLETE — multi-agent architecture
@@ -244,32 +244,40 @@ Phase D — Parallel Research Architecture: COMPLETE (605 tests)
           Pass 2 QA fixes: Planner removed, inline fallback deleted,
             XSS sanitisation, configurable search model, atomic index write,
             verifier robustness
-          Phase D Part 2 COMPLETE — see ISSUES.md for open items
+          Phase D Part 2 COMPLETE — see ISSUES.md for full log
 
-Phase E — Knowledge Store and Persistence: IN PROGRESS
+Phase E — Knowledge Store and Persistence: LARGELY COMPLETE
   Pre-requisites complete: RunState, observability hooks,
     decompose prompt in prompts/tasks/, schema_version field
   Key decisions: D024-D044
   Component 1 COMPLETE — KuzuStore, configure_knowledge(), kg_ tool family
   Component 2 COMPLETE — write_run() integration in main.py
   Component 3 COMPLETE — Graph Verifier agent (graph_verify(), prompts/graph_verifier.md)
+                          Graph Verifier runs in main.py after build_claims_from_results()
+                          so rr.claims is populated at call time
   Component 4 COMPLETE — Stage-skipping resume (D035) + follow-up mode (D038)
   Component 5 COMPLETE — Analyst Agent (analyse(), prompts/tasks/analyst.md, D043-D044)
-  Test baseline: 677 unit tests
+  QA Pass 1 COMPLETE — 9 fixes (H1-H5, M1-M5, L1-L5 labels across two batches)
+  QA Pass 2 COMPLETE — 12 fixes (H1-H3, M1-M5, L1-L5 labels, second batch)
+  Open: I047 (Low), I048 (Medium) — see ISSUES.md
+  Test baseline: 701 unit tests
 
 ## Open issues and known gaps
 
 See ISSUES.md for the full issues log including all QA findings and
 their status. grep "| Open |" ISSUES.md to list current open items.
 
-No open issues. See ISSUES.md for full log.
+Open:
+  I047 (Low)    — src/llm/anthropic_client.py, src/agent/tools.py: eager SDK imports
+  I048 (Medium) — knowledge/store.py: CONTRADICTS edges never created;
+                  check_contradiction always returns no_contradiction;
+                  resolved_contradicted branch unreachable
 
 Deferred to Phase I:
   I003 — agent/tools.py: module-level search globals block FastAPI
   I004 — agent/orchestrator.py: run() footgun in async contexts
 
 Next — do not begin without explicit instruction:
-  Pass 4 Group B fixes (see current prompt from Lead Architect)
   Phase C remaining output mode renderers (parallel workstream)
   Phase F partial — read_url, arxiv_search tools
 
@@ -292,7 +300,9 @@ AgentPool dataclass (frozen=True):
   verifier: Agent             # Sonnet, web_search, runs per-Researcher in parallel
   editor: Agent               # configurable model (defaults to synthesis model), no tools
   graph_verifier: Agent|None  # synth_llm, kg_ tools; None when knowledge_store="none"
-  analyst: Agent|None         # synth_llm, kg_query + kg_write_claim; None when knowledge_store="none"
+                              # Runs in main.py after build_claims_from_results(), not in orchestrator
+  analyst: Agent|None         # synth_llm, kg_query_claims_for_topic only; None when knowledge_store="none"
+                              # kg_write_claim removed until validated end-to-end
   # Planner deferred to Phase E (D015)
 
 ResearchResult dataclass (src/evidence/schema.py):
@@ -312,8 +322,8 @@ See DECISIONS.md D003-D019 for full rationale.
 Phase A  Stability and quality                    COMPLETE
 Phase B  Output options (markdown/HTML/PDF)       COMPLETE
 Phase C  Evidence layer and output modes          LARGELY COMPLETE
-Phase D  Parallel research + multi-agent          COMPLETE (Pass 3 QA in progress)
-Phase E  Memory and persistent knowledge          PENDING
+Phase D  Parallel research + multi-agent          COMPLETE
+Phase E  Memory and persistent knowledge          LARGELY COMPLETE (I047, I048 open)
 Phase F  Tools and sources (read_url priority)    PENDING
 PKG      Packaging (Docker/pipx)                  PENDING
 UI       Comprehensive web UI                     PENDING

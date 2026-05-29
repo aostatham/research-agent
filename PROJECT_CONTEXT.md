@@ -160,7 +160,17 @@ python main.py "your topic"
        │  └── score_confidence() — source quality heuristic
        │
        ▼
+  graph_verify() (if knowledge_store != "none")
+       │                            — Graph Verifier runs here in main.py
+       │                              rr.claims populated; checks kg for contradictions
+       │
+       ▼
   annotate_report_lines()           — add [N] markers to report
+       │
+       ▼
+  analyse() (if knowledge_store != "none")
+       │                            — Analyst Agent applies qualify/strengthen/
+       │                              surface_contradiction recommendations
        │
        ▼
   write_provenance_file()           — .provenance.json alongside report
@@ -365,7 +375,7 @@ Layer 3 hardcoded list in `classify_source_type()`:
 - `provenance.py` has no imports from `agent/` or `llm/`
 - `llm_client` is passed as argument to `extract_claims_from_answer()`
 - `annotate_report_lines()` only annotates prose — skips References section
-- `report_line` mostly null until Phase D synthesiser integration
+- `report_line` set by annotate_report_lines(); ~59% match rate baseline (D007)
 
 ---
 
@@ -376,55 +386,36 @@ Layer 3 hardcoded list in `classify_source_type()`:
 - Phase B — Output options (markdown/HTML/PDF)
 - Phase C — Evidence layer (pending: output mode renderers)
 - Phase D Part 1 — Parallel asyncio workers
-- Phase D Part 2 — Multi-agent architecture (423 → 528 across QA passes)
-- Phase E partial (Tavily)
+- Phase D Part 2 — Multi-agent architecture (701 tests, all QA passes complete)
+- Phase E — Knowledge Store and Persistence (LARGELY COMPLETE, I047/I048 open)
 - Phase G.1 (mixed provider)
 
-### Phase D Part 2 — what was built
-- Agent and AgentPool dataclasses (src/agent/base.py)
-- Agent system prompts (prompts/)
-- Agent builder with prompt loading (src/agent/builder.py)
-- ResearchResult replaces (answer, sources) tuple (src/evidence/schema.py)
-- System prompt routing on LLMClient (src/llm/)
-- Researcher Agent owns the agentic loop (src/agent/researcher.py)
-- Parallel Verifier after each Researcher (src/agent/verifier.py)
-- Editor Agent after synthesis (src/agent/editor.py)
-- Editor config fields (src/config/settings.py, config.yaml)
-- QA fixes: system prompt injection, gather exception handling,
-  verifier outcome propagation, editor response validation,
-  cross-run state reset
+### Phase E — what was built
+- KuzuStore embedded knowledge graph (src/knowledge/store.py)
+- kg_ tool family: kg_query_claims_for_topic, kg_check_contradiction, kg_write_claim
+- write_run() integration — persists claims/sources to graph after each run
+- Graph Verifier agent (src/agent/verifier.py:graph_verify())
+  — runs in main.py after build_claims_from_results() so rr.claims is populated
+- Stage-skipping resume (RunState v2) + follow-up mode (--follow-up RUN_ID)
+- Analyst Agent (src/agent/analyst.py) with prompts/tasks/analyst.md
+  — deterministic recommendation ordering: surface_contradiction → qualify → strengthen
+- QA Pass 1 (Batch 1 + 2) — 12 fixes across H/M/L categories
+- Open: I047 (lazy imports), I048 (CONTRADICTS edges deferred)
 
-### Known issues carried forward to Pass 2
-- H2: Planner Agent never called — to be resolved by removal (D015)
-- M5: Inline researcher fallback has diverged — to be removed (D016)
-- H7: XSS in HTML/PDF formatter
-- M8: Index file write not concurrency-safe
-- M9: Search uses hardcoded model name
-- M3, M4, M6, M7: Verifier robustness gaps
+### Priority order (post Phase E QA)
 
-### Revised priority order (post Principal Reviewer strategic review)
+1. Phase C remaining output mode renderers (parallel, low risk)
+2. Phase F partial — read_url, arxiv_search
+3. Packaging — Dockerfile, pipx
+4. Phase F remaining — SearXNG, pdf_reader, youtube_transcript, browser
+5. Phase G remaining — provider optimisation
+6. Phase H — observability (formalise hooks)
+7. Phase I — REST API, webhooks
+8. Web UI — full interface (after Phase E)
 
-1. Pass 5 Group B fixes — in progress
-2. Final Pass 5 QA — if clean, Phase D marked complete
-3. report_line wired through synthesis
-4. HTML provenance viewer
-5. RunState durable execution (D027) — Phase E pre-requisite
-6. Observability hooks (src/observability/events.py)
-7. Phase C output renderers (parallel, low risk)
-8. Phase E — knowledge store, Graph Verifier, Analyst Agent (after
-   items 1-6 complete)
-9. Phase F partial — read_url, arxiv_search
-10. Packaging — Dockerfile, pipx
-11. Phase F remaining — SearXNG, pdf_reader, youtube_transcript,
-    browser
-12. Phase G remaining — provider optimisation
-13. Phase H — observability (formalise hooks added in item 6)
-14. Phase I — REST API, webhooks
-15. Web UI — full interface (after Phase E)
-
-User story drives prioritisation: Primary B (analyst) → items 3, 4.
-Secondary A (journalist) → items 3, 4 disputed claims display.
-Tertiary C (developer) → items 9, 7.
+User story drives prioritisation: Primary B (analyst) → report_line quality.
+Secondary A (journalist) → disputed claims display.
+Tertiary C (developer) → Phase F tool breadth.
 
 ---
 
@@ -474,9 +465,9 @@ See ISSUES.md for the full issues log.
 grep "| Open |" ISSUES.md to list current open items.
 
 Currently open:
-  I047 (Low) — eager SDK imports
-  I048 (Medium) — CONTRADICTS edges never created; contradiction
-    detection deferred to a future phase. Graph Verifier contradiction
-    detection deferred — CONTRADICTS edges not yet created;
-    check_contradiction returns no_contradiction in all cases.
+  I047 (Low)    — eager SDK imports in anthropic_client.py and tools.py
+  I048 (Medium) — CONTRADICTS edges never created; check_contradiction always
+                  returns no_contradiction; resolved_contradicted branch unreachable.
+                  Graph Verifier will populate CONTRADICTS via tool calls
+                  in a future phase.
 Deferred to Phase I: I003 (search globals), I004 (run() footgun)
