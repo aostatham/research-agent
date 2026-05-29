@@ -250,7 +250,8 @@ Phase E — Knowledge Store and Persistence: IN PROGRESS
   Component 1 COMPLETE — KuzuStore, configure_knowledge(), kg_ tool family
   Component 2 COMPLETE — write_run() integration in main.py
   Component 3 COMPLETE — Graph Verifier agent (graph_verify(), prompts/graph_verifier.md)
-  Test baseline: 652 unit tests
+  Component 4 COMPLETE — Stage-skipping resume (D035) + follow-up mode (D038)
+  Test baseline: 665 unit tests
 
 ## Open issues and known gaps
 

@@ -165,7 +165,7 @@ python main.py "nuclear fusion energy" \
   --max-tokens-synthesis 8192
 ```
 
-### Resume an interrupted run (experimental)
+### Resume an interrupted run
 
 Every run generates a Run ID printed at completion. If a run is
 interrupted, rerun with `--resume` to reuse the same Run ID:
@@ -174,8 +174,24 @@ interrupted, rerun with `--resume` to reuse the same Run ID:
 python main.py "nuclear fusion energy" --resume abc123def456
 ```
 
-Note: v1 resume reruns all stages with the same Run ID. Stage
-skipping (resuming from the point of failure) is a Phase E feature.
+Resume skips completed stages based on the checkpoint's current stage:
+decompose is skipped from research onward, research is skipped from
+reflect onward, and reflect is skipped from synthesise onward.
+
+### Follow-up mode
+
+Research the gaps identified in a prior run:
+
+```bash
+python main.py "nuclear fusion energy" --follow-up abc123def456
+```
+
+Follow-up mode loads the gap questions identified by the prior run's
+reflection step and researches them directly, without decomposing the
+topic again. Results are linked to the prior run in the knowledge graph
+when `--knowledge-store kuzu` is active.
+
+Note: `--follow-up` and `--resume` cannot be used together.
 
 ### All CLI options
 

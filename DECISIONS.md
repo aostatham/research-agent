@@ -679,6 +679,7 @@ durable run state. Option (a) from D027 — minimal, no new dependency, fits
 on one screen. Resist scope creep during implementation. Checkpoints written
 to output/.checkpoints/, gitignored.
 **Date:** RunState implementation
+Stage-skipping resume implemented in Phase E Component 4. Follow-up mode implemented per D038.
 
 ### D036 — Observability hooks: JSON lines to file, no backend
 **Decision:** log_event() writes structured JSON lines to output/.logs/events_YYYYMMDD.jsonl. Called at agent boundaries (researcher, verifier, editor complete; orchestrator pipeline start/complete). configure_observability() called once at startup in main(). log_event() is a no-op if not configured — observability never crashes the pipeline. No external backend in this phase — Phase H formalises with structured logging backends, dashboards, and cost tracking.
@@ -719,6 +720,7 @@ into decompose() creates a two-input-contract function and violates
 D015's intent. Bypass is less code, cleaner, and respects the
 single-contract principle.
 **Date:** Phase E design
+Implemented in Phase E Component 4. run_followup_async() in orchestrator.py.
 
 ### D039 — Analyst requires knowledge graph
 **Decision:** Analyst is populated in AgentPool only when
