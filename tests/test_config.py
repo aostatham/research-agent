@@ -57,6 +57,38 @@ def test_verifier_max_iterations_loads_from_config_dict(tmp_path, monkeypatch):
     assert config.verifier_max_iterations == 6
 
 
+def test_default_knowledge_store():
+    """knowledge_store defaults to 'none'."""
+    config = Config()
+    assert config.knowledge_store == "none"
+
+
+def test_default_knowledge_db_path():
+    """knowledge_db_path has the correct default path."""
+    config = Config()
+    assert config.knowledge_db_path == "output/.knowledge/research_agent.db"
+
+
+def test_knowledge_store_loads_from_config_dict(tmp_path, monkeypatch):
+    """knowledge_store loads from config.yaml when present."""
+    monkeypatch.chdir(tmp_path)
+    config_data = {"knowledge_store": "kuzu"}
+    with open(tmp_path / "config.yaml", "w") as f:
+        yaml.dump(config_data, f)
+    config = load_config("config.yaml")
+    assert config.knowledge_store == "kuzu"
+
+
+def test_knowledge_db_path_loads_from_config_dict(tmp_path, monkeypatch):
+    """knowledge_db_path loads from config.yaml when present."""
+    monkeypatch.chdir(tmp_path)
+    config_data = {"knowledge_db_path": "/custom/path/graph.db"}
+    with open(tmp_path / "config.yaml", "w") as f:
+        yaml.dump(config_data, f)
+    config = load_config("config.yaml")
+    assert config.knowledge_db_path == "/custom/path/graph.db"
+
+
 def test_default_knowledge_staleness_threshold_days():
     """knowledge_staleness_threshold_days defaults to 90."""
     config = Config()

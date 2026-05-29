@@ -1189,6 +1189,27 @@ def test_configure_observability_not_called_with_no_observability_flag(tmp_path,
     mock_obs.assert_not_called()
 
 
+# ── configure_knowledge() wiring tests ───────────────────────────────────────
+
+def test_configure_knowledge_called_during_normal_run(tmp_path, monkeypatch):
+    """configure_knowledge() is called once during a normal run."""
+    monkeypatch.chdir(tmp_path)
+    mock_orchestrator = MagicMock()
+    mock_synthesiser = MagicMock()
+    mock_orchestrator.run.return_value = ((SAMPLE_RESULTS, {}), "test-run-id-123")
+    mock_synthesiser.synthesise.return_value = SAMPLE_REPORT
+
+    with patch("sys.argv", ["main.py", "nuclear fusion"]), \
+         patch("llm.builder.AnthropicClient"), \
+         patch("main.Orchestrator", return_value=mock_orchestrator), \
+         patch("main.Synthesiser", return_value=mock_synthesiser), \
+         patch("main.configure_knowledge") as mock_kg:
+        from main import main
+        main()
+
+    mock_kg.assert_called_once()
+
+
 # ── Provenance pipeline ordering tests ───────────────────────────────────────
 
 def test_main_synthesise_receives_claims_when_provenance_file(tmp_path, monkeypatch):

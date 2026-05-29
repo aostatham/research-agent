@@ -96,13 +96,23 @@ def build_agents(
 
     editor_llm = _resolve_editor_llm(config, synth_llm)
 
+    # kg_ read tools are available to Researcher and Verifier when the knowledge
+    # graph is configured. kg_write_claim is Analyst-only — not added here.
+    kg_tools: tuple = ()
+    if getattr(config, "knowledge_store", "none") != "none":
+        kg_tools = (
+            "kg_query_claims_for_topic",
+            "kg_check_contradiction",
+            "kg_get_related_topics",
+        )
+
     researcher = build_agent(
         name="researcher",
         role="Research agent",
         description="Answers a single sub-question using web search and synthesises the findings",
         llm=orch_llm,
         prompt_dir=prompt_dir,
-        tools=("web_search",),
+        tools=("web_search",) + kg_tools,
         max_iterations=config.max_iterations,
     )
     verifier = build_agent(
@@ -111,7 +121,7 @@ def build_agents(
         description="Checks specific claims from researcher answers against web sources",
         llm=synth_llm,
         prompt_dir=prompt_dir,
-        tools=("web_search",),
+        tools=("web_search",) + kg_tools,
         max_iterations=config.verifier_max_iterations,
     )
     editor = build_agent(

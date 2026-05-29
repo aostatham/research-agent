@@ -475,6 +475,98 @@ def test_web_search_routes_to_tavily():
     mock_anthropic.assert_not_called()
 
 
+# ── kg_ tool routing tests ───────────────────────────────────────────────────
+
+def test_kg_query_claims_returns_unavailable_when_no_store():
+    """kg_query_claims_for_topic returns error JSON when store is not configured."""
+    from agent.tools import kg_query_claims_for_topic
+    import knowledge.store as ks
+    orig = ks._store
+    ks._store = None
+    try:
+        result = kg_query_claims_for_topic("topic")
+        assert "error" in result
+    finally:
+        ks._store = orig
+
+
+def test_kg_check_contradiction_returns_unresolved_when_no_store():
+    """kg_check_contradiction returns unresolved JSON when store is not configured."""
+    import json
+    from agent.tools import kg_check_contradiction
+    import knowledge.store as ks
+    orig = ks._store
+    ks._store = None
+    try:
+        result = json.loads(kg_check_contradiction("claim text", "topic"))
+        assert result["status"] == "unresolved"
+    finally:
+        ks._store = orig
+
+
+def test_kg_get_related_topics_returns_unavailable_when_no_store():
+    """kg_get_related_topics returns error JSON when store is not configured."""
+    from agent.tools import kg_get_related_topics
+    import knowledge.store as ks
+    orig = ks._store
+    ks._store = None
+    try:
+        result = kg_get_related_topics("topic")
+        assert "error" in result
+    finally:
+        ks._store = orig
+
+
+def test_kg_write_claim_returns_error_when_no_store():
+    """kg_write_claim returns error JSON when store is not configured."""
+    import json
+    from agent.tools import kg_write_claim
+    import knowledge.store as ks
+    orig = ks._store
+    ks._store = None
+    try:
+        result = json.loads(kg_write_claim({"claim": "test", "sources": []}))
+        assert result["status"] == "error"
+    finally:
+        ks._store = orig
+
+
+def test_execute_tool_with_sources_routes_kg_query(tmp_path):
+    """execute_tool_with_sources routes kg_query_claims_for_topic to knowledge store."""
+    from agent.tools import execute_tool_with_sources
+    from knowledge.store import KuzuStore
+    import knowledge.store as ks
+    store = KuzuStore(str(tmp_path / "test.db"))
+    orig = ks._store
+    ks._store = store
+    try:
+        result, sources = execute_tool_with_sources(
+            "kg_query_claims_for_topic", {"topic": "unknown topic xyz"}
+        )
+        assert result == "[]"
+        assert sources == []
+    finally:
+        ks._store = orig
+        store.close()
+
+
+def test_kg_calls_do_not_increment_search_count():
+    """kg_ tool calls do not increment _search_call_count."""
+    from agent import tools
+    from agent.tools import kg_query_claims_for_topic
+    import knowledge.store as ks
+    orig_store = ks._store
+    orig_count = tools._search_call_count
+    ks._store = None
+    tools._search_call_count = 0
+    try:
+        kg_query_claims_for_topic("some topic")
+        assert tools._search_call_count == 0
+    finally:
+        ks._store = orig_store
+        tools._search_call_count = orig_count
+
+
 # ── Integration tests ─────────────────────────────────────────────────────────
 
 @pytest.mark.integration

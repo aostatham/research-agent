@@ -172,12 +172,15 @@ def execute_tool_with_sources(tool_name: str, tool_input: dict) -> tuple[str, li
     inputs (missing query key) do not increment the counter.
     The Orchestrator reports the total via get_and_reset_search_count().
 
+    kg_ tool calls are routed to the knowledge graph functions. They do not
+    increment _search_call_count — they are not billable search calls.
+
     Used by the orchestrator so citations are carried through to the synthesiser
     and formatted into the final report's References section.
 
     Args:
-        tool_name:  Name of the tool to execute (currently only "web_search").
-        tool_input: Dict of tool arguments ({"query": "..."}).
+        tool_name:  Name of the tool to execute.
+        tool_input: Dict of tool arguments.
 
     Returns:
         Tuple of (result_text, sources) where sources is a list of
@@ -188,7 +191,66 @@ def execute_tool_with_sources(tool_name: str, tool_input: dict) -> tuple[str, li
     """
     if tool_name == "web_search":
         return _web_search_with_sources(tool_input["query"])
+    if tool_name == "kg_query_claims_for_topic":
+        result = kg_query_claims_for_topic(tool_input.get("topic", ""))
+        return result, []
+    if tool_name == "kg_check_contradiction":
+        result = kg_check_contradiction(
+            tool_input.get("claim", ""), tool_input.get("topic", "")
+        )
+        return result, []
+    if tool_name == "kg_get_related_topics":
+        result = kg_get_related_topics(tool_input.get("topic", ""))
+        return result, []
+    if tool_name == "kg_write_claim":
+        result = kg_write_claim(tool_input.get("claim_dict", {}))
+        return result, []
     raise ValueError(f"Unknown tool: {tool_name}")
+
+
+# ── Knowledge graph tool functions ────────────────────────────────────────────
+# These functions bridge tool dispatch to the knowledge store singleton.
+# They do not increment _search_call_count — not billable search calls.
+
+def kg_query_claims_for_topic(topic: str) -> str:
+    """Query the knowledge graph for claims related to a topic."""
+    from knowledge.store import get_store
+    store = get_store()
+    if store is None:
+        return '{"error": "knowledge graph unavailable"}'
+    return store.query_claims_for_topic(topic)
+
+
+def kg_check_contradiction(claim: str, topic: str) -> str:
+    """Check the knowledge graph for contradicting claims on a topic."""
+    from knowledge.store import get_store
+    store = get_store()
+    if store is None:
+        return '{"status": "unresolved", "reason": "knowledge graph unavailable"}'
+    from config.settings import Config
+    config = Config()
+    return store.check_contradiction(
+        claim, topic,
+        staleness_days=config.knowledge_staleness_threshold_days,
+    )
+
+
+def kg_get_related_topics(topic: str) -> str:
+    """Query the knowledge graph for topics related to the given topic."""
+    from knowledge.store import get_store
+    store = get_store()
+    if store is None:
+        return '{"error": "knowledge graph unavailable"}'
+    return store.get_related_topics(topic)
+
+
+def kg_write_claim(claim_dict: dict) -> str:
+    """Write a single validated claim to the knowledge graph (Analyst-only)."""
+    from knowledge.store import get_store
+    store = get_store()
+    if store is None:
+        return '{"status": "error", "reason": "knowledge graph unavailable"}'
+    return store.write_claim(claim_dict)
 
 
 def _web_search(query: str) -> str:

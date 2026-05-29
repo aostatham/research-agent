@@ -108,6 +108,10 @@ class Config:
 
     # ── Knowledge store ───────────────────────────────────────────────────────
 
+    # none: no graph (default); kuzu: Kuzu embedded graph at knowledge_db_path.
+    knowledge_store: str = "none"
+    knowledge_db_path: str = "output/.knowledge/research_agent.db"
+
     # Days threshold for treating a prior claim as stale vs. contradictory.
     # Graph Verifier uses this to route unresolved claims to the web Verifier.
     knowledge_staleness_threshold_days: int = 90

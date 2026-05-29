@@ -27,6 +27,7 @@ from agent import Orchestrator, Synthesiser
 from agent.builder import build_agents
 from agent.tools import configure_search
 from config import load_config
+from knowledge.store import configure_knowledge
 from llm.builder import build_llms
 from observability.events import configure_observability
 from output.formatter import build_metadata
@@ -202,6 +203,8 @@ def main():
         tavily_max_results=config.tavily_max_results,
         search_model=config.anthropic_search_model,
     )
+
+    configure_knowledge(config)
 
     topic = " ".join(args.topic)
     started_at = datetime.now()

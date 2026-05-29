@@ -44,6 +44,8 @@ retry_max_delay: 30.0
 # ollama_editor_model: llama3.1
 
 # Knowledge store
+# knowledge_store: none   # none | kuzu
+# knowledge_db_path: output/.knowledge/research_agent.db
 # knowledge_staleness_threshold_days: 90
 
 # Custom source classification — add project-specific domains here.
