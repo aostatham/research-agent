@@ -35,9 +35,11 @@ class Agent:
     description: str
     llm: LLMClient
     system_prompt: str
-    # Populated by builder; read by build_tool_list() in tools.py to construct
-    # the tools= argument for LLM calls. Each agent's research/verify/analyse
-    # function must call build_tool_list(agent.tools) rather than ALL_TOOLS.
+    # Populated by builder. Read by build_tool_list() in tools.py
+    # to construct the tools= argument for LLM calls. Each agent's
+    # research/verify/analyse function must call
+    # build_tool_list(agent.tools) rather than using ALL_TOOLS or
+    # hardcoded tool lists.
     tools: tuple = ()
     temperature: Optional[float] = None
     max_iterations: int = 5
