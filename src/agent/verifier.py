@@ -407,6 +407,14 @@ def graph_verify(
                         cid = gv.get("claim_id")
                         for claim in claims:
                             if claim.get("id") == cid:
+                                prior = claim.get("verification_status", "unverified")
+                                if prior == "verified":
+                                    logging.info(
+                                        "graph_verify: claim %s was web-verified but "
+                                        "graph found contradiction — setting disputed "
+                                        "(prior: verified)",
+                                        cid,
+                                    )
                                 claim["verification_status"] = "disputed"
                                 claim["confidence"] = max(
                                     0.0,

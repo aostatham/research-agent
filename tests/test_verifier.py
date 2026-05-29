@@ -558,6 +558,29 @@ def test_graph_verify_confidence_floor_at_zero():
     assert result.claims[0]["confidence"] == 0.0
 
 
+def test_graph_verify_logs_info_when_overriding_verified_status(caplog):
+    """graph_verify() logs INFO when setting disputed on a claim previously marked verified."""
+    import logging
+    from agent.verifier import graph_verify
+    from llm.base import LLMResponse
+
+    gv_response = json.dumps([
+        {"claim_id": 1, "result": "resolved_contradicted", "reason": "Contradiction found."}
+    ])
+    agent = _make_gv_agent(LLMResponse(type="text", content=gv_response))
+    rr = _make_rr_with_claims("X is definitely the largest.")
+    rr.claims[0]["verification_status"] = "verified"  # previously web-verified
+
+    with caplog.at_level(logging.INFO):
+        result = graph_verify(agent, rr, "topic X")
+
+    assert result.claims[0]["verification_status"] == "disputed"
+    assert any(
+        "web-verified" in r.message and "prior: verified" in r.message
+        for r in caplog.records
+    )
+
+
 # ── Orchestrator verifier integration ────────────────────────────────────────
 
 def test_research_question_async_calls_verifier_unconditionally():
