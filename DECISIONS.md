@@ -764,6 +764,7 @@ unavailable.
 implementation time and ensures the two Verifiers are not
 double-checking the same claims.
 **Date:** Phase E design
+Implemented in Phase E Component 3. graph_verify() in verifier.py handles the three-state result.
 
 ### D042 — kg_write_claim validates before writing
 **Decision:** kg_write_claim rejects claims that are: empty text,

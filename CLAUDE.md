@@ -136,8 +136,9 @@ Agent layer:
     agent.llm.chat() directly from agent implementation code (D007, D017)
   - Agent.chat() silently discards any system= kwarg passed by the caller —
     self.system_prompt is always used (D017)
-  - AgentPool has three fields: researcher, verifier, editor (Planner deferred
-    to Phase E — D015)
+  - AgentPool has five fields: researcher, verifier, editor (required);
+    graph_verifier, analyst (optional, None when knowledge_store is "none")
+    Planner deferred to Phase E (D015)
   - AgentPool is required by Orchestrator — there is no fallback path
   - ResearchResult is returned by Researcher.research() and carries:
     question, answer, claims, sources, message_history,
@@ -242,11 +243,14 @@ Phase D — Parallel Research Architecture: COMPLETE (605 tests)
             verifier robustness
           Phase D Part 2 COMPLETE — see ISSUES.md for open items
 
-Phase E — Knowledge Store and Persistence: DESIGN APPROVED
+Phase E — Knowledge Store and Persistence: IN PROGRESS
   Pre-requisites complete: RunState, observability hooks,
     decompose prompt in prompts/tasks/, schema_version field
   Key decisions: D024-D042
-  Implementation begins after Opus confirmation
+  Component 1 COMPLETE — KuzuStore, configure_knowledge(), kg_ tool family
+  Component 2 COMPLETE — write_run() integration in main.py
+  Component 3 COMPLETE — Graph Verifier agent (graph_verify(), prompts/graph_verifier.md)
+  Test baseline: 652 unit tests
 
 ## Open issues and known gaps
 
@@ -279,9 +283,11 @@ Agent dataclass (src/agent/base.py — frozen=True):
   output_schema: Optional[type] = None
 
 AgentPool dataclass (frozen=True):
-  researcher: Agent    # Haiku, web_search, owns its agentic loop
-  verifier: Agent      # Sonnet, web_search, runs per-Researcher in parallel
-  editor: Agent        # configurable model (defaults to synthesis model), no tools
+  researcher: Agent           # Haiku, web_search, owns its agentic loop
+  verifier: Agent             # Sonnet, web_search, runs per-Researcher in parallel
+  editor: Agent               # configurable model (defaults to synthesis model), no tools
+  graph_verifier: Agent|None  # synth_llm, kg_ tools; None when knowledge_store="none"
+  analyst: Agent|None         # Phase E Phase 5; None until implemented
   # Planner deferred to Phase E (D015)
 
 ResearchResult dataclass (src/evidence/schema.py):
