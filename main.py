@@ -251,6 +251,8 @@ def main():
         tavily_api_key=config.tavily_api_key,
         tavily_max_results=config.tavily_max_results,
         search_model=config.anthropic_search_model,
+        max_url_chars=config.max_url_chars,
+        url_fetch_timeout_seconds=config.url_fetch_timeout_seconds,
     )
 
     configure_knowledge(config)

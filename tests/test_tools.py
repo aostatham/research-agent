@@ -695,6 +695,159 @@ def test_kg_calls_do_not_increment_search_count():
         tools._search_call_count = orig_count
 
 
+# ── read_url / _fetch_url tests ───────────────────────────────────────────────
+
+def test_fetch_url_rejects_non_http_scheme():
+    """_fetch_url returns an error dict for non-http/https URL schemes."""
+    import agent.tools as tools
+    result = tools._fetch_url("ftp://example.com/file.txt", 8000, 10)
+    assert "error" in result
+    assert "http" in result["error"]
+
+
+def test_fetch_url_rejects_file_scheme():
+    """_fetch_url returns an error dict for file:// URLs."""
+    import agent.tools as tools
+    result = tools._fetch_url("file:///etc/passwd", 8000, 10)
+    assert "error" in result
+
+
+def test_fetch_url_returns_error_on_timeout(monkeypatch):
+    """_fetch_url returns an error dict when requests.get raises Timeout."""
+    import agent.tools as tools
+    import requests as _requests
+
+    def _raise_timeout(*a, **kw):
+        raise _requests.exceptions.Timeout()
+
+    monkeypatch.setattr("agent.tools.requests.get", _raise_timeout)
+    # Pre-populate robots cache to skip robots.txt fetch
+    tools._robots_cache["https://example.com"] = None
+    result = tools._fetch_url("https://example.com/page", 8000, 10)
+    assert "error" in result
+    assert "timed out" in result["error"]
+
+
+def test_fetch_url_returns_error_on_http_4xx(monkeypatch):
+    """_fetch_url returns an error dict when the response status is 4xx."""
+    import agent.tools as tools
+    from unittest.mock import MagicMock
+
+    mock_resp = MagicMock()
+    mock_resp.status_code = 404
+    monkeypatch.setattr("agent.tools.requests.get", lambda *a, **kw: mock_resp)
+    tools._robots_cache["https://example.com"] = None
+    result = tools._fetch_url("https://example.com/missing", 8000, 10)
+    assert "error" in result
+    assert "404" in result["error"]
+
+
+def test_fetch_url_returns_structured_dict_on_success(monkeypatch):
+    """_fetch_url returns url, title, text, truncated on a successful trafilatura extract."""
+    import agent.tools as tools
+    import json
+    from unittest.mock import MagicMock, patch
+
+    mock_resp = MagicMock()
+    mock_resp.status_code = 200
+    mock_resp.text = "<html><body><p>Article text here.</p></body></html>"
+    monkeypatch.setattr("agent.tools.requests.get", lambda *a, **kw: mock_resp)
+    tools._robots_cache["https://example.com"] = None
+
+    trafilatura_result = json.dumps({
+        "title": "Test Title",
+        "author": "Test Author",
+        "date": "2026-01-01",
+        "text": "Article text here.",
+    })
+    with patch("agent.tools._trafilatura") as mock_traf:
+        mock_traf.extract.return_value = trafilatura_result
+        with patch.object(tools, "TRAFILATURA_AVAILABLE", True):
+            result = tools._fetch_url("https://example.com/article", 8000, 10)
+
+    assert result["url"] == "https://example.com/article"
+    assert result["title"] == "Test Title"
+    assert result["text"] == "Article text here."
+    assert result["truncated"] is False
+
+
+def test_fetch_url_falls_back_to_bleach_when_trafilatura_returns_none(monkeypatch):
+    """_fetch_url uses bleach fallback when trafilatura.extract() returns None."""
+    import agent.tools as tools
+    from unittest.mock import MagicMock, patch
+
+    mock_resp = MagicMock()
+    mock_resp.status_code = 200
+    mock_resp.text = "<p>Prose content.</p><script>evil()</script>"
+    monkeypatch.setattr("agent.tools.requests.get", lambda *a, **kw: mock_resp)
+    tools._robots_cache["https://example.com"] = None
+
+    with patch("agent.tools._trafilatura") as mock_traf:
+        mock_traf.extract.return_value = None
+        with patch.object(tools, "TRAFILATURA_AVAILABLE", True):
+            result = tools._fetch_url("https://example.com/page", 8000, 10)
+
+    assert "error" not in result
+    assert "Prose content." in result["text"]
+    assert result["title"] is None
+
+
+def test_fetch_url_falls_back_to_bleach_when_trafilatura_raises(monkeypatch):
+    """_fetch_url uses bleach fallback when trafilatura.extract() raises an exception."""
+    import agent.tools as tools
+    from unittest.mock import MagicMock, patch
+
+    mock_resp = MagicMock()
+    mock_resp.status_code = 200
+    mock_resp.text = "<p>Fallback prose.</p>"
+    monkeypatch.setattr("agent.tools.requests.get", lambda *a, **kw: mock_resp)
+    tools._robots_cache["https://example.com"] = None
+
+    with patch("agent.tools._trafilatura") as mock_traf:
+        mock_traf.extract.side_effect = RuntimeError("parse error")
+        with patch.object(tools, "TRAFILATURA_AVAILABLE", True):
+            result = tools._fetch_url("https://example.com/page", 8000, 10)
+
+    assert "error" not in result
+    assert "Fallback prose." in result["text"]
+
+
+def test_read_url_returns_json_string():
+    """read_url() returns a JSON-serialisable string."""
+    import json, agent.tools as tools
+    from unittest.mock import patch
+
+    with patch.object(tools, "_fetch_url", return_value={"url": "https://x.com", "text": "ok"}):
+        result = tools.read_url("https://x.com")
+    parsed = json.loads(result)
+    assert parsed["text"] == "ok"
+
+
+def test_read_url_does_not_increment_search_count():
+    """read_url calls do not increment the search counter."""
+    import agent.tools as tools
+    from unittest.mock import patch
+
+    tools._search_call_count = 0
+    with patch.object(tools, "_fetch_url", return_value={"text": "ok"}):
+        tools.execute_tool_with_sources("read_url", {"url": "https://x.com"})
+    assert tools._search_call_count == 0
+
+
+def test_execute_tool_with_sources_routes_read_url():
+    """execute_tool_with_sources dispatches read_url and returns empty sources list."""
+    import agent.tools as tools
+    from unittest.mock import patch
+
+    with patch.object(tools, "read_url", return_value='{"text":"content"}') as mock_ru:
+        result, sources = tools.execute_tool_with_sources(
+            "read_url", {"url": "https://example.com"}
+        )
+    mock_ru.assert_called_once_with("https://example.com")
+    assert sources == []
+    assert result == '{"text":"content"}'
+
+
 # ── Integration tests ─────────────────────────────────────────────────────────
 
 @pytest.mark.integration

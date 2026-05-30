@@ -120,7 +120,7 @@ def build_agents(
         description="Answers a single sub-question using web search and synthesises the findings",
         llm=orch_llm,
         prompt_dir=prompt_dir,
-        tools=("web_search",) + kg_tools,
+        tools=("web_search", "read_url") + kg_tools,
         max_iterations=config.max_iterations,
     )
     verifier = build_agent(
@@ -129,7 +129,7 @@ def build_agents(
         description="Checks specific claims from researcher answers against web sources",
         llm=synth_llm,
         prompt_dir=prompt_dir,
-        tools=("web_search",) + kg_tools,
+        tools=("web_search", "read_url") + kg_tools,
         max_iterations=config.verifier_max_iterations,
     )
     editor = build_agent(

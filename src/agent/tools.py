@@ -18,7 +18,10 @@ translate them to its own schema (Anthropic input_schema vs OpenAI function).
 import json
 import logging
 import os
+import urllib.parse
+import urllib.robotparser
 import anthropic
+import requests
 from dotenv import load_dotenv
 from llm.retry import with_retry
 
@@ -31,6 +34,14 @@ try:
     from tavily import TavilyClient
 except ImportError:
     TavilyClient = None
+
+# Optional trafilatura import — falls back to bleach on raw HTML when unavailable.
+try:
+    import trafilatura as _trafilatura
+    TRAFILATURA_AVAILABLE = True
+except ImportError:
+    _trafilatura = None  # type: ignore[assignment]
+    TRAFILATURA_AVAILABLE = False
 
 
 # ── Tool definitions (provider-agnostic format) ───────────────────────────────
@@ -98,6 +109,31 @@ KG_TOOL_DESCRIPTORS = {
 }
 
 
+URL_TOOL_DESCRIPTORS = {
+    "read_url": {
+        "name": "read_url",
+        "description": (
+            "Fetch and extract the text content of a web page. "
+            "Returns structured JSON with title, author, published_date, and cleaned text. "
+            "Use to read a specific URL found in search results. "
+            "Read at most one URL per research iteration."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "url": {
+                    "type": "string",
+                    "description": "The full URL to fetch",
+                }
+            },
+            "required": ["url"],
+        },
+    },
+}
+
+ARXIV_TOOL_DESCRIPTORS: dict = {}  # populated in Step 3
+
+
 def build_tool_list(tool_names: tuple) -> list:
     """
     Build the list of tool descriptors for an agent LLM call.
@@ -118,19 +154,25 @@ def build_tool_list(tool_names: tuple) -> list:
                     without a matching KG_TOOL_DESCRIPTORS entry) is caught at
                     build time rather than silently omitted at LLM call time.
     """
-    known = {"web_search"} | set(KG_TOOL_DESCRIPTORS)
+    _all_descriptors = {
+        **KG_TOOL_DESCRIPTORS,
+        **URL_TOOL_DESCRIPTORS,
+        **ARXIV_TOOL_DESCRIPTORS,
+    }
+    known = {"web_search"} | set(_all_descriptors)
     unknown = [t for t in tool_names if t not in known]
     if unknown:
         raise ValueError(
             f"Unknown tool names in Agent.tools: {unknown}. "
-            f"Add descriptors to KG_TOOL_DESCRIPTORS in tools.py."
+            f"Add descriptors to KG_TOOL_DESCRIPTORS, URL_TOOL_DESCRIPTORS, "
+            f"or ARXIV_TOOL_DESCRIPTORS in tools.py."
         )
     result = []
     for name in tool_names:
         if name == "web_search":
             result.append(WEB_SEARCH_TOOL)
-        elif name in KG_TOOL_DESCRIPTORS:
-            result.append(KG_TOOL_DESCRIPTORS[name])
+        elif name in _all_descriptors:
+            result.append(_all_descriptors[name])
     return result
 
 
@@ -146,6 +188,11 @@ _staleness_days: int = 90
 _tavily_api_key = None
 _tavily_max_results = 5
 _search_model = "claude-haiku-4-5-20251001"
+# read_url settings — cached at startup so _fetch_url never reads Config().
+_max_url_chars: int = 8000
+_url_fetch_timeout: int = 10
+# Per-domain robots.txt cache — populated lazily by _fetch_url().
+_robots_cache: dict = {}
 
 # Counts every successful call to execute_tool_with_sources() across all agents
 # (Researcher and Verifier). Reset and read via get_and_reset_search_count().
@@ -175,7 +222,9 @@ def _get_anthropic_client() -> anthropic.Anthropic:
 
 def configure_search(provider: str, tavily_api_key: str = None,
                      tavily_max_results: int = 5,
-                     search_model: str = "claude-haiku-4-5-20251001"):
+                     search_model: str = "claude-haiku-4-5-20251001",
+                     max_url_chars: int = 8000,
+                     url_fetch_timeout_seconds: int = 10):
     """
     Configure the search backend used by all execute_tool* calls.
 
@@ -184,14 +233,13 @@ def configure_search(provider: str, tavily_api_key: str = None,
     use the configured provider.
 
     Args:
-        provider:           "anthropic" or "tavily".
-        tavily_api_key:     Required when provider is "tavily".  Can also be
-                            set via TAVILY_API_KEY environment variable
-                            (load_config handles the env fallback).
-        tavily_max_results: Number of results to return per Tavily search.
-        search_model:       Model used for Anthropic web search calls.
-                            Defaults to Haiku; configurable so model
-                            deprecations can be handled without code changes.
+        provider:                  "anthropic" or "tavily".
+        tavily_api_key:            Required when provider is "tavily".  Can also be
+                                   set via TAVILY_API_KEY environment variable.
+        tavily_max_results:        Number of results to return per Tavily search.
+        search_model:              Model used for Anthropic web search calls.
+        max_url_chars:             Max characters returned per read_url call.
+        url_fetch_timeout_seconds: HTTP fetch timeout in seconds for read_url.
 
     Raises:
         ValueError: If provider is "tavily" but no API key is provided.
@@ -203,10 +251,13 @@ def configure_search(provider: str, tavily_api_key: str = None,
         )
 
     global _search_provider, _tavily_api_key, _tavily_max_results, _search_model
+    global _max_url_chars, _url_fetch_timeout
     _search_provider = provider
     _tavily_api_key = tavily_api_key
     _tavily_max_results = tavily_max_results
     _search_model = search_model
+    _max_url_chars = max_url_chars
+    _url_fetch_timeout = url_fetch_timeout_seconds
 
 
 def configure_knowledge(config) -> None:
@@ -225,6 +276,138 @@ def configure_knowledge(config) -> None:
     _staleness_days = getattr(config, "knowledge_staleness_threshold_days", 90)
     from knowledge.store import configure_knowledge as _ks_configure
     _ks_configure(config)
+
+
+# ── URL fetch ─────────────────────────────────────────────────────────────────
+
+_USER_AGENT = "research-agent/0.1 (+https://github.com/aostatham/research-agent)"
+_BLEACH_PROSE_TAGS = ["p", "h1", "h2", "h3", "h4", "li", "td", "th"]
+
+
+def _fetch_url(url: str, max_chars: int, timeout_seconds: int) -> dict:
+    """
+    Fetch and extract the text content of a URL.
+
+    Steps:
+      1. Validate URL scheme (http/https only).
+      2. Check robots.txt for the domain (cached per domain; fail open on error).
+      3. Fetch via requests.get with User-Agent and timeout.
+      4. Extract content via trafilatura; fall back to bleach on None/exception.
+      5. Truncate to max_chars and return a structured dict.
+
+    Args:
+        url:             The full URL to fetch.
+        max_chars:       Maximum characters to return in the text field.
+        timeout_seconds: HTTP request timeout in seconds.
+
+    Returns:
+        Dict with keys: url, title, author, published_date, text, truncated.
+        On any pre-fetch failure: dict with a single "error" key.
+    """
+    # Step 1 — validate scheme.
+    parsed = urllib.parse.urlparse(url)
+    if parsed.scheme not in ("http", "https"):
+        return {"error": "invalid URL scheme — only http and https permitted"}
+
+    # Step 2 — robots.txt check (fail open on any fetch/parse error).
+    domain = f"{parsed.scheme}://{parsed.netloc}"
+    if domain not in _robots_cache:
+        rp = urllib.robotparser.RobotFileParser()
+        rp.set_url(f"{domain}/robots.txt")
+        try:
+            rp.read()
+            _robots_cache[domain] = rp
+        except Exception:
+            _robots_cache[domain] = None  # None = allow (fail open)
+
+    robot = _robots_cache[domain]
+    if robot is not None and not robot.can_fetch("research-agent", url):
+        return {"error": "fetch disallowed by robots.txt for this domain"}
+
+    # Step 3 — fetch the page.
+    try:
+        response = requests.get(
+            url,
+            headers={"User-Agent": _USER_AGENT},
+            timeout=timeout_seconds,
+        )
+    except requests.exceptions.Timeout:
+        return {"error": f"fetch timed out after {timeout_seconds}s"}
+    except (requests.exceptions.ConnectionError,
+            requests.exceptions.RequestException) as e:
+        return {"error": f"fetch failed: {type(e).__name__}: {e}"}
+
+    if response.status_code >= 400:
+        return {"error": f"HTTP {response.status_code} from {url}"}
+
+    # Step 4 — extract content.
+    title = author = published_date = None
+    text = ""
+    use_fallback = False
+
+    if TRAFILATURA_AVAILABLE:
+        try:
+            raw = _trafilatura.extract(
+                response.text,
+                include_metadata=True,
+                include_tables=True,
+                output_format="json",
+            )
+            if raw:
+                data = json.loads(raw)
+                title = data.get("title")
+                author = data.get("author")
+                published_date = data.get("date")
+                text = data.get("text", "") or ""
+            else:
+                use_fallback = True
+        except Exception:
+            use_fallback = True
+    else:
+        use_fallback = True
+
+    if use_fallback:
+        try:
+            import bleach as _bleach
+            text = _bleach.clean(
+                response.text,
+                tags=_BLEACH_PROSE_TAGS,
+                strip=True,
+            )
+        except Exception:
+            text = response.text
+
+    # Step 5 — truncate and return.
+    truncated = len(text) > max_chars
+    return {
+        "url": url,
+        "title": title,
+        "author": author,
+        "published_date": published_date,
+        "text": text[:max_chars],
+        "truncated": truncated,
+    }
+
+
+def read_url(url: str) -> str:
+    """
+    Fetch and extract content from a URL, returning structured JSON.
+
+    Uses _max_url_chars and _url_fetch_timeout set by configure_search().
+    Never raises — any exception is caught and returned as error JSON.
+
+    Args:
+        url: The full URL to fetch.
+
+    Returns:
+        JSON string of a result dict (url, title, author, published_date,
+        text, truncated) or an error dict with a single "error" key.
+    """
+    try:
+        result = _fetch_url(url, _max_url_chars, _url_fetch_timeout)
+    except Exception as e:
+        result = {"error": f"read_url failed: {type(e).__name__}: {e}"}
+    return json.dumps(result)
 
 
 # ── Tool executor ─────────────────────────────────────────────────────────────
@@ -294,6 +477,9 @@ def execute_tool_with_sources(tool_name: str, tool_input: dict) -> tuple[str, li
     """
     if tool_name == "web_search":
         return _web_search_with_sources(tool_input["query"])
+    if tool_name == "read_url":
+        result = read_url(tool_input.get("url", ""))
+        return result, []
     if tool_name == "kg_query_claims_for_topic":
         result = kg_query_claims_for_topic(tool_input.get("topic", ""))
         return result, []
