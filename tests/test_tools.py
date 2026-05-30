@@ -780,7 +780,7 @@ def test_fetch_url_falls_back_to_bleach_when_trafilatura_returns_none(monkeypatc
     mock_resp = MagicMock()
     mock_resp.status_code = 200
     mock_resp.headers = {"Content-Type": "text/html"}
-    mock_resp.text = "<p>Prose content.</p><script>evil()</script>"
+    mock_resp.raw.read.return_value = b"<p>Prose content.</p><script>evil()</script>"
     monkeypatch.setattr("agent.tools.requests.get", lambda *a, **kw: mock_resp)
     tools._robots_cache["https://example.com"] = None
 
@@ -802,7 +802,7 @@ def test_fetch_url_falls_back_to_bleach_when_trafilatura_raises(monkeypatch):
     mock_resp = MagicMock()
     mock_resp.status_code = 200
     mock_resp.headers = {"Content-Type": "text/html"}
-    mock_resp.text = "<p>Fallback prose.</p>"
+    mock_resp.raw.read.return_value = b"<p>Fallback prose.</p>"
     monkeypatch.setattr("agent.tools.requests.get", lambda *a, **kw: mock_resp)
     tools._robots_cache["https://example.com"] = None
 
@@ -813,6 +813,24 @@ def test_fetch_url_falls_back_to_bleach_when_trafilatura_raises(monkeypatch):
 
     assert "error" not in result
     assert "Fallback prose." in result["text"]
+
+
+def test_fetch_url_reads_only_up_to_max_bytes(monkeypatch):
+    """_fetch_url calls response.raw.read with max_chars * 4 as the byte limit."""
+    import agent.tools as tools
+    from unittest.mock import MagicMock
+
+    mock_resp = MagicMock()
+    mock_resp.status_code = 200
+    mock_resp.headers = {"Content-Type": "text/html"}
+    mock_resp.raw.read.return_value = b"<p>Short page.</p>"
+    monkeypatch.setattr("agent.tools.requests.get", lambda *a, **kw: mock_resp)
+    monkeypatch.setattr("agent.tools.TRAFILATURA_AVAILABLE", False)
+    tools._robots_cache["https://example.com"] = None
+
+    tools._fetch_url("https://example.com/page", 500, 10)
+
+    mock_resp.raw.read.assert_called_once_with(2000, decode_content=True)
 
 
 def test_fetch_url_rejects_pdf_content_type(monkeypatch):

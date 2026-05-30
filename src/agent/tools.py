@@ -469,12 +469,14 @@ def _fetch_url(url: str, max_chars: int, timeout_seconds: int) -> dict:
     if robot is not None and not robot.can_fetch("research-agent", url):
         return {"error": "fetch disallowed by robots.txt for this domain"}
 
-    # Step 3 — fetch the page.
+    # Step 3 — fetch the page (streaming, bounded read to avoid loading large
+    # responses entirely into memory).
     try:
         response = requests.get(
             url,
             headers={"User-Agent": _USER_AGENT},
             timeout=timeout_seconds,
+            stream=True,
         )
     except requests.exceptions.Timeout:
         return {"error": f"fetch timed out after {timeout_seconds}s"}
@@ -482,14 +484,23 @@ def _fetch_url(url: str, max_chars: int, timeout_seconds: int) -> dict:
             requests.exceptions.RequestException) as e:
         return {"error": f"fetch failed: {type(e).__name__}: {e}"}
 
+    response.raise_for_status()
     if response.status_code >= 400:
+        response.close()
         return {"error": f"HTTP {response.status_code} from {url}"}
 
     # Step 3b — Content-Type check.
     content_type = response.headers.get("Content-Type", "").lower()
     if not any(t in content_type for t in
                ("text/html", "text/plain", "application/xhtml")):
+        response.close()
         return {"error": f"unsupported content type: {content_type}", "url": url}
+
+    # Read up to max_bytes; generous multiplier accounts for HTML markup overhead.
+    max_bytes = max_chars * 4
+    content = response.raw.read(max_bytes, decode_content=True)
+    response.close()
+    html = content.decode("utf-8", errors="replace")
 
     # Step 4 — extract content.
     title = author = published_date = None
@@ -499,7 +510,7 @@ def _fetch_url(url: str, max_chars: int, timeout_seconds: int) -> dict:
     if TRAFILATURA_AVAILABLE:
         try:
             raw = _trafilatura.extract(
-                response.text,
+                html,
                 include_metadata=True,
                 include_tables=True,
                 output_format="json",
@@ -521,12 +532,12 @@ def _fetch_url(url: str, max_chars: int, timeout_seconds: int) -> dict:
         try:
             import bleach as _bleach
             text = _bleach.clean(
-                response.text,
+                html,
                 tags=_BLEACH_PROSE_TAGS,
                 strip=True,
             )
         except Exception:
-            text = response.text
+            text = html
 
     # Step 5 — truncate and return.
     truncated = len(text) > max_chars
