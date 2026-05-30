@@ -362,3 +362,35 @@ def test_analyst_strengthen_source_types_loads_from_config_dict(tmp_path, monkey
         yaml.dump(config_data, f)
     config = load_config("config.yaml")
     assert config.analyst_strengthen_source_types == ["forum", "social"]
+
+
+def test_default_max_url_chars():
+    """max_url_chars defaults to 8000."""
+    config = Config()
+    assert config.max_url_chars == 8000
+
+
+def test_default_url_fetch_timeout_seconds():
+    """url_fetch_timeout_seconds defaults to 10."""
+    config = Config()
+    assert config.url_fetch_timeout_seconds == 10
+
+
+def test_max_url_chars_loads_from_config_dict(tmp_path, monkeypatch):
+    """max_url_chars loads from config.yaml when present."""
+    monkeypatch.chdir(tmp_path)
+    config_data = {"max_url_chars": 4000}
+    with open(tmp_path / "config.yaml", "w") as f:
+        yaml.dump(config_data, f)
+    config = load_config("config.yaml")
+    assert config.max_url_chars == 4000
+
+
+def test_url_fetch_timeout_seconds_loads_from_config_dict(tmp_path, monkeypatch):
+    """url_fetch_timeout_seconds loads from config.yaml when present."""
+    monkeypatch.chdir(tmp_path)
+    config_data = {"url_fetch_timeout_seconds": 30}
+    with open(tmp_path / "config.yaml", "w") as f:
+        yaml.dump(config_data, f)
+    config = load_config("config.yaml")
+    assert config.url_fetch_timeout_seconds == 30

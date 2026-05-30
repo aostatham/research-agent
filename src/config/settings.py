@@ -123,6 +123,13 @@ class Config:
     # Source types that trigger a strengthening note when used as the sole source.
     analyst_strengthen_source_types: list = field(default_factory=lambda: ["forum"])
 
+    # ── URL fetch (read_url tool) ─────────────────────────────────────────────
+
+    # Maximum characters returned per read_url call.
+    max_url_chars: int = 8000
+    # HTTP fetch timeout in seconds for read_url calls.
+    url_fetch_timeout_seconds: int = 10
+
     # ── Output mode ───────────────────────────────────────────────────────────
 
     # report (default): full narrative report
