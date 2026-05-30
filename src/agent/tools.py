@@ -450,11 +450,18 @@ def _fetch_url(url: str, max_chars: int, timeout_seconds: int) -> dict:
     # Step 2 — robots.txt check (fail open on any fetch/parse error).
     domain = f"{parsed.scheme}://{parsed.netloc}"
     if domain not in _robots_cache:
-        rp = urllib.robotparser.RobotFileParser()
-        rp.set_url(f"{domain}/robots.txt")
         try:
-            rp.read()
-            _robots_cache[domain] = rp
+            r = requests.get(
+                f"{domain}/robots.txt",
+                timeout=timeout_seconds,
+                headers={"User-Agent": _USER_AGENT},
+            )
+            if r.status_code == 200:
+                rp = urllib.robotparser.RobotFileParser()
+                rp.parse(r.text.splitlines())
+                _robots_cache[domain] = rp
+            else:
+                _robots_cache[domain] = None
         except Exception:
             _robots_cache[domain] = None  # None = allow (fail open)
 

@@ -848,6 +848,65 @@ def test_execute_tool_with_sources_routes_read_url():
     assert result == '{"text":"content"}'
 
 
+def test_fetch_url_robots_txt_uses_requests_get_with_timeout(monkeypatch):
+    """robots.txt is fetched via requests.get with the configured timeout."""
+    import agent.tools as tools
+    from unittest.mock import MagicMock
+
+    robots_resp = MagicMock()
+    robots_resp.status_code = 200
+    robots_resp.text = "User-agent: *\nDisallow:"
+
+    page_resp = MagicMock()
+    page_resp.status_code = 200
+    page_resp.text = "<html><body>Hello</body></html>"
+
+    call_records = []
+
+    def fake_get(url, **kw):
+        call_records.append((url, kw.get("timeout")))
+        if "robots.txt" in url:
+            return robots_resp
+        return page_resp
+
+    tools._robots_cache.pop("https://robots-test.example.com", None)
+    monkeypatch.setattr("agent.tools.requests.get", fake_get)
+    monkeypatch.setattr("agent.tools.TRAFILATURA_AVAILABLE", False)
+
+    tools._fetch_url("https://robots-test.example.com/page", 8000, 7)
+
+    robots_call = next(c for c in call_records if "robots.txt" in c[0])
+    assert robots_call[1] == 7, "robots.txt fetch must use the configured timeout"
+    tools._robots_cache.pop("https://robots-test.example.com", None)
+
+
+def test_fetch_url_robots_timeout_sets_cache_to_none_and_proceeds(monkeypatch):
+    """A Timeout on robots.txt sets cache[domain]=None and allows the main fetch."""
+    import agent.tools as tools
+    import requests as _requests
+    from unittest.mock import MagicMock
+
+    domain = "https://slow-robots.example.com"
+    page_resp = MagicMock()
+    page_resp.status_code = 200
+    page_resp.text = "<p>content</p>"
+
+    def fake_get(url, **kw):
+        if "robots.txt" in url:
+            raise _requests.exceptions.Timeout()
+        return page_resp
+
+    tools._robots_cache.pop(domain, None)
+    monkeypatch.setattr("agent.tools.requests.get", fake_get)
+    monkeypatch.setattr("agent.tools.TRAFILATURA_AVAILABLE", False)
+
+    result = tools._fetch_url(f"{domain}/page", 8000, 5)
+
+    assert tools._robots_cache.get(domain) is None
+    assert "error" not in result
+    tools._robots_cache.pop(domain, None)
+
+
 # ── arxiv_search / _arxiv_search tests ───────────────────────────────────────
 
 _ARXIV_ATOM_FIXTURE = """<?xml version="1.0" encoding="UTF-8"?>
