@@ -11,7 +11,7 @@ src/
     verifier.py           # Verifier Agent — parallel claim verification
     editor.py             # Editor Agent — coherence pass after synthesis
     synthesiser.py        # Report generation (two modes: full / short)
-    tools.py              # Tool definitions + Anthropic/Tavily search routing
+    tools.py              # Tool definitions + Anthropic/Tavily search routing + read_url + arxiv_search
     tool_utils.py         # Shared tool input validation helper
     analyst.py            # Analyst Agent — evidence-informed report quality pass
     builder.py            # build_agent(), build_agents(), build_analyst(), AgentPool factory
@@ -284,10 +284,18 @@ Phase E — Knowledge Store and Persistence: COMPLETE (718 tests)
     - CONTRADICTS edge creation deferred (I048 open)
   See ISSUES.md for full QA history.
 
+Phase F partial — read_url, arxiv_search tools: COMPLETE (792 tests)
+
+  Step 1  COMPLETE — dependencies (trafilatura, requests) + Config fields
+  Step 2  COMPLETE — read_url tool (trafilatura extraction, robots.txt check)
+  Step 3  COMPLETE — arxiv_search tool (arXiv Atom API, structured output)
+  Step 4  COMPLETE — arXiv ID deduplication in provenance.py
+  Step 5  COMPLETE — prompts, DECISIONS.md (D045, D046), CLAUDE.md, README.md
+
 Next — do not begin without explicit instruction:
   Eval harness — three reference topics, measure after each phase
   Phase C remaining output mode renderers (parallel workstream)
-  Phase F partial — read_url, arxiv_search tools
+  Remaining Phase F items (citation extraction, source ranking)
 
 ## Open issues and known gaps
 
@@ -346,7 +354,7 @@ Phase B  Output options (markdown/HTML/PDF)       COMPLETE
 Phase C  Evidence layer and output modes          LARGELY COMPLETE
 Phase D  Parallel research + multi-agent          COMPLETE
 Phase E  Memory and persistent knowledge          COMPLETE
-Phase F  Tools and sources (read_url priority)    PENDING
+Phase F  Tools and sources (read_url priority)    PARTIAL (read_url + arxiv_search done)
 PKG      Packaging (Docker/pipx)                  PENDING
 UI       Comprehensive web UI                     PENDING
 Phase G  Provider optimisation                    PARTIAL

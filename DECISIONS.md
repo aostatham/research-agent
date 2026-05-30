@@ -1022,3 +1022,45 @@ dependency.
   electrosmith daisy seed: 16 questions, 57 searches, 37,450 chars, 496s
   large language model training: 17 questions, 89 searches, 83,403 chars, 1,280s
 **Date:** Phase E completion
+
+### D045 — read_url tool: trafilatura extraction with robots.txt check
+**Decision:** The `read_url` tool fetches a URL and extracts prose text
+using trafilatura (v2.0.0). Before fetching, it checks robots.txt via
+urllib.robotparser with a per-domain cache (`_robots_cache`); disallowed
+URLs return an error dict rather than raising. Fails open: parse errors
+and network errors on the robots.txt request allow the fetch to proceed.
+The fetch uses a User-Agent header (`research-agent/0.1 +repo-url`) and
+a configurable timeout (`url_fetch_timeout_seconds`, default 10s). If
+trafilatura returns None or raises, the response body is passed through
+bleach.clean() with a prose-only tag allowlist as fallback. The result is
+truncated to `max_url_chars` (default 8000) with a `truncated` bool flag.
+Only http and https schemes are permitted; other schemes return an error
+dict without fetching. Available to Researcher and Verifier agents.
+**Rationale:** trafilatura consistently outperforms html2text and
+BeautifulSoup at boilerplate removal on news and academic pages. The
+robots.txt check is a baseline ethical constraint; fail-open ensures
+network instability in robots.txt fetches does not block the pipeline.
+The configurable char limit prevents context-window overflow.
+**Date:** Phase F Step 2, May 2026
+
+### D046 — arxiv_search tool: Atom API with arXiv ID deduplication
+**Decision:** The `arxiv_search` tool queries the arXiv Atom feed
+(`export.arxiv.org/api/query`) using stdlib `xml.etree.ElementTree`.
+Returns up to 5 results by relevance; each result includes: arxiv_id
+(version suffix stripped), title, authors (up to 5, "+et al." when more),
+abstract, published date (YYYY-MM-DD), canonical URL
+(`https://arxiv.org/abs/{id}`), and categories (primary + all tags).
+Network errors and parse failures log a warning and return `[]` rather
+than raising. The `_arxiv_search()` function does not count against the
+web_search usage counter. In `provenance.py`, `_extract_arxiv_id()`
+extracts the canonical ID from an arXiv URL (stripping version suffix),
+and `extract_claims_from_answer()` deduplicates sources by arXiv ID so
+two URLs for the same paper (e.g., `abs/2301.12345v1` and
+`abs/2301.12345v2`) are treated as one source. Available to Researcher
+only (Verifier uses web_search + read_url for claim verification).
+**Rationale:** arXiv is the primary preprint server for AI, ML, physics,
+and adjacent fields. Structured metadata (arXiv ID, categories) enables
+future deduplication and cross-run knowledge graph enrichment. Version
+deduplication prevents confidence inflation when the same paper is
+retrieved at multiple versions.
+**Date:** Phase F Steps 3–4, May 2026
