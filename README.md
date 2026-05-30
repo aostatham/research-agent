@@ -302,10 +302,12 @@ The Researcher and Verifier agents have access to the following tools:
 | Tool | Agents | Description |
 |---|---|---|
 | `web_search` | Researcher, Verifier | General web search (Anthropic or Tavily). Counts against search quota. |
-| `read_url` | Researcher, Verifier | Fetch and extract the text content of a web page using trafilatura. Respects robots.txt. Configurable character limit (`max_url_chars`, default 8,000). |
-| `arxiv_search` | Researcher only | Search arXiv for academic papers via the Atom API. Returns up to 5 results with arXiv ID, title, authors, abstract, categories, and canonical URL. Does not count against the web search quota. |
+| `read_url` | Researcher, Verifier | Fetch and extract the text content of a web page using trafilatura. Respects robots.txt. Unconditionally enabled. |
+| `arxiv_search` | Researcher only | Search arXiv for academic papers via the Atom API. Returns up to 5 results with arXiv ID, title, authors, abstract, categories, and canonical URL. Does not count against the web search quota. Unconditionally enabled for the Researcher. |
 
-> `read_url` and `arxiv_search` are available to agents when the respective config fields are set. Both are enabled by default.
+`read_url` and `arxiv_search` are always enabled — no config flag required. The fetch behaviour is configurable via:
+- `max_url_chars` (default 8000) — max characters returned per `read_url` call
+- `url_fetch_timeout_seconds` (default 10) — fetch timeout in seconds
 
 > Provenance deduplication treats two arXiv URLs for the same paper (e.g., `abs/2301.12345v1` and `abs/2301.12345v2`) as one source, so the same paper at different versions does not inflate confidence scores.
 
