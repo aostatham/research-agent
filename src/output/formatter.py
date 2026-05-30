@@ -1,10 +1,14 @@
 """
 Report formatting utilities for the research-agent pipeline.
 
-Provides three functions:
-  build_metadata()   — markdown metadata table prepended to every report
-  convert_to_html()  — converts markdown report to a styled HTML page
-  convert_to_pdf()   — converts HTML to PDF via weasyprint (optional dep)
+Provides:
+  build_metadata()         — markdown metadata table prepended to every report
+  convert_to_html()        — converts markdown report to a styled HTML page
+  convert_to_pdf()         — converts HTML to PDF via weasyprint (optional dep)
+  render_raw()             — strips metadata block and References, returns prose
+  render_bibliography()    — formatted bibliography grouped by source type
+  render_academic()        — academic style with abstract and numbered sections
+  render_report_evidence() — report with inline confidence/verification markers
 
 These functions are format-only; they do not touch the filesystem.
 See output.writer for save_report() and update_index().
@@ -238,3 +242,43 @@ def convert_to_pdf(html: str, filepath: str):
         stylesheets=[print_css],
         font_config=font_config
     )
+
+
+def render_raw(report: str) -> str:
+    """Return report text stripped of the leading metadata block and References section.
+
+    The metadata block is expected between the first and second ``---`` markers
+    at the top of the report (a ``---``-wrapped table block).  If no such block
+    exists the stripping is a no-op.  The ``## References`` section is stripped
+    from the last occurrence to the end of the string.
+
+    Args:
+        report: Full report string, optionally containing a leading
+                ``---``-wrapped metadata block and/or a trailing References section.
+
+    Returns:
+        Prose-only string with metadata block and References removed, stripped
+        of leading/trailing whitespace.
+    """
+    text = report
+
+    # Strip leading metadata block (between first and second --- markers).
+    # Normalise: if the string starts with "---\n" (no preceding newline) prepend one
+    # so the search pattern "\n---\n" works uniformly.
+    if text.startswith("---\n"):
+        text = "\n" + text
+
+    sep = "\n---\n"
+    first = text.find(sep)
+    if first != -1:
+        second = text.find(sep, first + len(sep))
+        if second != -1:
+            text = text[second + len(sep):]
+
+    # Strip trailing References section (last occurrence).
+    ref_marker = "\n## References"
+    ref_idx = text.rfind(ref_marker)
+    if ref_idx != -1:
+        text = text[:ref_idx]
+
+    return text.strip()

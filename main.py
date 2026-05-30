@@ -377,6 +377,11 @@ def main():
         short=args.short
     )
 
+    # Apply output mode transformations before saving
+    if config.output_mode == "raw":
+        from output.formatter import render_raw
+        report = render_raw(report)
+
     output_path = save_report(
         topic=topic,
         metadata=metadata,

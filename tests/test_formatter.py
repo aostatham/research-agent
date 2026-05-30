@@ -13,7 +13,11 @@ import re
 import pytest
 from unittest.mock import MagicMock, patch
 from datetime import datetime
-from output.formatter import build_metadata, convert_to_html
+from output.formatter import (
+    build_metadata,
+    convert_to_html,
+    render_raw,
+)
 
 
 def _make_mock_markdown():
@@ -224,3 +228,49 @@ def test_html_line_anchors_only_in_report_body_not_metadata():
     meta_end = result.find('</div>', meta_start)
     meta_section = result[meta_start:meta_end]
     assert 'id="L' not in meta_section
+
+
+# ── render_raw() ─────────────────────────────────────────────────────────────
+
+def test_render_raw_removes_metadata_table_block():
+    """render_raw() strips the --- wrapped metadata block at the top of the report."""
+    report = (
+        "---\n"
+        "| | |\n"
+        "|---|---|\n"
+        "| **Topic** | test |\n"
+        "---\n"
+        "\n"
+        "## Executive Summary\n"
+        "\n"
+        "Prose content here."
+    )
+    result = render_raw(report)
+    assert "| **Topic** | test |" not in result
+    assert "Prose content here." in result
+
+
+def test_render_raw_removes_references_section():
+    """render_raw() strips the ## References section from the end of the report."""
+    report = (
+        "## Executive Summary\n\nProse here.\n\n"
+        "## References\n\n- [1] Source A. https://example.com.\n- [2] Source B."
+    )
+    result = render_raw(report)
+    assert "## References" not in result
+    assert "[1] Source A." not in result
+    assert "Prose here." in result
+
+
+def test_render_raw_returns_prose_when_neither_section_present():
+    """render_raw() returns the report unchanged when no metadata block or References are present."""
+    report = "Just plain prose with no markers."
+    result = render_raw(report)
+    assert result == "Just plain prose with no markers."
+
+
+def test_render_raw_handles_prose_only_unchanged():
+    """render_raw() with only prose (no metadata, no references) returns it unchanged."""
+    report = "First paragraph.\n\nSecond paragraph.\n\nThird paragraph."
+    result = render_raw(report)
+    assert result == "First paragraph.\n\nSecond paragraph.\n\nThird paragraph."
