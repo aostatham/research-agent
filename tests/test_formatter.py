@@ -17,6 +17,7 @@ from output.formatter import (
     build_metadata,
     convert_to_html,
     render_raw,
+    render_bibliography,
 )
 
 
@@ -274,3 +275,64 @@ def test_render_raw_handles_prose_only_unchanged():
     report = "First paragraph.\n\nSecond paragraph.\n\nThird paragraph."
     result = render_raw(report)
     assert result == "First paragraph.\n\nSecond paragraph.\n\nThird paragraph."
+
+
+# ── render_bibliography() ─────────────────────────────────────────────────────
+
+def test_render_bibliography_deduplicates_by_url():
+    """render_bibliography() removes duplicate sources sharing the same URL."""
+    sources = {
+        "Q1": [{"title": "Site A", "url": "https://a.com", "source_type": "general"}],
+        "Q2": [{"title": "Site A", "url": "https://a.com", "source_type": "general"}],
+    }
+    result = render_bibliography("", sources)
+    assert result.count("https://a.com") == 1
+
+
+def test_render_bibliography_groups_by_source_type():
+    """render_bibliography() creates a ## section for each source type present."""
+    sources = {
+        "Q1": [
+            {"title": "Gov Doc", "url": "https://gov.gov", "source_type": "government"},
+            {"title": "Forum Post", "url": "https://forum.io", "source_type": "forum"},
+        ]
+    }
+    result = render_bibliography("", sources)
+    assert "## Government Sources" in result
+    assert "## Forum Sources" in result
+    assert "## Academic Sources" not in result
+
+
+def test_render_bibliography_sorts_government_before_academic_before_general():
+    """render_bibliography() orders type sections: government → academic → general."""
+    sources = {
+        "Q1": [
+            {"title": "Gen Article", "url": "https://gen.com", "source_type": "general"},
+            {"title": "Acad Paper", "url": "https://acad.edu", "source_type": "academic"},
+            {"title": "Gov Report", "url": "https://gov.gov", "source_type": "government"},
+        ]
+    }
+    result = render_bibliography("", sources)
+    gov_pos = result.find("## Government Sources")
+    acad_pos = result.find("## Academic Sources")
+    gen_pos = result.find("## General Sources")
+    assert gov_pos < acad_pos < gen_pos
+
+
+def test_render_bibliography_empty_sources_returns_stub():
+    """render_bibliography() returns a minimal stub when sources dict is empty."""
+    result = render_bibliography("", {})
+    assert result == "# Bibliography\n\nNo sources found."
+
+
+def test_render_bibliography_produces_markdown_headers_per_type():
+    """render_bibliography() output contains a ## header for each type that has sources."""
+    sources = {
+        "Q1": [
+            {"title": "Article", "url": "https://news.com", "source_type": "news"},
+        ]
+    }
+    result = render_bibliography("", sources)
+    assert result.startswith("# Bibliography")
+    assert "## News Sources" in result
+    assert "- Article." in result

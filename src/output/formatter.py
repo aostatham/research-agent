@@ -282,3 +282,88 @@ def render_raw(report: str) -> str:
         text = text[:ref_idx]
 
     return text.strip()
+
+
+_BIBLIOGRAPHY_TYPE_ORDER = [
+    "government", "academic", "news", "reference",
+    "institutional", "industry", "general", "forum", "video",
+]
+
+_BIBLIOGRAPHY_TYPE_LABELS = {
+    "government": "Government Sources",
+    "academic": "Academic Sources",
+    "news": "News Sources",
+    "reference": "Reference Sources",
+    "institutional": "Institutional Sources",
+    "industry": "Industry Sources",
+    "general": "General Sources",
+    "forum": "Forum Sources",
+    "video": "Video Sources",
+}
+
+
+def render_bibliography(report: str, sources: dict) -> str:
+    """Generate a formatted bibliography from the sources dict.
+
+    Deduplicates by URL across all questions, sorts by source type
+    (government first through video last) then alphabetically by title
+    within each type, and renders a markdown document with one ## section
+    per source type present.
+
+    Args:
+        report:  Report body string (unused in output, present for signature
+                 consistency with other render functions).
+        sources: {question: [{"title": str, "url": str, "source_type": str}]}
+                 from the orchestrator.
+
+    Returns:
+        Markdown bibliography string.  Returns a minimal stub when sources
+        is empty.
+    """
+    from datetime import datetime as _dt
+
+    retrieved = _dt.now().strftime("%Y-%m-%d")
+
+    # Deduplicate by URL across all questions; sources without URL pass through.
+    seen_urls: set = set()
+    unique: list = []
+    for src_list in sources.values():
+        for src in src_list:
+            url = src.get("url", "")
+            if url:
+                if url not in seen_urls:
+                    seen_urls.add(url)
+                    unique.append(src)
+            else:
+                unique.append(src)
+
+    if not unique:
+        return "# Bibliography\n\nNo sources found."
+
+    # Group by source_type.
+    grouped: dict = {}
+    for src in unique:
+        stype = src.get("source_type", "general")
+        grouped.setdefault(stype, []).append(src)
+
+    # Sort within each type by title.
+    for stype in grouped:
+        grouped[stype].sort(key=lambda s: s.get("title", "").lower())
+
+    lines = ["# Bibliography", ""]
+    for stype in _BIBLIOGRAPHY_TYPE_ORDER:
+        if stype not in grouped:
+            continue
+        lines.append(f"## {_BIBLIOGRAPHY_TYPE_LABELS[stype]}")
+        lines.append("")
+        for src in grouped[stype]:
+            title = src.get("title", "Untitled")
+            url = src.get("url", "")
+            entry = f"- {title}."
+            if url:
+                entry += f" {url}."
+            entry += f" Retrieved {retrieved}."
+            lines.append(entry)
+        lines.append("")
+
+    return "\n".join(lines).rstrip()

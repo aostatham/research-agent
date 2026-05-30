@@ -382,6 +382,10 @@ def main():
         from output.formatter import render_raw
         report = render_raw(report)
 
+    elif config.output_mode == "bibliography":
+        from output.formatter import render_bibliography
+        report = render_bibliography(report, sources)
+
     output_path = save_report(
         topic=topic,
         metadata=metadata,
