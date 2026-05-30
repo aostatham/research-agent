@@ -16,7 +16,6 @@ from pathlib import Path
 from string import Template
 
 from agent.base import Agent
-from agent.tools import build_tool_list
 
 _ANALYST_PROMPT_PATH = (
     Path(__file__).parent.parent.parent / "prompts" / "tasks" / "analyst.md"
@@ -80,7 +79,7 @@ def analyse(agent: Agent, report: str, claims: list, config) -> tuple:
 
         response = agent.chat(
             messages=[{"role": "user", "content": user_msg}],
-            tools=build_tool_list(agent.tools),
+            tools=list(agent.tool_descriptors),
             max_tokens=2048,
         )
 

@@ -227,3 +227,19 @@ def test_build_agents_graph_verifier_none_when_knowledge_store_none(tmp_path):
     pool = build_agents(make_config(knowledge_store="none"), make_mock_llm(), make_mock_llm(),
                         prompt_dir=_make_prompt_dir(tmp_path))
     assert pool.graph_verifier is None
+
+
+def test_build_agent_populates_tool_descriptors(tmp_path):
+    """build_agent() sets tool_descriptors to the pre-built descriptor list."""
+    from agent.tools import WEB_SEARCH_TOOL
+    (tmp_path / "myagent.md").write_text("prompt")
+    agent = build_agent("myagent", "role", "desc", make_mock_llm(), tmp_path,
+                        tools=("web_search",))
+    assert agent.tool_descriptors == (WEB_SEARCH_TOOL,)
+
+
+def test_build_agent_tool_descriptors_empty_when_no_tools(tmp_path):
+    """build_agent() leaves tool_descriptors empty when no tools specified."""
+    (tmp_path / "myagent.md").write_text("prompt")
+    agent = build_agent("myagent", "role", "desc", make_mock_llm(), tmp_path)
+    assert agent.tool_descriptors == ()

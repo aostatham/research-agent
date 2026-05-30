@@ -12,7 +12,7 @@ import logging
 import time
 from agent.base import Agent
 from agent.tool_utils import _validate_tool_input
-from agent.tools import build_tool_list, execute_tool_with_sources
+from agent.tools import execute_tool_with_sources
 from evidence.schema import ResearchResult
 from observability.events import log_event
 
@@ -48,7 +48,7 @@ def research(agent: Agent, question: str, max_tokens: int = 2048) -> ResearchRes
         iteration += 1
         response = agent.chat(
             messages=messages,
-            tools=build_tool_list(agent.tools),
+            tools=list(agent.tool_descriptors),
             max_tokens=max_tokens
         )
 

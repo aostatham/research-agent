@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Optional, Union
 
 from agent.base import Agent, AgentPool
+from agent.tools import build_tool_list
 from llm.base import LLMClient
 from llm.builder import build_client
 
@@ -51,6 +52,8 @@ def build_agent(
     if not path.exists():
         raise FileNotFoundError(f"System prompt not found: {path}")
     system_prompt = path.read_text(encoding="utf-8")
+    # Validate and cache descriptors at build time — raises ValueError on unknown names.
+    descriptors = tuple(build_tool_list(tools))
     return Agent(
         name=name,
         role=role,
@@ -58,6 +61,7 @@ def build_agent(
         llm=llm,
         system_prompt=system_prompt,
         tools=tools,
+        tool_descriptors=descriptors,
         temperature=temperature,
         max_iterations=max_iterations,
     )

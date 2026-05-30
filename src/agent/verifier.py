@@ -17,7 +17,7 @@ from typing import Optional
 
 from agent.base import Agent
 from agent.tool_utils import _validate_tool_input
-from agent.tools import build_tool_list, execute_tool_with_sources
+from agent.tools import execute_tool_with_sources
 from evidence.schema import ResearchResult
 from observability.events import log_event
 
@@ -203,7 +203,7 @@ def verify(
 
     while iteration < agent.max_iterations:
         iteration += 1
-        response = agent.chat(messages=messages, tools=build_tool_list(agent.tools), max_tokens=max_tokens)
+        response = agent.chat(messages=messages, tools=list(agent.tool_descriptors), max_tokens=max_tokens)
 
         if response.type == "tool_call":
             # M3: malformed tool_input must not crash the verifier loop.
@@ -368,7 +368,7 @@ def graph_verify(
         iteration = 0
         while iteration < agent.max_iterations:
             iteration += 1
-            response = agent.chat(messages=messages, tools=build_tool_list(agent.tools),
+            response = agent.chat(messages=messages, tools=list(agent.tool_descriptors),
                                   max_tokens=2048)
 
             if response.type == "tool_call":

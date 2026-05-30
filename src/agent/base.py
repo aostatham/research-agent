@@ -35,12 +35,13 @@ class Agent:
     description: str
     llm: LLMClient
     system_prompt: str
-    # Populated by builder. Read by build_tool_list() in tools.py
-    # to construct the tools= argument for LLM calls. Each agent's
-    # research/verify/analyse function must call
-    # build_tool_list(agent.tools) rather than using ALL_TOOLS or
-    # hardcoded tool lists.
+    # Tuple of tool name strings. Populated by builder.
     tools: tuple = ()
+    # Pre-built tool descriptor list from build_tool_list(tools), set once at
+    # build time. Agent implementations use list(agent.tool_descriptors) rather
+    # than calling build_tool_list() on every iteration, so ValueError is raised
+    # at construction rather than silently at LLM call time.
+    tool_descriptors: tuple = ()
     temperature: Optional[float] = None
     max_iterations: int = 5
     output_schema: Optional[type] = None

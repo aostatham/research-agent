@@ -67,6 +67,40 @@ def test_agent_output_schema_defaults_to_none():
     assert agent.output_schema is None
 
 
+def test_agent_tool_descriptors_defaults_to_empty_tuple():
+    """tool_descriptors defaults to () when not provided."""
+    agent = make_agent()
+    assert agent.tool_descriptors == ()
+
+
+def test_agent_can_be_constructed_with_tool_descriptors():
+    """Agent accepts a non-empty tool_descriptors tuple at construction."""
+    descriptor = {"name": "web_search", "description": "Search the web"}
+    agent = Agent(
+        name="test",
+        role="test role",
+        description="test description",
+        llm=make_mock_llm(),
+        system_prompt="system prompt",
+        tool_descriptors=(descriptor,),
+    )
+    assert agent.tool_descriptors == (descriptor,)
+
+
+def test_agent_tool_descriptors_is_tuple():
+    """tool_descriptors field is a tuple, not a list."""
+    descriptor = {"name": "web_search", "description": "Search the web"}
+    agent = Agent(
+        name="test",
+        role="test role",
+        description="test description",
+        llm=make_mock_llm(),
+        system_prompt="system prompt",
+        tool_descriptors=(descriptor,),
+    )
+    assert isinstance(agent.tool_descriptors, tuple)
+
+
 # ── Agent.chat() delegation ───────────────────────────────────────────────────
 
 def test_agent_chat_calls_llm_with_system_prompt():

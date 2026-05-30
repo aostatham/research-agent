@@ -233,8 +233,8 @@ def test_verify_fenced_json_is_parsed():
     assert result.verification == "verified"
 
 
-def test_verify_passes_tools_from_agent_tools():
-    """verify() passes build_tool_list(agent.tools) to agent.chat(), not ALL_TOOLS."""
+def test_verify_passes_tools_from_agent_tool_descriptors():
+    """verify() passes list(agent.tool_descriptors) to agent.chat(), not ALL_TOOLS."""
     from agent.tools import WEB_SEARCH_TOOL
     mock_llm = MagicMock()
     mock_llm.chat.return_value = make_text_response('[{"status": "verified"}]')
@@ -245,6 +245,7 @@ def test_verify_passes_tools_from_agent_tools():
         llm=mock_llm,
         system_prompt="You are a verifier.",
         tools=("web_search",),
+        tool_descriptors=(WEB_SEARCH_TOOL,),
         max_iterations=5,
     )
     rr = ResearchResult(question="What is fusion?", answer="Fusion produces 500 MW.")

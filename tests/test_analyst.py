@@ -61,8 +61,8 @@ SAMPLE_CLAIMS = [
 
 # ── Tools kwarg ──────────────────────────────────────────────────────────────
 
-def test_analyse_passes_tools_from_agent_tools():
-    """analyse() passes build_tool_list(agent.tools) to agent.chat(), not ALL_TOOLS."""
+def test_analyse_passes_tools_from_agent_tool_descriptors():
+    """analyse() passes list(agent.tool_descriptors) to agent.chat(), not ALL_TOOLS."""
     from agent.tools import WEB_SEARCH_TOOL
     mock_llm = MagicMock()
     mock_llm.chat.return_value = make_text_response("[]")
@@ -73,6 +73,7 @@ def test_analyse_passes_tools_from_agent_tools():
         llm=mock_llm,
         system_prompt="You are an analyst.",
         tools=("web_search",),
+        tool_descriptors=(WEB_SEARCH_TOOL,),
     )
     analyse(agent, SAMPLE_REPORT, SAMPLE_CLAIMS, make_config())
     call_kwargs = mock_llm.chat.call_args.kwargs

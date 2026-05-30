@@ -241,8 +241,8 @@ def test_research_main_loop_uses_agent_system_prompt():
     assert call_kwargs["system"] == agent.system_prompt
 
 
-def test_research_passes_tools_from_agent_tools():
-    """research() passes build_tool_list(agent.tools) to agent.chat(), not ALL_TOOLS."""
+def test_research_passes_tools_from_agent_tool_descriptors():
+    """research() passes list(agent.tool_descriptors) to agent.chat(), not ALL_TOOLS."""
     from agent.tools import WEB_SEARCH_TOOL
     mock_llm = MagicMock()
     mock_llm.chat.return_value = make_text_response("Answer.")
@@ -253,6 +253,7 @@ def test_research_passes_tools_from_agent_tools():
         llm=mock_llm,
         system_prompt="You are a researcher.",
         tools=("web_search",),
+        tool_descriptors=(WEB_SEARCH_TOOL,),
         max_iterations=5,
     )
     with patch("agent.researcher.execute_tool_with_sources", return_value=("results", [])):
