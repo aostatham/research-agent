@@ -1045,3 +1045,39 @@ def test_research_result_message_history_defaults_to_empty_list():
     from evidence.schema import ResearchResult
     result = ResearchResult(question="Q?", answer="A.")
     assert result.message_history == []
+
+
+# ── _extract_arxiv_id() tests ─────────────────────────────────────────────────
+
+def test_extract_arxiv_id_returns_canonical_id_for_abs_url():
+    """An arxiv.org/abs URL yields the bare YYMM.NNNNN ID."""
+    from output.provenance import _extract_arxiv_id
+    assert _extract_arxiv_id("https://arxiv.org/abs/2301.12345") == "2301.12345"
+
+
+def test_extract_arxiv_id_strips_version_suffix():
+    """vN suffix is stripped so two versions of the same paper share an ID."""
+    from output.provenance import _extract_arxiv_id
+    assert _extract_arxiv_id("https://arxiv.org/abs/2301.12345v2") == "2301.12345"
+
+
+def test_extract_arxiv_id_returns_none_for_non_arxiv_url():
+    """A non-arXiv URL returns None."""
+    from output.provenance import _extract_arxiv_id
+    assert _extract_arxiv_id("https://example.com/paper/2301.12345") is None
+
+
+def test_extract_claims_deduplicates_sources_by_arxiv_id(mocker):
+    """Two arXiv URLs with the same ID but different versions count as one source."""
+    from unittest.mock import MagicMock
+    from output.provenance import extract_claims_from_answer
+
+    mock_llm = MagicMock()
+    mock_llm.chat.return_value = MagicMock(content='["Fusion achieved ignition in 2022."]')
+
+    sources = [
+        {"title": "Paper v1", "url": "https://arxiv.org/abs/2301.12345v1"},
+        {"title": "Paper v2", "url": "https://arxiv.org/abs/2301.12345v2"},
+    ]
+    claims = extract_claims_from_answer("Q?", "fusion", "Answer.", sources, mock_llm)
+    assert len(claims[0]["sources"]) == 1

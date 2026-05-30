@@ -476,11 +476,18 @@ def extract_claims_from_answer(
         claim_texts = [fallback_text]
 
     seen_urls: set = set()
+    seen_arxiv_ids: set = set()
     deduped_sources = []
     for source in evidence_sources:
-        if source["url"] not in seen_urls:
-            seen_urls.add(source["url"])
-            deduped_sources.append(source)
+        arxiv_id = _extract_arxiv_id(source["url"])
+        if arxiv_id is not None:
+            if arxiv_id in seen_arxiv_ids:
+                continue
+            seen_arxiv_ids.add(arxiv_id)
+        elif source["url"] in seen_urls:
+            continue
+        seen_urls.add(source["url"])
+        deduped_sources.append(source)
 
     claims = []
     for i, text in enumerate(claim_texts):
@@ -547,6 +554,23 @@ def build_claims_from_results(
         next_id += len(new_claims)
 
     return all_claims
+
+
+_ARXIV_ID_RE = re.compile(
+    r"arxiv\.org/(?:abs|pdf)/([a-z\-]+/\d+|\d{4}\.\d{4,5})(?:v\d+)?",
+    re.IGNORECASE,
+)
+
+
+def _extract_arxiv_id(url: str) -> str | None:
+    """
+    Return the canonical arXiv ID from an arXiv URL, stripping any version suffix.
+
+    Handles new-style (YYMM.NNNNN) and old-style (category/YYYYMMDD) IDs.
+    Returns None for non-arXiv URLs.
+    """
+    m = _ARXIV_ID_RE.search(url)
+    return m.group(1) if m else None
 
 
 _STOPWORDS = frozenset({
