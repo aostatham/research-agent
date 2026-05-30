@@ -463,8 +463,11 @@ def _fetch_url(url: str, max_chars: int, timeout_seconds: int) -> dict:
             _robots_cache[domain] = None  # None = allow (fail open)
 
     robot = _robots_cache[domain]
-    if robot is not None and not robot.can_fetch("research-agent", url):
-        return {"error": "fetch disallowed by robots.txt for this domain"}
+    # Note: robots.txt is checked against the original URL's domain.
+    # If the URL redirects to a different domain, the destination
+    # domain is not re-checked. This is a known limitation.
+    if robot is not None and not robot.can_fetch(_USER_AGENT, url):
+        return {"error": "fetch disallowed by robots.txt for this domain", "url": url}
 
     # Step 3 — fetch the page (streaming, bounded read to avoid loading large
     # responses entirely into memory).
@@ -481,15 +484,15 @@ def _fetch_url(url: str, max_chars: int, timeout_seconds: int) -> dict:
             requests.exceptions.RequestException) as e:
         return {"error": f"fetch failed: {type(e).__name__}: {e}"}
 
-    response.raise_for_status()
     if response.status_code >= 400:
         response.close()
-        return {"error": f"HTTP {response.status_code} from {url}"}
+        return {"error": f"HTTP {response.status_code} from {url}", "url": url}
 
-    # Step 3b — Content-Type check.
+    # Step 3b — Content-Type check. A missing header is treated as allowed
+    # so that servers that omit Content-Type are not silently rejected.
     content_type = response.headers.get("Content-Type", "").lower()
-    if not any(t in content_type for t in
-               ("text/html", "text/plain", "application/xhtml")):
+    if content_type and not any(t in content_type for t in
+                                ("text/html", "text/plain", "application/xhtml")):
         response.close()
         return {"error": f"unsupported content type: {content_type}", "url": url}
 

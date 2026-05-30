@@ -566,7 +566,8 @@ def _extract_arxiv_id(url: str) -> str | None:
     """
     Return the canonical arXiv ID from an arXiv URL, stripping any version suffix.
 
-    Handles new-style (YYMM.NNNNN) and old-style (category/YYYYMMDD) IDs.
+    Handles new-style (YYMM.NNNNN) and old-style (category/YYYYMMDD) arXiv IDs.
+    Matches arxiv.org and the legacy xxx.lanl.gov mirror.
     Returns None for non-arXiv URLs.
     """
     m = _ARXIV_ID_RE.search(url)
