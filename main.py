@@ -127,6 +127,13 @@ def parse_args():
              "(e.g. 'Phase E'). Saves to output/.eval/eval_results.jsonl. "
              "Requires --provenance file."
     )
+    parser.add_argument(
+        "--eval-compare",
+        nargs=2,
+        metavar=("PHASE_A", "PHASE_B"),
+        help="Compare eval results between two phases for all reference topics. "
+             "Does not run the pipeline. Example: --eval-compare 'Phase D' 'Phase E'"
+    )
 
     return parser.parse_args()
 
@@ -146,6 +153,31 @@ def main():
     logging.basicConfig(level=logging.WARNING, format="%(levelname)s:%(name)s:%(message)s")
 
     args = parse_args()
+
+    if args.eval_compare:
+        if args.resume:
+            print("❌ --eval-compare and --resume cannot be used together.", file=sys.stderr)
+            sys.exit(1)
+        if args.follow_up:
+            print("❌ --eval-compare and --follow-up cannot be used together.", file=sys.stderr)
+            sys.exit(1)
+        from eval.harness import (
+            load_eval_results, compare_phases, print_comparison, REFERENCE_TOPICS,
+        )
+        results = load_eval_results()
+        if not results:
+            print("No eval results found. Run with --eval-phase to record results.")
+            sys.exit(1)
+        found_any = False
+        for topic in REFERENCE_TOPICS:
+            comparison = compare_phases(results, topic,
+                                        args.eval_compare[0], args.eval_compare[1])
+            if comparison:
+                print_comparison(comparison)
+                found_any = True
+            else:
+                print(f"No results for '{topic}' in one or both phases")
+        sys.exit(0)
 
     if not args.no_observability:
         configure_observability()

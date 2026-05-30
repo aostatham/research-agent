@@ -1597,6 +1597,96 @@ def test_eval_phase_not_set_save_not_called(tmp_path, monkeypatch):
     mock_save.assert_not_called()
 
 
+# ── --eval-compare flag ───────────────────────────────────────────────────────
+
+def test_eval_compare_exits_cleanly_with_matching_results(tmp_path, monkeypatch):
+    """--eval-compare exits 0 when matching results exist for reference topics."""
+    monkeypatch.chdir(tmp_path)
+    from eval.harness import EvalResult, save_eval_result
+
+    result_d = EvalResult(
+        topic="nuclear fusion energy", run_id="r1", timestamp="2026-01-01T00:00:00+00:00",
+        phase="Phase D", report_chars=800, question_count=4, search_count=8, claim_count=10,
+        verified_claims=3, disputed_claims=1, unverified_claims=6, anchored_claims=5,
+        paraphrased_claims=2, omitted_claims=2, not_attempted_claims=1,
+        report_line_coverage=0.7, avg_confidence=0.55, duration_seconds=30.0,
+    )
+    result_e = EvalResult(
+        topic="nuclear fusion energy", run_id="r2", timestamp="2026-02-01T00:00:00+00:00",
+        phase="Phase E", report_chars=1200, question_count=5, search_count=12, claim_count=15,
+        verified_claims=6, disputed_claims=1, unverified_claims=8, anchored_claims=9,
+        paraphrased_claims=3, omitted_claims=2, not_attempted_claims=1,
+        report_line_coverage=0.8, avg_confidence=0.65, duration_seconds=40.0,
+    )
+    save_eval_result(result_d, eval_dir=str(tmp_path / "output" / ".eval"))
+    save_eval_result(result_e, eval_dir=str(tmp_path / "output" / ".eval"))
+
+    with patch("sys.argv", ["main.py", "placeholder", "--eval-compare", "Phase D", "Phase E"]), \
+         patch("eval.harness.load_eval_results", return_value=[result_d, result_e]):
+        with pytest.raises(SystemExit) as exc_info:
+            from main import main
+            main()
+    assert exc_info.value.code == 0
+
+
+def test_eval_compare_prints_no_results_message_and_exits_1(tmp_path, monkeypatch, capsys):
+    """--eval-compare prints no-results message and exits 1 when eval file is empty."""
+    monkeypatch.chdir(tmp_path)
+
+    with patch("sys.argv", ["main.py", "placeholder", "--eval-compare", "Phase D", "Phase E"]), \
+         patch("eval.harness.load_eval_results", return_value=[]):
+        with pytest.raises(SystemExit) as exc_info:
+            from main import main
+            main()
+    assert exc_info.value.code == 1
+    captured = capsys.readouterr()
+    assert "No eval results found" in captured.out
+
+
+def test_eval_compare_with_resume_exits_with_error(tmp_path, monkeypatch, capsys):
+    """--eval-compare and --resume together exit with code 1 and an error message."""
+    monkeypatch.chdir(tmp_path)
+
+    with patch("sys.argv", ["main.py", "placeholder",
+                            "--eval-compare", "Phase D", "Phase E",
+                            "--resume", "run-abc"]):
+        with pytest.raises(SystemExit) as exc_info:
+            from main import main
+            main()
+    assert exc_info.value.code == 1
+    captured = capsys.readouterr()
+    assert "--eval-compare" in captured.err and "--resume" in captured.err
+
+
+def test_eval_compare_with_follow_up_exits_with_error(tmp_path, monkeypatch, capsys):
+    """--eval-compare and --follow-up together exit with code 1 and an error message."""
+    monkeypatch.chdir(tmp_path)
+
+    with patch("sys.argv", ["main.py", "placeholder",
+                            "--eval-compare", "Phase D", "Phase E",
+                            "--follow-up", "prior-run"]):
+        with pytest.raises(SystemExit) as exc_info:
+            from main import main
+            main()
+    assert exc_info.value.code == 1
+    captured = capsys.readouterr()
+    assert "--eval-compare" in captured.err and "--follow-up" in captured.err
+
+
+def test_eval_compare_prints_missing_message_for_absent_topic(tmp_path, monkeypatch, capsys):
+    """--eval-compare prints a missing message when a reference topic has no results."""
+    monkeypatch.chdir(tmp_path)
+
+    with patch("sys.argv", ["main.py", "placeholder", "--eval-compare", "Phase D", "Phase E"]), \
+         patch("eval.harness.load_eval_results", return_value=[]), \
+         patch("eval.harness.compare_phases", return_value=None):
+        # load returns [] so exits 1 with no-results message before topic loop
+        with pytest.raises(SystemExit) as exc_info:
+            from main import main
+            main()
+    assert exc_info.value.code == 1
+
+
 # ── Integration tests ─────────────────────────────────────────────────────────
 
 @pytest.mark.integration
