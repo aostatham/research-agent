@@ -433,6 +433,54 @@ Current test count: See CLAUDE.md for current test count.
 
 ---
 
+## Eval Harness
+
+Record pipeline quality metrics after each phase to track improvement over time.
+Results saved to `output/.eval/eval_results.jsonl`.
+
+Baseline run (Anthropic — full quality). Use at phase boundaries and for periodic resets:
+
+```bash
+python main.py "nuclear fusion energy" \
+  --orchestration-provider anthropic \
+  --orchestration-model claude-haiku-4-5-20251001 \
+  --synthesis-provider anthropic \
+  --synthesis-model claude-sonnet-4-6 \
+  --search-provider anthropic \
+  --eval-phase "Phase E" \
+  --provenance file \
+  --max-workers 4
+```
+
+Routine run (Ollama + Tavily — free). Use after every phase:
+
+```bash
+python main.py "nuclear fusion energy" \
+  -p ollama -m llama3.1 \
+  --search-provider tavily \
+  --eval-phase "Phase E" \
+  --provenance file
+```
+
+Run all three reference topics then compare two phases:
+
+```bash
+python main.py --eval-compare "Phase D" "Phase E"
+```
+
+Reference topics:
+- `"nuclear fusion energy"`
+- `"electrosmith daisy seed"`
+- `"large language model training"`
+
+Metrics tracked: report length, claim count, verification distribution
+(verified/disputed/unverified), report_line coverage, average confidence,
+search count, duration.
+
+Note: `--eval-phase` requires `--provenance file` to be active.
+
+---
+
 ## API Costs
 
 | Component | Cost |

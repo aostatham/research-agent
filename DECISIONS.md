@@ -983,3 +983,22 @@ paraphrasing beyond matcher recovery, not a pipeline failure.
 the complexity cost at this stage. The four synthesis_status values
 already give the analyst full signal about each claim's traceability.
 **Date:** report_line wiring completion, May 2026
+
+### M008 — Eval harness: three reference topics, JSON lines output
+**Decision:** Eval harness measures pipeline quality after each phase
+using three fixed reference topics: "nuclear fusion energy",
+"electrosmith daisy seed", "large language model training". Results
+saved as JSON lines to output/.eval/eval_results.jsonl. Metrics tracked:
+report length, question count, search count, claim count, verification
+distribution, report_line coverage, confidence average, duration. Phase
+comparison via --eval-compare CLI flag.
+Two eval configurations: Anthropic (full quality, ~$0.30-0.90 for all
+three topics) for phase-boundary baselines and periodic resets; Ollama +
+Tavily (free) for routine after-phase measurements. Comparisons must use
+the same configuration for both phases being compared.
+**Rationale:** Without a baseline measurement, improvements across phases
+are claimed but not verified. The same three topics used for the
+report_line match rate baseline (M007) provide historical continuity.
+JSON lines format is appendable, greppable, and requires no new
+dependency.
+**Date:** Phase E completion

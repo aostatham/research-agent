@@ -35,6 +35,9 @@ src/
   observability/
     __init__.py
     events.py             # log_event(), configure_observability()
+  eval/
+    __init__.py
+    harness.py            # EvalResult, save/load/compare, REFERENCE_TOPICS
 config.yaml               # Default runtime config (provider, models, search, limits)
 prompts/                  # Agent system prompts (versioned in git)
   researcher.md           # Researcher Agent system prompt
@@ -64,6 +67,29 @@ Run the agent:
   python main.py "your topic" -f pdf -s
   python main.py "your topic" --output-mode report-evidence --provenance file
   python main.py "your topic" --max-workers 4
+
+Record eval result after a phase (Anthropic — full quality,
+use at phase boundaries and periodic resets):
+  python main.py "nuclear fusion energy" \
+    --orchestration-provider anthropic \
+    --orchestration-model claude-haiku-4-5-20251001 \
+    --synthesis-provider anthropic \
+    --synthesis-model claude-sonnet-4-6 \
+    --search-provider anthropic \
+    --eval-phase "Phase E" \
+    --provenance file \
+    --max-workers 4
+
+Record eval result after a phase (Ollama + Tavily — free,
+use for routine after-phase measurements):
+  python main.py "nuclear fusion energy" \
+    -p ollama -m llama3.1 \
+    --search-provider tavily \
+    --eval-phase "Phase E" \
+    --provenance file
+
+Compare two phases across all reference topics:
+  python main.py --eval-compare "Phase D" "Phase E"
 
 
 ## Test baseline
