@@ -78,6 +78,9 @@ KG_TOOL_DESCRIPTORS = {
             "required": ["claim", "topic"],
         },
     },
+    # Reserved — no agent currently has this tool in its tools tuple.
+    # Re-enable on Analyst once string-input handling from Ollama is
+    # confirmed (Phase E QA Pass 2 M2).
     "kg_write_claim": {
         "name": "kg_write_claim",
         "description": "Write a verified claim to the knowledge graph.",

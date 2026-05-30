@@ -97,7 +97,9 @@ def build_agents(
     editor_llm = _resolve_editor_llm(config, synth_llm)
 
     # kg_ read tools are available to Researcher and Verifier when the knowledge
-    # graph is configured. kg_write_claim is Analyst-only — not added here.
+    # graph is configured. kg_write_claim is reserved for future Analyst use —
+    # currently disabled pending Ollama string-input handling.
+    # See M2 in Phase E QA Pass 2 report.
     kg_tools: tuple = ()
     if getattr(config, "knowledge_store", "none") != "none":
         kg_tools = (
@@ -199,8 +201,9 @@ def build_analyst(
     Build the Analyst agent.
 
     Loads prompts/tasks/analyst.md. The Analyst uses synth_llm and has access
-    to kg_query_claims_for_topic and kg_write_claim tools. It is only built
-    when the knowledge store is configured — callers must check before calling.
+    to kg_query_claims_for_topic only. kg_write_claim is reserved for future
+    use pending Ollama string-input validation. It is only built when the
+    knowledge store is configured — callers must check before calling.
 
     Args:
         config:     Config instance (reserved for future tuning).
