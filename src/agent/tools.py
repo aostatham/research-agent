@@ -466,6 +466,12 @@ def _fetch_url(url: str, max_chars: int, timeout_seconds: int) -> dict:
     # Note: robots.txt is checked against the original URL's domain.
     # If the URL redirects to a different domain, the destination
     # domain is not re-checked. This is a known limitation.
+    #
+    # RobotFileParser normalizes the UA to its product token
+    # (splits on "/" and lowercases), so version suffix in
+    # _USER_AGENT is invisible to robots.txt matching. Using
+    # _USER_AGENT is still correct — it ties the check to the
+    # same constant as the HTTP requests.
     if robot is not None and not robot.can_fetch(_USER_AGENT, url):
         return {"error": "fetch disallowed by robots.txt for this domain", "url": url}
 
@@ -498,8 +504,10 @@ def _fetch_url(url: str, max_chars: int, timeout_seconds: int) -> dict:
 
     # Read up to max_bytes; generous multiplier accounts for HTML markup overhead.
     max_bytes = max_chars * 4
-    content = response.raw.read(max_bytes, decode_content=True)
-    response.close()
+    try:
+        content = response.raw.read(max_bytes, decode_content=True)
+    finally:
+        response.close()
     html = content.decode("utf-8", errors="replace")
 
     # Step 4 — extract content.

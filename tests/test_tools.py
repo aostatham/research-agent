@@ -749,14 +749,12 @@ def test_fetch_url_returns_error_on_http_4xx(monkeypatch):
 def test_fetch_url_returns_clean_error_dict_not_exception_message_on_404(monkeypatch):
     """_fetch_url error message is 'HTTP 404 from {url}', not a wrapped exception string."""
     import agent.tools as tools
-    import requests as requests_lib
     from unittest.mock import MagicMock
 
     mock_resp = MagicMock()
     mock_resp.status_code = 404
-    mock_resp.raise_for_status.side_effect = requests_lib.exceptions.HTTPError(
-        "404 Client Error", response=mock_resp
-    )
+    # Pass 2 removed raise_for_status() in favour of manual status check —
+    # side_effect no longer needed but kept as defensive guard in case it is re-added.
     monkeypatch.setattr("agent.tools.requests.get", lambda *a, **kw: mock_resp)
     tools._robots_cache["https://example.com"] = None
     result = tools._fetch_url("https://example.com/missing", 8000, 10)
@@ -855,6 +853,25 @@ def test_fetch_url_reads_only_up_to_max_bytes(monkeypatch):
     mock_resp.raw.read.assert_called_once_with(2000, decode_content=True)
 
 
+def test_fetch_url_closes_connection_on_read_error(monkeypatch):
+    """response.close() is called even when raw.read() raises mid-stream."""
+    import json
+    import agent.tools as tools
+    from unittest.mock import MagicMock
+
+    mock_resp = MagicMock()
+    mock_resp.status_code = 200
+    mock_resp.headers = {"Content-Type": "text/html"}
+    mock_resp.raw.read.side_effect = ConnectionError("reset by peer")
+    monkeypatch.setattr("agent.tools.requests.get", lambda *a, **kw: mock_resp)
+    tools._robots_cache["https://example.com"] = None
+
+    result = json.loads(tools.read_url("https://example.com/page"))
+
+    assert mock_resp.close.called
+    assert "error" in result
+
+
 def test_fetch_url_rejects_pdf_content_type(monkeypatch):
     """_fetch_url returns error dict when Content-Type is application/pdf."""
     import agent.tools as tools
@@ -893,12 +910,13 @@ def test_fetch_url_proceeds_for_text_html_content_type(monkeypatch):
     mock_resp = MagicMock()
     mock_resp.status_code = 200
     mock_resp.headers = {"Content-Type": "text/html; charset=utf-8"}
-    mock_resp.text = "<p>Hello world.</p>"
+    mock_resp.raw.read.return_value = b"<p>Hello world.</p>"
     monkeypatch.setattr("agent.tools.requests.get", lambda *a, **kw: mock_resp)
     monkeypatch.setattr("agent.tools.TRAFILATURA_AVAILABLE", False)
     tools._robots_cache["https://example.com"] = None
     result = tools._fetch_url("https://example.com/page", 8000, 10)
     assert "error" not in result
+    assert "Hello" in result["text"]
 
 
 def test_fetch_url_proceeds_when_content_type_header_absent(monkeypatch):
