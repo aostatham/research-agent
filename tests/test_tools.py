@@ -1011,6 +1011,26 @@ def test_read_url_in_verifier_tools():
     assert "read_url" in pool.verifier.tools
 
 
+def test_all_tool_descriptors_have_parameters_key():
+    """Every descriptor in all tool dicts uses 'parameters', not 'input_schema'."""
+    from agent.tools import (
+        WEB_SEARCH_TOOL,
+        KG_TOOL_DESCRIPTORS,
+        URL_TOOL_DESCRIPTORS,
+        ARXIV_TOOL_DESCRIPTORS,
+    )
+    all_descriptors = [
+        WEB_SEARCH_TOOL,
+        *KG_TOOL_DESCRIPTORS.values(),
+        *URL_TOOL_DESCRIPTORS.values(),
+        *ARXIV_TOOL_DESCRIPTORS.values(),
+    ]
+    for d in all_descriptors:
+        assert "parameters" in d, (
+            f"{d['name']} missing 'parameters' key"
+        )
+
+
 # ── Integration tests ─────────────────────────────────────────────────────────
 
 @pytest.mark.integration

@@ -118,7 +118,7 @@ ARXIV_TOOL_DESCRIPTORS = {
             "arXiv ID, categories, and URL. "
             "Use for finding peer-reviewed research on a topic."
         ),
-        "input_schema": {
+        "parameters": {
             "type": "object",
             "properties": {
                 "query": {
@@ -140,7 +140,7 @@ URL_TOOL_DESCRIPTORS = {
             "Use to read a specific URL found in search results. "
             "Read at most one URL per research iteration."
         ),
-        "input_schema": {
+        "parameters": {
             "type": "object",
             "properties": {
                 "url": {
