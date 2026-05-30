@@ -213,8 +213,8 @@ _url_fetch_timeout: int = 10
 # Per-domain robots.txt cache — populated lazily by _fetch_url().
 _robots_cache: dict = {}
 
-# Counts every successful call to execute_tool_with_sources() across all agents
-# (Researcher and Verifier). Reset and read via get_and_reset_search_count().
+# Counts every successful billable web search call (Anthropic or Tavily).
+# Other tool calls (kg_*, read_url, arxiv_search) are not billable and not counted.
 # Not thread-safe by language guarantee — relies on CPython GIL for
 # single-process CLI use. Two concurrent Orchestrator.run_async calls
 # in the same process will actively corrupt each other's counts — the
@@ -304,19 +304,17 @@ _ARXIV_API_NS = "http://arxiv.org/schemas/atom"
 _ARXIV_QUERY_URL = "http://export.arxiv.org/api/query"
 
 
-def _arxiv_search(query: str, max_results: int = 5,
-                  sort_by_date: bool = False) -> list:
+def _arxiv_search(query: str, max_results: int = 5) -> list:
     """
     Search arXiv via the public Atom API and return structured results.
 
     Uses the standard library xml.etree.ElementTree — no new dependency.
-    Up to 5 authors are listed; papers with more show the first 5 followed
-    by "et al.".
+    Results are sorted by relevance. Up to 5 authors are listed; papers with
+    more show the first 5 followed by "et al.".
 
     Args:
         query:        Search query string.
         max_results:  Maximum number of results (default 5).
-        sort_by_date: If True, sort by submittedDate; otherwise by relevance.
 
     Returns:
         List of dicts with keys: arxiv_id, title, authors, abstract,
@@ -324,11 +322,10 @@ def _arxiv_search(query: str, max_results: int = 5,
     """
     import xml.etree.ElementTree as ET
 
-    sort_by = "submittedDate" if sort_by_date else "relevance"
     params = (
         f"search_query={urllib.parse.quote(query)}"
         f"&max_results={max_results}"
-        f"&sortBy={sort_by}"
+        f"&sortBy=relevance"
         f"&sortOrder=descending"
     )
     url = f"{_ARXIV_QUERY_URL}?{params}"

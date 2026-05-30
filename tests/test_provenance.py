@@ -1067,6 +1067,12 @@ def test_extract_arxiv_id_returns_none_for_non_arxiv_url():
     assert _extract_arxiv_id("https://example.com/paper/2301.12345") is None
 
 
+def test_extract_arxiv_id_handles_lanl_mirror():
+    """xxx.lanl.gov arXiv mirror URLs are recognised and return the canonical ID."""
+    from output.provenance import _extract_arxiv_id
+    assert _extract_arxiv_id("https://xxx.lanl.gov/abs/2407.04363") == "2407.04363"
+
+
 def test_extract_claims_deduplicates_sources_by_arxiv_id(mocker):
     """Two arXiv URLs with the same ID but different versions count as one source."""
     from unittest.mock import MagicMock

@@ -557,7 +557,7 @@ def build_claims_from_results(
 
 
 _ARXIV_ID_RE = re.compile(
-    r"arxiv\.org/(?:abs|pdf)/([a-z\-]+/\d+|\d{4}\.\d{4,5})(?:v\d+)?",
+    r"(?:arxiv\.org|xxx\.lanl\.gov)/(?:abs|pdf)/([a-z\-]+/\d+|\d{4}\.\d{4,5})(?:v\d+)?",
     re.IGNORECASE,
 )
 
