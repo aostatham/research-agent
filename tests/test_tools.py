@@ -848,6 +848,169 @@ def test_execute_tool_with_sources_routes_read_url():
     assert result == '{"text":"content"}'
 
 
+# ── arxiv_search / _arxiv_search tests ───────────────────────────────────────
+
+_ARXIV_ATOM_FIXTURE = """<?xml version="1.0" encoding="UTF-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom"
+      xmlns:arxiv="http://arxiv.org/schemas/atom">
+  <entry>
+    <id>http://arxiv.org/abs/2407.04363v1</id>
+    <title>Attention Is All You Need</title>
+    <author><name>Alice Smith</name></author>
+    <author><name>Bob Jones</name></author>
+    <summary>A paper about transformers.</summary>
+    <published>2024-07-05T00:00:00Z</published>
+    <arxiv:primary_category term="cs.LG"/>
+    <category term="cs.LG"/>
+    <category term="cs.AI"/>
+  </entry>
+</feed>"""
+
+
+def _make_arxiv_response(text=_ARXIV_ATOM_FIXTURE, status=200):
+    from unittest.mock import MagicMock
+    r = MagicMock()
+    r.status_code = status
+    r.text = text
+    r.raise_for_status = MagicMock()
+    return r
+
+
+def test_arxiv_search_returns_list_of_dicts(monkeypatch):
+    """_arxiv_search() returns a list of result dicts with required fields."""
+    import agent.tools as tools
+
+    monkeypatch.setattr("agent.tools.requests.get",
+                        lambda *a, **kw: _make_arxiv_response())
+    results = tools._arxiv_search("transformers")
+    assert isinstance(results, list)
+    assert len(results) == 1
+    result = results[0]
+    for key in ("arxiv_id", "title", "authors", "abstract", "published", "url", "categories"):
+        assert key in result, f"missing key: {key}"
+
+
+def test_arxiv_search_extracts_arxiv_id_and_strips_version(monkeypatch):
+    """_arxiv_search() extracts the arXiv ID without version suffix."""
+    import agent.tools as tools
+
+    monkeypatch.setattr("agent.tools.requests.get",
+                        lambda *a, **kw: _make_arxiv_response())
+    results = tools._arxiv_search("transformers")
+    assert results[0]["arxiv_id"] == "2407.04363"
+
+
+def test_arxiv_search_includes_categories(monkeypatch):
+    """_arxiv_search() includes categories from primary_category and category elements."""
+    import agent.tools as tools
+
+    monkeypatch.setattr("agent.tools.requests.get",
+                        lambda *a, **kw: _make_arxiv_response())
+    results = tools._arxiv_search("transformers")
+    cats = results[0]["categories"]
+    assert "cs.LG" in cats
+    assert "cs.AI" in cats
+
+
+def test_arxiv_search_returns_empty_list_on_network_error(monkeypatch):
+    """_arxiv_search() returns [] and logs a warning on a network error."""
+    import agent.tools as tools
+    import requests as _req
+
+    monkeypatch.setattr("agent.tools.requests.get",
+                        lambda *a, **kw: (_ for _ in ()).throw(
+                            _req.exceptions.ConnectionError("no route")))
+    results = tools._arxiv_search("transformers")
+    assert results == []
+
+
+def test_arxiv_search_wrapper_returns_json_string(monkeypatch):
+    """arxiv_search() returns a JSON string."""
+    import json, agent.tools as tools
+
+    monkeypatch.setattr("agent.tools.requests.get",
+                        lambda *a, **kw: _make_arxiv_response())
+    result = tools.arxiv_search("transformers")
+    parsed = json.loads(result)
+    assert isinstance(parsed, list)
+    assert len(parsed) == 1
+
+
+def test_arxiv_search_does_not_increment_search_count(monkeypatch):
+    """arxiv_search calls do not increment the search counter."""
+    import agent.tools as tools
+
+    tools._search_call_count = 0
+    monkeypatch.setattr("agent.tools.requests.get",
+                        lambda *a, **kw: _make_arxiv_response())
+    tools.execute_tool_with_sources("arxiv_search", {"query": "attention"})
+    assert tools._search_call_count == 0
+
+
+def test_execute_tool_with_sources_routes_arxiv_search():
+    """execute_tool_with_sources dispatches arxiv_search and returns empty sources."""
+    import agent.tools as tools
+    from unittest.mock import patch
+
+    with patch.object(tools, "arxiv_search", return_value="[]") as mock_ax:
+        result, sources = tools.execute_tool_with_sources(
+            "arxiv_search", {"query": "transformers"}
+        )
+    mock_ax.assert_called_once_with("transformers")
+    assert sources == []
+    assert result == "[]"
+
+
+def test_arxiv_search_not_in_verifier_tools():
+    """arxiv_search is not in the Verifier's tool set."""
+    from unittest.mock import MagicMock, patch
+    from pathlib import Path
+    import tempfile, os
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        for name in ("researcher", "verifier", "editor"):
+            (Path(tmpdir) / f"{name}.md").write_text(f"# {name}")
+
+        mock_orch = MagicMock()
+        mock_synth = MagicMock()
+        mock_config = MagicMock()
+        mock_config.max_iterations = 5
+        mock_config.verifier_max_iterations = 4
+        mock_config.editor_provider = None
+        mock_config.knowledge_store = "none"
+
+        from agent.builder import build_agents
+        pool = build_agents(mock_config, mock_orch, mock_synth, prompt_dir=tmpdir)
+
+    assert "arxiv_search" not in pool.verifier.tools
+    assert "arxiv_search" in pool.researcher.tools
+
+
+def test_read_url_in_verifier_tools():
+    """read_url is in both the Researcher and Verifier tool sets."""
+    from unittest.mock import MagicMock
+    from pathlib import Path
+    import tempfile
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        for name in ("researcher", "verifier", "editor"):
+            (Path(tmpdir) / f"{name}.md").write_text(f"# {name}")
+
+        mock_orch = MagicMock()
+        mock_synth = MagicMock()
+        mock_config = MagicMock()
+        mock_config.max_iterations = 5
+        mock_config.verifier_max_iterations = 4
+        mock_config.editor_provider = None
+        mock_config.knowledge_store = "none"
+
+        from agent.builder import build_agents
+        pool = build_agents(mock_config, mock_orch, mock_synth, prompt_dir=tmpdir)
+
+    assert "read_url" in pool.researcher.tools
+    assert "read_url" in pool.verifier.tools
+
+
 # ── Integration tests ─────────────────────────────────────────────────────────
 
 @pytest.mark.integration

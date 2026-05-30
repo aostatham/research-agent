@@ -109,6 +109,28 @@ KG_TOOL_DESCRIPTORS = {
 }
 
 
+ARXIV_TOOL_DESCRIPTORS = {
+    "arxiv_search": {
+        "name": "arxiv_search",
+        "description": (
+            "Search arXiv for academic papers. "
+            "Returns up to 5 results with title, authors, abstract, "
+            "arXiv ID, categories, and URL. "
+            "Use for finding peer-reviewed research on a topic."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "query": {
+                    "type": "string",
+                    "description": "Search query for arXiv papers",
+                }
+            },
+            "required": ["query"],
+        },
+    },
+}
+
 URL_TOOL_DESCRIPTORS = {
     "read_url": {
         "name": "read_url",
@@ -130,9 +152,6 @@ URL_TOOL_DESCRIPTORS = {
         },
     },
 }
-
-ARXIV_TOOL_DESCRIPTORS: dict = {}  # populated in Step 3
-
 
 def build_tool_list(tool_names: tuple) -> list:
     """
@@ -276,6 +295,125 @@ def configure_knowledge(config) -> None:
     _staleness_days = getattr(config, "knowledge_staleness_threshold_days", 90)
     from knowledge.store import configure_knowledge as _ks_configure
     _ks_configure(config)
+
+
+# ── arXiv search ──────────────────────────────────────────────────────────────
+
+_ARXIV_NS = "http://www.w3.org/2005/Atom"
+_ARXIV_API_NS = "http://arxiv.org/schemas/atom"
+_ARXIV_QUERY_URL = "http://export.arxiv.org/api/query"
+
+
+def _arxiv_search(query: str, max_results: int = 5,
+                  sort_by_date: bool = False) -> list:
+    """
+    Search arXiv via the public Atom API and return structured results.
+
+    Uses the standard library xml.etree.ElementTree — no new dependency.
+    Up to 5 authors are listed; papers with more show the first 5 followed
+    by "et al.".
+
+    Args:
+        query:        Search query string.
+        max_results:  Maximum number of results (default 5).
+        sort_by_date: If True, sort by submittedDate; otherwise by relevance.
+
+    Returns:
+        List of dicts with keys: arxiv_id, title, authors, abstract,
+        published, url, categories.  Empty list on any error.
+    """
+    import xml.etree.ElementTree as ET
+
+    sort_by = "submittedDate" if sort_by_date else "relevance"
+    params = (
+        f"search_query={urllib.parse.quote(query)}"
+        f"&max_results={max_results}"
+        f"&sortBy={sort_by}"
+        f"&sortOrder=descending"
+    )
+    url = f"{_ARXIV_QUERY_URL}?{params}"
+
+    try:
+        response = requests.get(url, timeout=15,
+                                headers={"User-Agent": _USER_AGENT})
+        response.raise_for_status()
+        root = ET.fromstring(response.text)
+    except Exception as e:
+        logging.warning("arxiv_search failed: %s", e)
+        return []
+
+    results = []
+    for entry in root.findall(f"{{{_ARXIV_NS}}}entry"):
+        # arxiv_id from the <id> element URL, strip version suffix.
+        id_elem = entry.find(f"{{{_ARXIV_NS}}}id")
+        raw_id = id_elem.text.strip() if id_elem is not None else ""
+        # e.g. "http://arxiv.org/abs/2407.04363v1" → "2407.04363"
+        arxiv_id = raw_id.split("/abs/")[-1].split("v")[0] if "/abs/" in raw_id else raw_id
+
+        title_elem = entry.find(f"{{{_ARXIV_NS}}}title")
+        title = " ".join((title_elem.text or "").split()) if title_elem is not None else ""
+
+        author_elems = entry.findall(f"{{{_ARXIV_NS}}}author")
+        author_names = []
+        for a in author_elems:
+            name_elem = a.find(f"{{{_ARXIV_NS}}}name")
+            if name_elem is not None and name_elem.text:
+                author_names.append(name_elem.text.strip())
+        if len(author_names) > 5:
+            authors = author_names[:5] + ["et al."]
+        else:
+            authors = author_names
+
+        abstract_elem = entry.find(f"{{{_ARXIV_NS}}}summary")
+        abstract = " ".join((abstract_elem.text or "").split()) if abstract_elem is not None else ""
+
+        published_elem = entry.find(f"{{{_ARXIV_NS}}}published")
+        published = ""
+        if published_elem is not None and published_elem.text:
+            published = published_elem.text.strip()[:10]  # YYYY-MM-DD
+
+        categories = []
+        primary = entry.find(f"{{{_ARXIV_API_NS}}}primary_category")
+        if primary is not None:
+            term = primary.get("term", "")
+            if term:
+                categories.append(term)
+        for cat in entry.findall(f"{{{_ARXIV_NS}}}category"):
+            term = cat.get("term", "")
+            if term and term not in categories:
+                categories.append(term)
+
+        results.append({
+            "arxiv_id": arxiv_id,
+            "title": title,
+            "authors": authors,
+            "abstract": abstract,
+            "published": published,
+            "url": f"https://arxiv.org/abs/{arxiv_id}",
+            "categories": categories,
+        })
+
+    return results
+
+
+def arxiv_search(query: str) -> str:
+    """
+    Search arXiv for academic papers, returning structured JSON.
+
+    Never raises — any exception is caught and returns an empty JSON array.
+
+    Args:
+        query: Search query string.
+
+    Returns:
+        JSON string of a list of result dicts.
+    """
+    try:
+        results = _arxiv_search(query)
+    except Exception as e:
+        logging.warning("arxiv_search wrapper failed: %s", e)
+        results = []
+    return json.dumps(results)
 
 
 # ── URL fetch ─────────────────────────────────────────────────────────────────
@@ -479,6 +617,9 @@ def execute_tool_with_sources(tool_name: str, tool_input: dict) -> tuple[str, li
         return _web_search_with_sources(tool_input["query"])
     if tool_name == "read_url":
         result = read_url(tool_input.get("url", ""))
+        return result, []
+    if tool_name == "arxiv_search":
+        result = arxiv_search(tool_input.get("query", ""))
         return result, []
     if tool_name == "kg_query_claims_for_topic":
         result = kg_query_claims_for_topic(tool_input.get("topic", ""))
