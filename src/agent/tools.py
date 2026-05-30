@@ -485,6 +485,12 @@ def _fetch_url(url: str, max_chars: int, timeout_seconds: int) -> dict:
     if response.status_code >= 400:
         return {"error": f"HTTP {response.status_code} from {url}"}
 
+    # Step 3b — Content-Type check.
+    content_type = response.headers.get("Content-Type", "").lower()
+    if not any(t in content_type for t in
+               ("text/html", "text/plain", "application/xhtml")):
+        return {"error": f"unsupported content type: {content_type}", "url": url}
+
     # Step 4 — extract content.
     title = author = published_date = None
     text = ""

@@ -750,6 +750,7 @@ def test_fetch_url_returns_structured_dict_on_success(monkeypatch):
 
     mock_resp = MagicMock()
     mock_resp.status_code = 200
+    mock_resp.headers = {"Content-Type": "text/html; charset=utf-8"}
     mock_resp.text = "<html><body><p>Article text here.</p></body></html>"
     monkeypatch.setattr("agent.tools.requests.get", lambda *a, **kw: mock_resp)
     tools._robots_cache["https://example.com"] = None
@@ -778,6 +779,7 @@ def test_fetch_url_falls_back_to_bleach_when_trafilatura_returns_none(monkeypatc
 
     mock_resp = MagicMock()
     mock_resp.status_code = 200
+    mock_resp.headers = {"Content-Type": "text/html"}
     mock_resp.text = "<p>Prose content.</p><script>evil()</script>"
     monkeypatch.setattr("agent.tools.requests.get", lambda *a, **kw: mock_resp)
     tools._robots_cache["https://example.com"] = None
@@ -799,6 +801,7 @@ def test_fetch_url_falls_back_to_bleach_when_trafilatura_raises(monkeypatch):
 
     mock_resp = MagicMock()
     mock_resp.status_code = 200
+    mock_resp.headers = {"Content-Type": "text/html"}
     mock_resp.text = "<p>Fallback prose.</p>"
     monkeypatch.setattr("agent.tools.requests.get", lambda *a, **kw: mock_resp)
     tools._robots_cache["https://example.com"] = None
@@ -810,6 +813,52 @@ def test_fetch_url_falls_back_to_bleach_when_trafilatura_raises(monkeypatch):
 
     assert "error" not in result
     assert "Fallback prose." in result["text"]
+
+
+def test_fetch_url_rejects_pdf_content_type(monkeypatch):
+    """_fetch_url returns error dict when Content-Type is application/pdf."""
+    import agent.tools as tools
+    from unittest.mock import MagicMock
+
+    mock_resp = MagicMock()
+    mock_resp.status_code = 200
+    mock_resp.headers = {"Content-Type": "application/pdf"}
+    monkeypatch.setattr("agent.tools.requests.get", lambda *a, **kw: mock_resp)
+    tools._robots_cache["https://example.com"] = None
+    result = tools._fetch_url("https://example.com/paper.pdf", 8000, 10)
+    assert "error" in result
+    assert "application/pdf" in result["error"]
+
+
+def test_fetch_url_rejects_image_content_type(monkeypatch):
+    """_fetch_url returns error dict when Content-Type is image/jpeg."""
+    import agent.tools as tools
+    from unittest.mock import MagicMock
+
+    mock_resp = MagicMock()
+    mock_resp.status_code = 200
+    mock_resp.headers = {"Content-Type": "image/jpeg"}
+    monkeypatch.setattr("agent.tools.requests.get", lambda *a, **kw: mock_resp)
+    tools._robots_cache["https://example.com"] = None
+    result = tools._fetch_url("https://example.com/photo.jpg", 8000, 10)
+    assert "error" in result
+    assert "image/jpeg" in result["error"]
+
+
+def test_fetch_url_proceeds_for_text_html_content_type(monkeypatch):
+    """_fetch_url proceeds normally when Content-Type is text/html."""
+    import agent.tools as tools
+    from unittest.mock import MagicMock
+
+    mock_resp = MagicMock()
+    mock_resp.status_code = 200
+    mock_resp.headers = {"Content-Type": "text/html; charset=utf-8"}
+    mock_resp.text = "<p>Hello world.</p>"
+    monkeypatch.setattr("agent.tools.requests.get", lambda *a, **kw: mock_resp)
+    monkeypatch.setattr("agent.tools.TRAFILATURA_AVAILABLE", False)
+    tools._robots_cache["https://example.com"] = None
+    result = tools._fetch_url("https://example.com/page", 8000, 10)
+    assert "error" not in result
 
 
 def test_read_url_returns_json_string():
@@ -859,6 +908,7 @@ def test_fetch_url_robots_txt_uses_requests_get_with_timeout(monkeypatch):
 
     page_resp = MagicMock()
     page_resp.status_code = 200
+    page_resp.headers = {"Content-Type": "text/html"}
     page_resp.text = "<html><body>Hello</body></html>"
 
     call_records = []
@@ -889,6 +939,7 @@ def test_fetch_url_robots_timeout_sets_cache_to_none_and_proceeds(monkeypatch):
     domain = "https://slow-robots.example.com"
     page_resp = MagicMock()
     page_resp.status_code = 200
+    page_resp.headers = {"Content-Type": "text/html"}
     page_resp.text = "<p>content</p>"
 
     def fake_get(url, **kw):
