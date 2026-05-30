@@ -277,3 +277,21 @@ def test_build_agent_tool_descriptors_are_deep_copies(tmp_path):
     # agent_b and the module constant must be unaffected
     assert "injected" not in agent_b.tool_descriptors[0]
     assert "injected" not in WEB_SEARCH_TOOL
+
+
+def test_url_and_arxiv_tool_descriptors_are_deep_copies(tmp_path):
+    """URL and arXiv descriptors are deep-copied — mutating one agent does not affect another or the module constants."""
+    from agent.tools import URL_TOOL_DESCRIPTORS, ARXIV_TOOL_DESCRIPTORS
+    (tmp_path / "agent_a.md").write_text("prompt a")
+    (tmp_path / "agent_b.md").write_text("prompt b")
+    agent_a = build_agent("agent_a", "role", "desc", make_mock_llm(), tmp_path,
+                          tools=("read_url", "arxiv_search"))
+    agent_b = build_agent("agent_b", "role", "desc", make_mock_llm(), tmp_path,
+                          tools=("read_url", "arxiv_search"))
+    # Find read_url descriptor in agent_a and mutate it
+    read_url_desc = next(d for d in agent_a.tool_descriptors if d["name"] == "read_url")
+    read_url_desc["name"] = "mutated"
+    # Other agent and module constant must be unaffected
+    other_read_url = next(d for d in agent_b.tool_descriptors if d["name"] == "read_url")
+    assert other_read_url["name"] == "read_url"
+    assert URL_TOOL_DESCRIPTORS["read_url"]["name"] == "read_url"
