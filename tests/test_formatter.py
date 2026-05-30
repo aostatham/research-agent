@@ -18,6 +18,7 @@ from output.formatter import (
     convert_to_html,
     render_raw,
     render_bibliography,
+    render_academic,
 )
 
 
@@ -336,3 +337,64 @@ def test_render_bibliography_produces_markdown_headers_per_type():
     assert result.startswith("# Bibliography")
     assert "## News Sources" in result
     assert "- Article." in result
+
+
+# ── render_academic() ─────────────────────────────────────────────────────────
+
+_ACADEMIC_REPORT = (
+    "## Executive Summary\n\n"
+    "This is the executive summary.\n\n"
+    "## Introduction\n\n"
+    "Introduction content.\n\n"
+    "## Findings\n\n"
+    "Finding content.\n\n"
+    "## References\n\n"
+    "- [1] Source One. https://one.com.\n"
+    "- [2] Source Two. https://two.com."
+)
+
+
+def test_render_academic_extracts_executive_summary_as_abstract():
+    """render_academic() uses the Executive Summary section as the Abstract."""
+    result = render_academic(_ACADEMIC_REPORT, "test topic", "")
+    assert "## Abstract" in result
+    assert "This is the executive summary." in result
+    # Abstract should appear before body sections
+    assert result.index("## Abstract") < result.index("Introduction content.")
+
+
+def test_render_academic_falls_back_to_first_two_paragraphs():
+    """render_academic() uses first two prose paragraphs as abstract when no summary heading."""
+    report = "First para.\n\nSecond para.\n\nThird para.\n\n## Section\n\nContent."
+    result = render_academic(report, "test topic", "")
+    assert "## Abstract" in result
+    assert "First para." in result
+    assert "Second para." in result
+
+
+def test_render_academic_numbers_sections_sequentially():
+    """render_academic() converts ## headings to sequentially numbered plain headers."""
+    result = render_academic(_ACADEMIC_REPORT, "test topic", "")
+    assert "1. Introduction" in result
+    assert "2. Findings" in result
+    # Original ## headings should be gone (except References which stays as ##)
+    assert "## Introduction" not in result
+    assert "## Findings" not in result
+
+
+def test_render_academic_reformats_references_as_numbered_list():
+    """render_academic() converts ## References bullet list to [N] numbered format."""
+    result = render_academic(_ACADEMIC_REPORT, "test topic", "")
+    assert "[1] Source One." in result
+    assert "[2] Source Two." in result
+    # Original bullet format gone
+    assert "- [1]" not in result
+
+
+def test_render_academic_preserves_all_original_content():
+    """render_academic() does not drop any content from the original report."""
+    result = render_academic(_ACADEMIC_REPORT, "test topic", "")
+    assert "This is the executive summary." in result
+    assert "Introduction content." in result
+    assert "Finding content." in result
+    assert "Source One." in result

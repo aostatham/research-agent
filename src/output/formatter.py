@@ -367,3 +367,96 @@ def render_bibliography(report: str, sources: dict) -> str:
         lines.append("")
 
     return "\n".join(lines).rstrip()
+
+
+def render_academic(report: str, topic: str, metadata: str) -> str:
+    """Reformat a report into structured academic style.
+
+    Structure:
+      1. Title — topic in title case.
+      2. Abstract — content of the Executive Summary section (or first two
+         prose paragraphs if no Executive Summary heading is found).
+      3. Body — remaining sections with ## headings converted to numbered
+         plain-text headers (``## Introduction`` → ``1. Introduction``).
+         The ## References heading is left intact for step 4.
+      4. References — existing ## References section reformatted as a
+         numbered ``[N]`` list.
+
+    Original content is not added to or removed (beyond the abstract
+    extraction and heading numbering).
+
+    Args:
+        report:   Report body markdown string.
+        topic:    Research topic string — used as the document title.
+        metadata: Metadata table string (accepted for signature consistency;
+                  not included in the academic output).
+
+    Returns:
+        Academic-formatted markdown string.
+    """
+    import re
+
+    title = topic.title()
+
+    # Find Executive Summary section and use it as the abstract.
+    summary_re = re.compile(
+        r"^## [^\n]*(?:Executive Summary|Summary)[^\n]*\n(.*?)(?=^## |\Z)",
+        re.DOTALL | re.MULTILINE | re.IGNORECASE,
+    )
+    match = summary_re.search(report)
+    if match:
+        abstract_text = match.group(1).strip()
+        body = report[: match.start()] + report[match.end() :]
+    else:
+        # Fall back to first two non-heading prose paragraphs.
+        paragraphs = [
+            p.strip()
+            for p in re.split(r"\n\n+", report)
+            if p.strip() and not p.strip().startswith("#")
+        ]
+        abstract_text = "\n\n".join(paragraphs[:2])
+        body = report
+
+    # Number all ## headings sequentially, leaving ## References un-numbered
+    # so the references reformatter can locate it cleanly.
+    counter = [0]
+
+    def _number_heading(m: re.Match) -> str:
+        heading = m.group(1)
+        if heading.strip().lower() == "references":
+            return m.group(0)
+        counter[0] += 1
+        return f"{counter[0]}. {heading}"
+
+    body = re.sub(r"^## (.+)$", _number_heading, body, flags=re.MULTILINE)
+
+    # Reformat ## References as a numbered [N] list.
+    ref_re = re.compile(r"^## References\n+(.*)", re.DOTALL | re.MULTILINE)
+    ref_match = ref_re.search(body)
+    if ref_match:
+        ref_lines = ref_match.group(1).strip().split("\n")
+        numbered: list = []
+        n = 1
+        for line in ref_lines:
+            stripped = line.strip()
+            if re.match(r"^[-*]\s", stripped):
+                content = stripped[2:]
+                # Strip any existing [N] prefix so we don't double-number.
+                content = re.sub(r"^\[\d+\]\s*", "", content)
+                numbered.append(f"[{n}] {content}")
+                n += 1
+            elif stripped:
+                numbered.append(stripped)
+        new_refs = "## References\n\n" + "\n".join(numbered)
+        body = body[: ref_match.start()] + new_refs
+
+    parts = [
+        f"# {title}",
+        "",
+        "## Abstract",
+        "",
+        abstract_text,
+        "",
+        body.strip(),
+    ]
+    return "\n".join(parts)
