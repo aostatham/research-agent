@@ -61,9 +61,8 @@ SAMPLE_CLAIMS = [
 
 # ── Tools kwarg ──────────────────────────────────────────────────────────────
 
-def test_analyse_passes_tools_from_agent_tool_descriptors():
-    """analyse() passes list(agent.tool_descriptors) to agent.chat(), not ALL_TOOLS."""
-    from agent.tools import WEB_SEARCH_TOOL
+def test_analyse_passes_empty_tools_list_to_chat():
+    """analyse() passes [] to agent.chat() — Analyst has no tools."""
     mock_llm = MagicMock()
     mock_llm.chat.return_value = make_text_response("[]")
     agent = Agent(
@@ -72,12 +71,10 @@ def test_analyse_passes_tools_from_agent_tool_descriptors():
         description="Evidence analyst",
         llm=mock_llm,
         system_prompt="You are an analyst.",
-        tools=("web_search",),
-        tool_descriptors=(WEB_SEARCH_TOOL,),
     )
     analyse(agent, SAMPLE_REPORT, SAMPLE_CLAIMS, make_config())
     call_kwargs = mock_llm.chat.call_args.kwargs
-    assert call_kwargs.get("tools") == [WEB_SEARCH_TOOL]
+    assert call_kwargs.get("tools") == []
 
 
 # ── Non-text response ─────────────────────────────────────────────────────────
@@ -90,6 +87,17 @@ def test_analyse_returns_original_on_non_text_response():
     result_report, result_claims = analyse(agent, SAMPLE_REPORT, SAMPLE_CLAIMS, make_config())
     assert result_report == SAMPLE_REPORT
     assert result_claims is SAMPLE_CLAIMS
+
+
+def test_analyse_non_text_response_logs_warning(caplog):
+    """Non-text response logs a WARNING with the response type."""
+    import logging
+    mock_llm = MagicMock()
+    mock_llm.chat.return_value = make_tool_response()
+    agent = make_analyst_agent(mock_llm)
+    with caplog.at_level(logging.WARNING, logger="agent.analyst"):
+        analyse(agent, SAMPLE_REPORT, SAMPLE_CLAIMS, make_config())
+    assert any("non-text response" in r.message for r in caplog.records)
 
 
 # ── No JSON array in response ─────────────────────────────────────────────────

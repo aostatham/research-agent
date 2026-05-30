@@ -243,3 +243,21 @@ def test_build_agent_tool_descriptors_empty_when_no_tools(tmp_path):
     (tmp_path / "myagent.md").write_text("prompt")
     agent = build_agent("myagent", "role", "desc", make_mock_llm(), tmp_path)
     assert agent.tool_descriptors == ()
+
+
+# ── build_analyst() ───────────────────────────────────────────────────────────
+
+def test_build_analyst_returns_agent_with_empty_tools(tmp_path):
+    """build_analyst() returns an Agent with tools=() — Analyst has no tools."""
+    from agent.builder import build_analyst
+    agent = build_analyst(make_config(), make_mock_llm(),
+                          prompt_dir=_make_prompt_dir(tmp_path))
+    assert agent.tools == ()
+
+
+def test_build_analyst_returns_agent_with_empty_tool_descriptors(tmp_path):
+    """build_analyst() returns an Agent with tool_descriptors=() — no descriptors needed."""
+    from agent.builder import build_analyst
+    agent = build_analyst(make_config(), make_mock_llm(),
+                          prompt_dir=_make_prompt_dir(tmp_path))
+    assert agent.tool_descriptors == ()

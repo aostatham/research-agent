@@ -204,10 +204,11 @@ def build_analyst(
     """
     Build the Analyst agent.
 
-    Loads prompts/tasks/analyst.md. The Analyst uses synth_llm and has access
-    to kg_query_claims_for_topic only. kg_write_claim is reserved for future
-    use pending Ollama string-input validation. It is only built when the
-    knowledge store is configured — callers must check before calling.
+    Loads prompts/tasks/analyst.md. The Analyst uses synth_llm and has no
+    tools — it operates on local provenance data passed directly in the prompt.
+    kg_write_claim is reserved for future use pending Ollama string-input
+    validation. It is only built when the knowledge store is configured —
+    callers must check before calling.
 
     Args:
         config:     Config instance (reserved for future tuning).
@@ -227,7 +228,7 @@ def build_analyst(
         description="Reviews report claims against provenance metadata for quality recommendations",
         llm=synth_llm,
         prompt_dir=task_dir,
-        tools=("kg_query_claims_for_topic",),
+        tools=(),
         max_iterations=2,
     )
 

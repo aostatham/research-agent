@@ -83,7 +83,13 @@ def analyse(agent: Agent, report: str, claims: list, config) -> tuple:
             max_tokens=2048,
         )
 
+        # Analyst has no tools — any non-text response is unexpected.
+        # Return original unchanged and log warning.
         if response.type != "text":
+            logging.warning(
+                "Analyst returned non-text response (%s) — using original report",
+                response.type,
+            )
             return report, claims
 
         content = response.content.strip()
