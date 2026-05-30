@@ -120,6 +120,13 @@ def parse_args():
         action="store_true",
         help="Skip writing this run to the knowledge graph"
     )
+    parser.add_argument(
+        "--eval-phase",
+        metavar="PHASE",
+        help="Record this run as an eval result for the given phase label "
+             "(e.g. 'Phase E'). Saves to output/.eval/eval_results.jsonl. "
+             "Requires --provenance file."
+    )
 
     return parser.parse_args()
 
@@ -370,6 +377,29 @@ def main():
         print(f"   Viewer saved to    {viewer_path}")
     elif config.provenance == "graph":
         print("   ⚠️  Graph provenance not yet implemented (Phase E)")
+
+    if args.eval_phase:
+        if config.provenance not in ("file", "graph") or not claims:
+            logging.warning(
+                "Eval requires --provenance file. Skipping eval save."
+            )
+        else:
+            from eval.harness import compute_eval_result, save_eval_result
+            eval_quality_metrics = build_quality_metrics(claims)
+            duration_seconds = time.time() - start_time
+            eval_result = compute_eval_result(
+                topic=topic,
+                run_id=run_id,
+                report=report,
+                claims=claims,
+                quality_metrics=eval_quality_metrics,
+                search_count=orchestrator.search_count,
+                question_count=len(orchestrator._last_research_results),
+                duration_seconds=duration_seconds,
+                phase=args.eval_phase,
+            )
+            eval_path = save_eval_result(eval_result)
+            print(f"  📊 Eval result saved: {eval_path}")
 
     if config.knowledge_store != "none" and not args.no_knowledge_write:
         store = get_store()

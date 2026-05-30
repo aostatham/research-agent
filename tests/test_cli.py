@@ -1476,6 +1476,127 @@ def test_follow_up_and_resume_together_exit_with_error(tmp_path, monkeypatch):
     assert exc_info.value.code == 1
 
 
+# ── --eval-phase flag ─────────────────────────────────────────────────────────
+
+def test_eval_phase_flag_is_accepted_without_error(tmp_path, monkeypatch):
+    """--eval-phase PHASE is accepted and does not crash the pipeline."""
+    import json as _json
+    monkeypatch.chdir(tmp_path)
+    os.makedirs(tmp_path / "output", exist_ok=True)
+    prov_json_path = str(tmp_path / "output" / "nuclear_fusion.provenance.json")
+    with open(prov_json_path, "w") as _f:
+        _json.dump({"schema_version": "1.0", "claims": [], "quality_metrics": {}}, _f)
+
+    mock_orchestrator = MagicMock()
+    mock_synthesiser = MagicMock()
+    mock_orchestrator.run.return_value = ((SAMPLE_RESULTS, {}), "run-eval-001")
+    mock_orchestrator._last_research_results = []
+    mock_orchestrator.search_count = 5
+    mock_synthesiser.synthesise.return_value = SAMPLE_REPORT
+    fake_claims = [{"id": 1, "claim": "fusion works", "synthesis_status": "anchored",
+                    "confidence": 0.7, "verification_status": "verified"}]
+
+    with patch("sys.argv", ["main.py", "nuclear fusion",
+                            "--provenance", "file", "--eval-phase", "Phase E"]), \
+         patch("llm.builder.AnthropicClient"), \
+         patch("main.Orchestrator", return_value=mock_orchestrator), \
+         patch("main.Synthesiser", return_value=mock_synthesiser), \
+         patch("main.build_claims_from_results", return_value=fake_claims), \
+         patch("main.annotate_report_lines", return_value=(SAMPLE_REPORT, fake_claims)), \
+         patch("main.write_provenance_file", return_value=prov_json_path), \
+         patch("main.save_viewer", return_value="output/nuclear_fusion.viewer.html"), \
+         patch("main.build_quality_metrics", return_value={
+             "verified_claims": 1, "disputed_claims": 0,
+             "unverified_claims": 0, "confidence": 0.7}):
+        from main import main
+        main()
+
+
+def test_eval_phase_calls_save_eval_result_with_correct_phase(tmp_path, monkeypatch):
+    """When --eval-phase is set and provenance is active, save_eval_result is called with the phase."""
+    import json as _json
+    monkeypatch.chdir(tmp_path)
+    os.makedirs(tmp_path / "output", exist_ok=True)
+    prov_json_path = str(tmp_path / "output" / "nuclear_fusion.provenance.json")
+    with open(prov_json_path, "w") as _f:
+        _json.dump({"schema_version": "1.0", "claims": [], "quality_metrics": {}}, _f)
+
+    mock_orchestrator = MagicMock()
+    mock_synthesiser = MagicMock()
+    mock_orchestrator.run.return_value = ((SAMPLE_RESULTS, {}), "run-eval-001")
+    mock_orchestrator._last_research_results = []
+    mock_orchestrator.search_count = 5
+    mock_synthesiser.synthesise.return_value = SAMPLE_REPORT
+    fake_claims = [{"id": 1, "claim": "fusion works", "synthesis_status": "anchored",
+                    "confidence": 0.7, "verification_status": "verified"}]
+
+    with patch("sys.argv", ["main.py", "nuclear fusion",
+                            "--provenance", "file", "--eval-phase", "Phase E"]), \
+         patch("llm.builder.AnthropicClient"), \
+         patch("main.Orchestrator", return_value=mock_orchestrator), \
+         patch("main.Synthesiser", return_value=mock_synthesiser), \
+         patch("main.build_claims_from_results", return_value=fake_claims), \
+         patch("main.annotate_report_lines", return_value=(SAMPLE_REPORT, fake_claims)), \
+         patch("main.write_provenance_file", return_value=prov_json_path), \
+         patch("main.save_viewer", return_value="output/nuclear_fusion.viewer.html"), \
+         patch("main.build_quality_metrics", return_value={
+             "verified_claims": 1, "disputed_claims": 0,
+             "unverified_claims": 0, "confidence": 0.7}), \
+         patch("eval.harness.save_eval_result") as mock_save:
+        from main import main
+        main()
+
+    mock_save.assert_called_once()
+    saved_result = mock_save.call_args[0][0]
+    assert saved_result.phase == "Phase E"
+
+
+def test_eval_phase_skipped_when_provenance_none(tmp_path, monkeypatch, caplog):
+    """When --eval-phase is set but --provenance is none, a WARNING is logged and save is skipped."""
+    import logging as _logging
+    monkeypatch.chdir(tmp_path)
+
+    mock_orchestrator = MagicMock()
+    mock_synthesiser = MagicMock()
+    mock_orchestrator.run.return_value = ((SAMPLE_RESULTS, {}), "run-eval-002")
+    mock_orchestrator._last_research_results = []
+    mock_orchestrator.search_count = 0
+    mock_synthesiser.synthesise.return_value = SAMPLE_REPORT
+
+    with patch("sys.argv", ["main.py", "nuclear fusion", "--eval-phase", "Phase E"]), \
+         patch("llm.builder.AnthropicClient"), \
+         patch("main.Orchestrator", return_value=mock_orchestrator), \
+         patch("main.Synthesiser", return_value=mock_synthesiser), \
+         patch("eval.harness.save_eval_result") as mock_save, \
+         caplog.at_level(_logging.WARNING):
+        from main import main
+        main()
+
+    mock_save.assert_not_called()
+    assert any("Eval requires" in r.message for r in caplog.records)
+
+
+def test_eval_phase_not_set_save_not_called(tmp_path, monkeypatch):
+    """When --eval-phase is not set, save_eval_result is never called."""
+    monkeypatch.chdir(tmp_path)
+
+    mock_orchestrator = MagicMock()
+    mock_synthesiser = MagicMock()
+    mock_orchestrator.run.return_value = ((SAMPLE_RESULTS, {}), "run-no-eval")
+    mock_orchestrator._last_research_results = []
+    mock_synthesiser.synthesise.return_value = SAMPLE_REPORT
+
+    with patch("sys.argv", ["main.py", "nuclear fusion"]), \
+         patch("llm.builder.AnthropicClient"), \
+         patch("main.Orchestrator", return_value=mock_orchestrator), \
+         patch("main.Synthesiser", return_value=mock_synthesiser), \
+         patch("eval.harness.save_eval_result") as mock_save:
+        from main import main
+        main()
+
+    mock_save.assert_not_called()
+
+
 # ── Integration tests ─────────────────────────────────────────────────────────
 
 @pytest.mark.integration
