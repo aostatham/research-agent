@@ -23,9 +23,9 @@ a clean table.
 
 ## Current State (updated at phase boundaries)
 
-Open: 0 High, 0 Medium, 1 Low
+Open: 0 High, 1 Medium (I048), 1 Low (I047)
 Deferred: 0 High, 2 Medium (I003, I004), 0 Low
-Last updated: HTML provenance viewer phase
+Last updated: Phase E complete
 
 Status values: Open | Deferred | Closed
 Fixed In: blank for Open, target phase for Deferred, pass name for Closed.
@@ -85,3 +85,5 @@ grep examples:
 | I046 | Low | CLAUDE.md | Pass 3 IN PROGRESS marker stale by three passes | Pass 6 QA | Closed | Pass 6 final |
 | I047 | Low | src/llm/anthropic_client.py, src/agent/tools.py | Anthropic and Tavily SDK imports are eager — non-Anthropic runs require all provider packages installed | Raised in review | Open | |
 | I048 | Medium | knowledge/store.py | CONTRADICTS edges never created — check_contradiction always returns no_contradiction; resolved_contradicted branch unreachable | Phase E QA Pass 2 | Open | |
+| I049 | Medium | agent/analyst.py, prompts/tasks/analyst.md | Analyst silently exited on tool_call — prompt encouraged tool use but no tool loop existed | Phase E QA Pass 4 | Closed | Pass 4 |
+| I050 | Medium | agent/tools.py, agent/builder.py | Tool descriptors shared mutable references across agents — shallow immutability on frozen Agent | Phase E QA Pass 4 | Closed | Pass 4 |

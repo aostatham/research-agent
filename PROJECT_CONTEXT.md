@@ -387,7 +387,8 @@ Layer 3 hardcoded list in `classify_source_type()`:
 - Phase C — Evidence layer (pending: output mode renderers)
 - Phase D Part 1 — Parallel asyncio workers
 - Phase D Part 2 — Multi-agent architecture (701 tests, all QA passes complete)
-- Phase E — Knowledge Store and Persistence (LARGELY COMPLETE, I047/I048 open)
+- Phase E — Knowledge store (Kuzu), Graph Verifier, Analyst
+    Agent, RunState resume, follow-up mode (718 tests at QA close)
 - Phase G.1 (mixed provider)
 
 ### Phase E — what was built
@@ -402,16 +403,18 @@ Layer 3 hardcoded list in `classify_source_type()`:
 - QA Pass 1 (Batch 1 + 2) — 12 fixes across H/M/L categories
 - Open: I047 (lazy imports), I048 (CONTRADICTS edges deferred)
 
-### Priority order (post Phase E QA)
-
-1. Phase C remaining output mode renderers (parallel, low risk)
-2. Phase F partial — read_url, arxiv_search
-3. Packaging — Dockerfile, pipx
-4. Phase F remaining — SearXNG, pdf_reader, youtube_transcript, browser
-5. Phase G remaining — provider optimisation
-6. Phase H — observability (formalise hooks)
-7. Phase I — REST API, webhooks
-8. Web UI — full interface (after Phase E)
+### Current priority order
+1. Eval harness — three reference topics, run after each phase,
+   compare outputs (report length, source count, claim count,
+   match rate, confidence distribution)
+2. Phase C remaining — output mode renderers (formatter.py only,
+   low risk; dashboard needs design check first)
+3. Phase F partial — read_url, arxiv_search tools
+4. Packaging — Dockerfile, pipx
+5. report_line match rate optimisation (deferred, M007)
+6. Confidence scoring calibration (86% flat at 0.5, unresolved)
+7. Web UI — full interface (after Phase E stable)
+8. Phase F remaining, Phase G remaining, Phase H, Phase I
 
 User story drives prioritisation: Primary B (analyst) → report_line quality.
 Secondary A (journalist) → disputed claims display.
@@ -465,9 +468,7 @@ See ISSUES.md for the full issues log.
 grep "| Open |" ISSUES.md to list current open items.
 
 Currently open:
-  I047 (Low)    — eager SDK imports in anthropic_client.py and tools.py
-  I048 (Medium) — CONTRADICTS edges never created; check_contradiction always
-                  returns no_contradiction; resolved_contradicted branch unreachable.
-                  Graph Verifier will populate CONTRADICTS via tool calls
-                  in a future phase.
+  I047 (Low) — eager SDK imports
+  I048 (Medium) — CONTRADICTS edges never created;
+    contradiction detection deferred to a future phase
 Deferred to Phase I: I003 (search globals), I004 (run() footgun)

@@ -68,7 +68,7 @@ Run the agent:
 
 ## Test baseline
 
-701 unit tests must pass before every commit.
+718 unit tests must pass before every commit.
 Always run: pytest tests/ -m "not integration" -v
 Never commit with a failing test.
 
@@ -246,40 +246,36 @@ Phase D — Parallel Research Architecture: COMPLETE
             verifier robustness
           Phase D Part 2 COMPLETE — see ISSUES.md for full log
 
-Phase E — Knowledge Store and Persistence: LARGELY COMPLETE
-  Pre-requisites complete: RunState, observability hooks,
-    decompose prompt in prompts/tasks/, schema_version field
-  Key decisions: D024-D044
-  Component 1 COMPLETE — KuzuStore, configure_knowledge(), kg_ tool family
-  Component 2 COMPLETE — write_run() integration in main.py
-  Component 3 COMPLETE — Graph Verifier agent (graph_verify(), prompts/graph_verifier.md)
-                          Graph Verifier runs in main.py after build_claims_from_results()
-                          so rr.claims is populated at call time
-  Component 4 COMPLETE — Stage-skipping resume (D035) + follow-up mode (D038)
-  Component 5 COMPLETE — Analyst Agent (analyse(), prompts/tasks/analyst.md, D043-D044)
-  QA Pass 1 COMPLETE — 9 fixes (H1-H5, M1-M5, L1-L5 labels across two batches)
-  QA Pass 2 COMPLETE — 12 fixes (H1-H3, M1-M5, L1-L5 labels, second batch)
-  Open: I047 (Low), I048 (Medium) — see ISSUES.md
-  Test baseline: 701 unit tests
+Phase E — Knowledge Store and Persistence: COMPLETE (718 tests)
+
+  All six components complete. QA passes 1-4 complete.
+  Key fixes across QA passes:
+    - check_contradiction uses claim_text substring matching
+    - _merge_run preserves prior run started_at
+    - graph_verify refactored to accept flat claims list
+    - tool_descriptors cached and deep-copied on Agent
+    - Analyst operates on local provenance only (no tools)
+    - CONTRADICTS edge creation deferred (I048 open)
+  See ISSUES.md for full QA history.
+
+Next — do not begin without explicit instruction:
+  Eval harness — three reference topics, measure after each phase
+  Phase C remaining output mode renderers (parallel workstream)
+  Phase F partial — read_url, arxiv_search tools
 
 ## Open issues and known gaps
 
 See ISSUES.md for the full issues log including all QA findings and
 their status. grep "| Open |" ISSUES.md to list current open items.
 
-Open:
-  I047 (Low)    — src/llm/anthropic_client.py, src/agent/tools.py: eager SDK imports
-  I048 (Medium) — knowledge/store.py: CONTRADICTS edges never created;
-                  check_contradiction always returns no_contradiction;
-                  resolved_contradicted branch unreachable
+Currently open:
+  I047 (Low) — src/llm/anthropic_client.py: eager SDK imports
+  I048 (Medium) — knowledge/store.py: CONTRADICTS edges never
+    created; contradiction detection deferred to future phase
 
 Deferred to Phase I:
-  I003 — agent/tools.py: module-level search globals block FastAPI
-  I004 — agent/orchestrator.py: run() footgun in async contexts
-
-Next — do not begin without explicit instruction:
-  Phase C remaining output mode renderers (parallel workstream)
-  Phase F partial — read_url, arxiv_search tools
+  I003 — agent/tools.py: module-level search globals
+  I004 — agent/orchestrator.py: run() footgun
 
 
 ## Agent architecture (Phase D Part 2 — COMPLETE)
@@ -301,8 +297,8 @@ AgentPool dataclass (frozen=True):
   editor: Agent               # configurable model (defaults to synthesis model), no tools
   graph_verifier: Agent|None  # synth_llm, kg_ tools; None when knowledge_store="none"
                               # Runs in main.py after build_claims_from_results(), not in orchestrator
-  analyst: Agent|None         # synth_llm, kg_query_claims_for_topic only; None when knowledge_store="none"
-                              # kg_write_claim removed until validated end-to-end
+  analyst: Agent|None         # synth_llm, no tools; operates on local provenance only
+                              # None when knowledge_store="none"
   # Planner deferred to Phase E (D015)
 
 ResearchResult dataclass (src/evidence/schema.py):
@@ -323,7 +319,7 @@ Phase A  Stability and quality                    COMPLETE
 Phase B  Output options (markdown/HTML/PDF)       COMPLETE
 Phase C  Evidence layer and output modes          LARGELY COMPLETE
 Phase D  Parallel research + multi-agent          COMPLETE
-Phase E  Memory and persistent knowledge          LARGELY COMPLETE (I047, I048 open)
+Phase E  Memory and persistent knowledge          COMPLETE
 Phase F  Tools and sources (read_url priority)    PENDING
 PKG      Packaging (Docker/pipx)                  PENDING
 UI       Comprehensive web UI                     PENDING
