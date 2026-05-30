@@ -154,6 +154,22 @@ sanitisation via bleach correctly strips disallowed tags from the rendered HTML 
 corrupting markdown-formatted content.
 **Date:** Phase D Part 2 QA Pass 3
 
+### O008 — Output mode renderers: Phase C completion
+**Decision:** Four output mode renderers implemented in Phase C:
+raw (prose only — strips metadata block and References), bibliography
+(sources deduplicated by URL, grouped by type, sorted government first),
+academic (title/abstract extracted from Executive Summary, ## headings
+numbered sequentially, References reformatted as [N] list),
+report-evidence (inline [conf:N|status] markers appended to claim lines).
+Dashboard and matrix deferred pending design decision on whether they
+require structured synthesis output or can be built from the provenance
+file alone.
+**Rationale:** The four implemented modes are formatter.py-only transforms
+that do not touch the synthesis pipeline and have no external dependencies.
+Dashboard and matrix may require upstream changes and need a design
+decision before implementation.
+**Date:** Phase C completion
+
 ---
 
 ## Knowledge & Persistence

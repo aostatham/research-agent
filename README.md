@@ -216,10 +216,16 @@ optional arguments:
   --max-tokens-synthesis N                  Max tokens for synthesis (default: 8192)
   -s, --short                               Executive summary only
   -f, --format {markdown,html,pdf}          Output format (default: markdown)
-  --output-mode {report,report-evidence,    Output rendering mode
-                 data,dashboard,slides,
-                 matrix,academic,
-                 bibliography,raw}
+  --output-mode MODE                        Output rendering mode
+      report            Default structured report
+      report-evidence   Report with inline confidence and verification markers
+      academic          Academic format with abstract and numbered sections
+      bibliography      Bibliography of all sources grouped by type
+      raw               Prose only — no metadata table or references
+      data              Structured JSON (pending)
+      dashboard         Quality metrics dashboard (pending)
+      slides            Presentation outline (pending)
+      matrix            Claims vs sources matrix (pending)
   --provenance {none,file,graph}            Provenance output (default: none)
   --config PATH                             Custom config file path
 ```
@@ -509,7 +515,7 @@ Note: `--eval-phase` requires `--provenance file` to be active.
 - **Phase D QA Pass 3** — correctness and robustness fixes from Adversarial QA
 
 ### Next
-- **Phase C remaining** — Output mode renderers (dashboard, matrix, academic, bibliography, raw)
+- **Phase C remaining** — Output mode renderers (dashboard, matrix pending; raw, bibliography, academic, report-evidence complete)
 - **Phase F partial** — read_url, arxiv_search tools
 - **Packaging** — Dockerfile, pipx, preset configs
 - **Phase E** — Knowledge store (Kuzu), persistence, follow-up mode
