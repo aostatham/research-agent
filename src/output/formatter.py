@@ -460,3 +460,72 @@ def render_academic(report: str, topic: str, metadata: str) -> str:
         body.strip(),
     ]
     return "\n".join(parts)
+
+
+_EVIDENCE_STATUS_MARKERS = {
+    "verified": "✓",
+    "unverified": "?",
+    "disputed": "⚠",
+}
+
+
+def render_report_evidence(report: str, claims: list) -> str:
+    """Append inline confidence and verification markers to claim lines in the report.
+
+    For each claim that has a non-null ``report_line`` and ``confidence``,
+    appends a marker of the form ``[conf:0.72|✓]`` at the end of the
+    corresponding line (1-based).  Multiple claims on the same line are
+    appended in ascending claim id order.
+
+    Status markers:
+      verified   → ✓
+      unverified → ?
+      disputed   → ⚠
+
+    Args:
+        report: Report body string to annotate.
+        claims: List of EvidenceClaim dicts.  When empty, the original report
+                is returned unchanged and a WARNING is logged.
+
+    Returns:
+        Report string with inline evidence markers, or the original report if
+        claims is empty.
+    """
+    import logging
+
+    if not claims:
+        logging.warning(
+            "render_report_evidence: no claims provided — "
+            "falling back to standard report (requires --provenance file)"
+        )
+        return report
+
+    # Group eligible claims by report_line, sorted by claim id.
+    by_line: dict = {}
+    for claim in claims:
+        line_num = claim.get("report_line")
+        if line_num is None:
+            continue
+        if claim.get("confidence") is None:
+            continue
+        by_line.setdefault(line_num, []).append(claim)
+
+    for line_num in by_line:
+        by_line[line_num].sort(key=lambda c: c.get("id", 0))
+
+    result = []
+    for i, line in enumerate(report.split("\n")):
+        line_num = i + 1
+        if line_num in by_line:
+            markers = ""
+            for claim in by_line[line_num]:
+                conf = claim["confidence"]
+                status = _EVIDENCE_STATUS_MARKERS.get(
+                    claim.get("verification_status", "unverified"), "?"
+                )
+                markers += f" [conf:{conf:.2f}|{status}]"
+            result.append(line + markers)
+        else:
+            result.append(line)
+
+    return "\n".join(result)

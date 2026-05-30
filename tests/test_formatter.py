@@ -19,6 +19,7 @@ from output.formatter import (
     render_raw,
     render_bibliography,
     render_academic,
+    render_report_evidence,
 )
 
 
@@ -398,3 +399,72 @@ def test_render_academic_preserves_all_original_content():
     assert "Introduction content." in result
     assert "Finding content." in result
     assert "Source One." in result
+
+
+# ── render_report_evidence() ──────────────────────────────────────────────────
+
+def _make_claim(id_, report_line, confidence, status):
+    return {"id": id_, "report_line": report_line, "confidence": confidence,
+            "verification_status": status}
+
+
+def test_render_report_evidence_appends_marker_to_correct_line():
+    """render_report_evidence() places the marker on the line matching report_line."""
+    report = "Line one.\nLine two.\nLine three."
+    claims = [_make_claim(1, 2, 0.85, "verified")]
+    result = render_report_evidence(report, claims)
+    lines = result.split("\n")
+    assert "[conf:0.85|✓]" in lines[1]   # line 2 is index 1
+    assert "[conf:" not in lines[0]
+    assert "[conf:" not in lines[2]
+
+
+def test_render_report_evidence_uses_correct_status_markers():
+    """render_report_evidence() maps verified→✓, unverified→?, disputed→⚠."""
+    report = "A\nB\nC"
+    claims = [
+        _make_claim(1, 1, 0.9, "verified"),
+        _make_claim(2, 2, 0.5, "unverified"),
+        _make_claim(3, 3, 0.3, "disputed"),
+    ]
+    result = render_report_evidence(report, claims)
+    lines = result.split("\n")
+    assert "✓" in lines[0]
+    assert "?" in lines[1]
+    assert "⚠" in lines[2]
+
+
+def test_render_report_evidence_handles_multiple_claims_same_line():
+    """render_report_evidence() appends all markers for a line in claim id order."""
+    report = "Content line."
+    claims = [
+        _make_claim(2, 1, 0.7, "unverified"),
+        _make_claim(1, 1, 0.9, "verified"),
+    ]
+    result = render_report_evidence(report, claims)
+    # id=1 comes first even though added second
+    verified_pos = result.index("✓")
+    unverified_pos = result.index("?")
+    assert verified_pos < unverified_pos
+
+
+def test_render_report_evidence_does_not_modify_lines_without_claims():
+    """render_report_evidence() leaves lines with no matching claims unchanged."""
+    report = "Annotated line.\nClean line.\nAnother annotated."
+    claims = [
+        _make_claim(1, 1, 0.8, "verified"),
+        _make_claim(2, 3, 0.6, "unverified"),
+    ]
+    result = render_report_evidence(report, claims)
+    lines = result.split("\n")
+    assert lines[1] == "Clean line."
+
+
+def test_render_report_evidence_empty_claims_returns_report_and_warns(caplog):
+    """render_report_evidence() returns report unchanged and logs WARNING when claims empty."""
+    import logging
+    report = "Some report content."
+    with caplog.at_level(logging.WARNING):
+        result = render_report_evidence(report, [])
+    assert result == report
+    assert any("falling back" in r.message for r in caplog.records)

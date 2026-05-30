@@ -390,6 +390,10 @@ def main():
         from output.formatter import render_academic
         report = render_academic(report, topic, metadata)
 
+    elif config.output_mode == "report-evidence":
+        from output.formatter import render_report_evidence
+        report = render_report_evidence(report, claims)
+
     output_path = save_report(
         topic=topic,
         metadata=metadata,
