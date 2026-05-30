@@ -583,24 +583,25 @@ should be distributed.
 ### D026 — Graph Verifier as second Verifier instance in Phase E
 **Decision:** Phase E adds a Graph Verifier — same Agent class as the
 web Verifier, different tool set (knowledge graph tools, no web
-search). Runs in main.py after build_claims_from_results() so rr.claims
-is populated. Order: graph verification first against existing knowledge
-graph; web Verifier runs only on claims the graph could not resolve.
-AgentPool gains one field.
+search). Runs in main.py after build_claims_from_results() so the flat
+claims list is available. AgentPool gains one field.
+**Pipeline order (web → graph):** Web Verifier runs per-ResearchResult
+inside the orchestrator's research loop. Graph Verifier runs afterwards
+in main.py on the flat claims list returned by build_claims_from_results().
+The graph Verifier can override a web-verified claim by setting
+verification_status="disputed" when it finds a contradiction — graph
+contradiction takes precedence over a prior web confirmation.
 **Implementation note:** Graph Verifier is NOT called from the orchestrator
-(rr.claims is empty at research time). It is called in main.py after
-claim extraction, before annotate_report_lines(). This is the correct
-call site — confirmed by QA Pass 2 (H2 finding).
+(the flat claims list does not exist at research time). It is called in
+main.py after claim extraction, before annotate_report_lines(). This is
+the correct call site — confirmed by QA Pass 2 (H2 finding).
 **Rationale:** Verification and analysis are different jobs — is this
-claim true vs what should the report say. Conflating graph
-verification in Analyst makes Analyst's scope vaguer. Two clean
-contracts are better than one vague one. Graph-first ordering reduces
-cost and uses the more reliable source first. Graph evidence is
-preferred when available because it carries verification provenance
-from prior runs; web evidence is the fallback when the graph has
-nothing to say. This is a reliability ordering, not a performance
-optimisation — future contributors must not parallelise the two
-verification passes.
+claim true vs what should the report say. Conflating graph verification
+in Analyst makes Analyst's scope vaguer. Web-first ordering runs cheap
+heuristic verification during the research phase; graph verification
+adds a cross-run consistency check afterwards using accumulated evidence.
+This is a reliability ordering, not a performance optimisation — future
+contributors must not parallelise the two verification passes.
 **Date:** Phase E pre-flight review
 
 ### D027 — Durable execution (RunState) as Phase E pre-requisite
@@ -769,17 +770,27 @@ from drifting into Synthesiser territory — it can only speak about
 claims that already exist.
 **Date:** Phase E design
 
-### D041 — Graph Verifier three-state handoff to web Verifier
+### D041 — Graph Verifier three-state result applied after web Verifier
 **Decision:** Graph Verifier returns per-claim result:
-resolved_confirmed, resolved_contradicted, or unresolved. Web
-Verifier runs on unresolved claims only. resolved_confirmed and
-resolved_contradicted claims do not go to the web Verifier.
+resolved_confirmed, resolved_contradicted, or unresolved.
 "Unresolved" covers: no graph evidence, timestamps suggest staleness
 (gap exceeds knowledge_staleness_threshold_days), or graph
 unavailable.
-**Rationale:** Concrete handoff boundary prevents ambiguity at
-implementation time and ensures the two Verifiers are not
-double-checking the same claims.
+**Actual pipeline order:** Web Verifier runs first on ResearchResults
+during the orchestrator loop. Graph Verifier runs second in main.py on
+the flat claims list from build_claims_from_results(). When graph_verify()
+returns resolved_contradicted for a claim that the web Verifier already
+marked verified, verification_status is overridden to "disputed" and
+confidence is decremented by 0.10. The graph's contradiction evidence
+takes precedence — a prior web confirmation does not block a graph override.
+resolved_confirmed graph results do not change verification_status (the
+web pass already set it or left it unverified; graph confirmation alone
+does not elevate to "verified").
+**Rationale:** Concrete result states prevent ambiguity at implementation
+time. Web-first ordering runs cheap heuristic verification during research;
+graph-second adds cross-run consistency. The override direction (graph
+wins on contradiction) reflects that graph evidence accumulates over
+multiple runs and is more reliable for detecting drift.
 **Date:** Phase E design
 Implemented in Phase E Component 3. graph_verify() in verifier.py handles the three-state result.
 
