@@ -1001,4 +1001,8 @@ are claimed but not verified. The same three topics used for the
 report_line match rate baseline (M007) provide historical continuity.
 JSON lines format is appendable, greppable, and requires no new
 dependency.
+**Phase E baseline (Anthropic, May 2026):**
+  nuclear fusion energy: 14 questions, 78 searches, 71,865 chars, 997s
+  electrosmith daisy seed: 16 questions, 57 searches, 37,450 chars, 496s
+  large language model training: 17 questions, 89 searches, 83,403 chars, 1,280s
 **Date:** Phase E completion
