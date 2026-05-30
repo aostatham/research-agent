@@ -629,6 +629,55 @@ def test_execute_tool_with_sources_kg_write_claim_old_claim_json_returns_rejecte
         store.close()
 
 
+def test_execute_tool_with_sources_kg_write_claim_json_string_parses_correctly(tmp_path):
+    """Dispatcher with claim_dict as a JSON string parses and routes to write_claim."""
+    import json
+    from agent.tools import execute_tool_with_sources
+    from knowledge.store import KuzuStore
+    import knowledge.store as ks
+    store = KuzuStore(str(tmp_path / "test.db"))
+    orig = ks._store
+    ks._store = store
+    try:
+        valid_claim_json = json.dumps({
+            "claim": "The speed of light is approximately 3×10⁸ m/s.",
+            "confidence": 0.9,
+            "verification_status": "verified",
+            "sources": [{"url": "https://example.com", "title": "Physics ref"}],
+        })
+        result, sources = execute_tool_with_sources(
+            "kg_write_claim", {"claim_dict": valid_claim_json}
+        )
+        parsed = json.loads(result)
+        assert parsed["status"] == "written"
+        assert sources == []
+    finally:
+        ks._store = orig
+        store.close()
+
+
+def test_execute_tool_with_sources_kg_write_claim_invalid_json_string_returns_rejected(tmp_path):
+    """Dispatcher with claim_dict as an unparseable JSON string returns rejected."""
+    import json
+    from agent.tools import execute_tool_with_sources
+    from knowledge.store import KuzuStore
+    import knowledge.store as ks
+    store = KuzuStore(str(tmp_path / "test.db"))
+    orig = ks._store
+    ks._store = store
+    try:
+        result, sources = execute_tool_with_sources(
+            "kg_write_claim", {"claim_dict": "not valid json {{{"}
+        )
+        parsed = json.loads(result)
+        assert parsed["status"] == "rejected"
+        assert "parsed" in parsed["reason"]
+        assert sources == []
+    finally:
+        ks._store = orig
+        store.close()
+
+
 def test_kg_calls_do_not_increment_search_count():
     """kg_ tool calls do not increment _search_call_count."""
     from agent import tools

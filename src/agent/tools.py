@@ -15,6 +15,7 @@ Tool definitions use a provider-agnostic format so each LLM client can
 translate them to its own schema (Anthropic input_schema vs OpenAI function).
 """
 
+import json
 import logging
 import os
 import anthropic
@@ -299,7 +300,17 @@ def execute_tool_with_sources(tool_name: str, tool_input: dict) -> tuple[str, li
         )
         return result, []
     if tool_name == "kg_write_claim":
-        result = kg_write_claim(tool_input.get("claim_dict", {}))
+        claim_input = tool_input.get("claim_dict", {})
+        if isinstance(claim_input, str):
+            try:
+                claim_input = json.loads(claim_input)
+            except (json.JSONDecodeError, ValueError):
+                return ('{"status":"rejected",'
+                        '"reason":"claim_dict could not be parsed as JSON"}', [])
+        if not isinstance(claim_input, dict):
+            return ('{"status":"rejected",'
+                    '"reason":"claim_dict must be an object"}', [])
+        result = kg_write_claim(claim_input)
         return result, []
     raise ValueError(f"Unknown tool: {tool_name}")
 

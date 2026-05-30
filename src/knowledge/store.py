@@ -248,6 +248,9 @@ class KuzuStore:
             {"status": "error", "reason": "..."} on unexpected error.
             Never raises.
         """
+        if not isinstance(claim, dict):
+            return json.dumps({"status": "rejected",
+                               "reason": f"claim must be a dict, got {type(claim).__name__}"})
         if not self._available:
             return json.dumps({"status": "error",
                                "reason": "knowledge graph unavailable"})

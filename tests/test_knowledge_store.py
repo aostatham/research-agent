@@ -293,6 +293,13 @@ def test_write_claim_returns_rejected_for_invalid_claim(store):
     assert "reason" in result
 
 
+def test_write_claim_returns_rejected_for_string_input(store):
+    """write_claim returns rejected JSON when a string is passed instead of a dict."""
+    result = json.loads(store.write_claim("not a dict"))
+    assert result["status"] == "rejected"
+    assert "dict" in result["reason"]
+
+
 def test_write_claim_returns_written_for_valid_claim(store):
     """write_claim returns written JSON with claim_id for a valid claim."""
     claim = {
