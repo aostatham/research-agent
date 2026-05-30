@@ -261,3 +261,19 @@ def test_build_analyst_returns_agent_with_empty_tool_descriptors(tmp_path):
     agent = build_analyst(make_config(), make_mock_llm(),
                           prompt_dir=_make_prompt_dir(tmp_path))
     assert agent.tool_descriptors == ()
+
+
+def test_build_agent_tool_descriptors_are_deep_copies(tmp_path):
+    """Each Agent gets independent copies of descriptor dicts — mutating one does not affect another."""
+    from agent.tools import WEB_SEARCH_TOOL
+    (tmp_path / "agent_a.md").write_text("prompt a")
+    (tmp_path / "agent_b.md").write_text("prompt b")
+    agent_a = build_agent("agent_a", "role", "desc", make_mock_llm(), tmp_path,
+                          tools=("web_search",))
+    agent_b = build_agent("agent_b", "role", "desc", make_mock_llm(), tmp_path,
+                          tools=("web_search",))
+    # Mutate agent_a's descriptor copy
+    agent_a.tool_descriptors[0]["injected"] = True
+    # agent_b and the module constant must be unaffected
+    assert "injected" not in agent_b.tool_descriptors[0]
+    assert "injected" not in WEB_SEARCH_TOOL

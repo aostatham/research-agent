@@ -613,6 +613,23 @@ def test_graph_verify_disputed_count_correct():
     assert result[1]["verification_status"] == "unverified"
 
 
+def test_graph_verify_matches_claim_when_llm_returns_string_claim_id():
+    """graph_verify() matches a claim correctly when the LLM returns claim_id as a string."""
+    from agent.verifier import graph_verify
+    from llm.base import LLMResponse
+
+    # claim_id returned as string "1" instead of integer 1
+    gv_response = json.dumps([
+        {"claim_id": "1", "result": "resolved_contradicted", "reason": "Contradiction found."},
+    ])
+    agent = _make_gv_agent(LLMResponse(type="text", content=gv_response))
+    claims = _make_claims("Claim text.")  # id=1 as int
+
+    result = graph_verify(agent, claims, "topic")
+
+    assert result[0]["verification_status"] == "disputed"
+
+
 # ── Orchestrator verifier integration ────────────────────────────────────────
 
 def test_research_question_async_calls_verifier_unconditionally():

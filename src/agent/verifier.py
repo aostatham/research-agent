@@ -4,7 +4,9 @@ Verification loop for the Verifier Agent and Graph Verifier Agent.
 Public API:
   verify()                    — web Verifier Agent on a ResearchResult (D010)
   graph_verify()              — Graph Verifier Agent: checks claims against
-                                knowledge graph before web verification (D041)
+                                knowledge graph after web verification, on the
+                                flat claims list from build_claims_from_results()
+                                (D041)
   _extract_suspicious_claims() — heuristic claim selector (testable)
 """
 
@@ -332,6 +334,10 @@ def graph_verify(
     phase implements Graph Verifier edge proposal. The resolved_contradicted
     branch is currently unreachable. See I048 in ISSUES.md.
 
+    resolved_confirmed results are informational only in this phase — no
+    confidence boost is applied. Confidence boost on graph corroboration is
+    deferred to a future phase.
+
     For each claim returned as resolved_contradicted by the graph verifier:
       - claim["verification_status"] is set to "disputed"
       - claim["confidence"] is decreased by 0.10 (floor 0.0)
@@ -409,7 +415,7 @@ def graph_verify(
                             continue
                         cid = gv.get("claim_id")
                         for claim in claims:
-                            if claim.get("id") == cid:
+                            if str(claim.get("id")) == str(cid):
                                 prior = claim.get("verification_status", "unverified")
                                 if prior == "verified":
                                     logging.info(

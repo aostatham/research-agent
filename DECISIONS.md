@@ -793,6 +793,8 @@ wins on contradiction) reflects that graph evidence accumulates over
 multiple runs and is more reliable for detecting drift.
 **Date:** Phase E design
 Implemented in Phase E Component 3. graph_verify() in verifier.py handles the three-state result.
+Note: resolved_confirmed produces no claim-level change in the current implementation.
+Confidence boost on graph corroboration is deferred.
 
 ### D042 — kg_write_claim validates before writing
 **Decision:** kg_write_claim rejects claims that are: empty text,

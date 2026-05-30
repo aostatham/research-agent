@@ -10,6 +10,7 @@ and stored immutably on each Agent instance.
 See DECISIONS.md D004, D011, D012 for design rationale.
 """
 
+import copy
 from pathlib import Path
 from typing import Optional, Union
 
@@ -52,8 +53,10 @@ def build_agent(
     if not path.exists():
         raise FileNotFoundError(f"System prompt not found: {path}")
     system_prompt = path.read_text(encoding="utf-8")
-    # Validate and cache descriptors at build time — raises ValueError on unknown names.
-    descriptors = tuple(build_tool_list(tools))
+    # Validate and deepcopy descriptors at build time — raises ValueError on unknown names.
+    # deepcopy ensures each Agent owns independent copies of the descriptor dicts;
+    # mutations to one agent's descriptors cannot affect another agent or module constants.
+    descriptors = tuple(copy.deepcopy(d) for d in build_tool_list(tools))
     return Agent(
         name=name,
         role=role,
@@ -169,7 +172,8 @@ def build_graph_verifier(
     Build the Graph Verifier agent.
 
     Loads prompts/graph_verifier.md. The Graph Verifier uses synth_llm and
-    has access to the three kg_ read tools. It is only built when the knowledge
+    has access to the two kg_ read tools (kg_check_contradiction,
+    kg_query_claims_for_topic). It is only built when the knowledge
     store is configured — callers must check before calling.
 
     Args:
@@ -188,7 +192,7 @@ def build_graph_verifier(
     return build_agent(
         name="graph_verifier",
         role="Graph Verifier — checks claims against knowledge graph",
-        description="Verifies claims against prior-run graph evidence before web verification",
+        description="Verifies claims against prior-run graph evidence after web verification, on the flat claims list",
         llm=synth_llm,
         prompt_dir=prompt_dir,
         tools=("kg_check_contradiction", "kg_query_claims_for_topic"),
