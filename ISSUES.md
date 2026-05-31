@@ -25,7 +25,7 @@ a clean table.
 
 Open: 0 High, 1 Medium (I048), 1 Low (I047)
 Deferred: 0 High, 2 Medium (I003, I004), 0 Low
-Last updated: Phase E complete
+Last updated: Phase F partial complete
 
 Status values: Open | Deferred | Closed
 Fixed In: blank for Open, target phase for Deferred, pass name for Closed.
@@ -84,6 +84,17 @@ grep examples:
 | I045 | Low | agent/tools.py | Anthropic/Tavily search count asymmetry undocumented | Pass 6 QA | Closed | Pass 6 final |
 | I046 | Low | CLAUDE.md | Pass 3 IN PROGRESS marker stale by three passes | Pass 6 QA | Closed | Pass 6 final |
 | I047 | Low | src/llm/anthropic_client.py, src/agent/tools.py | Anthropic and Tavily SDK imports are eager — non-Anthropic runs require all provider packages installed | Raised in review | Open | |
-| I048 | Medium | knowledge/store.py | CONTRADICTS edges never created — check_contradiction always returns no_contradiction; resolved_contradicted branch unreachable | Phase E QA Pass 2 | Open | |
+| I048 | Medium | knowledge/store.py | CONTRADICTS edges never created — check_contradiction always returns no_contradiction; resolved_contradicted branch unreachable until Graph Verifier edge proposal implemented | Phase E QA Pass 2 | Open | |
 | I049 | Medium | agent/analyst.py, prompts/tasks/analyst.md | Analyst silently exited on tool_call — prompt encouraged tool use but no tool loop existed | Phase E QA Pass 4 | Closed | Pass 4 |
 | I050 | Medium | agent/tools.py, agent/builder.py | Tool descriptors shared mutable references across agents — shallow immutability on frozen Agent | Phase E QA Pass 4 | Closed | Pass 4 |
+| I051 | High | knowledge/store.py:190-196 | write_run(prior_run_id=...) overwrote prior run started_at with empty string via ON MATCH SET | Phase E QA Pass 2 | Closed | Pass 3 |
+| I052 | High | agent/orchestrator.py, agent/verifier.py, main.py | Graph Verifier was complete no-op — rr.claims always empty at call site; extraction happens in main.py after orchestrator returns | Phase E QA Pass 2 | Closed | Pass 3 |
+| I053 | High | agent/tools.py | kg_write_claim descriptor declared claim_json; dispatcher read claim_dict — Analyst tool fully broken | Phase E QA Pass 2 | Closed | Pass 3 |
+| I054 | High | knowledge/store.py | check_contradiction ignored claim_text parameter — any topic with one CONTRADICTS edge poisoned every future claim | Phase E QA Pass 1 | Closed | Pass 1 |
+| I055 | High | knowledge/store.py | CONTRADICTS edges created on same-topic + opposite-status heuristic — not actual semantic contradictions | Phase E QA Pass 1 | Closed | Pass 1 |
+| I056 | High | agent/builder.py, agent/researcher.py, agent/verifier.py | Researcher and Verifier never received kg_ tools — Agent.tools field unused; hardcoded ALL_TOOLS used instead | Phase E QA Pass 1 | Closed | Pass 1 |
+| I057 | High | main.py | Knowledge graph received no claims when provenance=none — claim extraction gated on provenance flag only | Phase E QA Pass 1 | Closed | Pass 1 |
+| I058 | High | agent/orchestrator.py, main.py, knowledge/store.py | PRECEDED_BY Topic edges never created — brief promise unimplemented; get_related_topics always returned empty | Phase E QA Pass 1 | Closed | Pass 1 |
+| I059 | High | agent/tools.py | _fetch_url dead code + connection leak — raise_for_status() added before manual status check | Phase F QA Pass 1 | Closed | Pass 2 |
+| I060 | Medium | agent/tools.py | Content-Type check over-rejected HTML pages with missing header | Phase F QA Pass 1 | Closed | Pass 2 |
+| I061 | Medium | agent/tools.py | response.raw.read() leaked connection on mid-stream failure — no try/finally | Phase F QA Pass 2 | Closed | Pass 3 |

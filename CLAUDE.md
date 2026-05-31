@@ -94,7 +94,7 @@ Compare two phases across all reference topics:
 
 ## Test baseline
 
-718 unit tests must pass before every commit.
+804 unit tests must pass before every commit.
 Always run: pytest tests/ -m "not integration" -v
 Never commit with a failing test.
 
@@ -272,7 +272,7 @@ Phase D — Parallel Research Architecture: COMPLETE
             verifier robustness
           Phase D Part 2 COMPLETE — see ISSUES.md for full log
 
-Phase E — Knowledge Store and Persistence: COMPLETE (718 tests)
+Phase E — Knowledge Store and Persistence: COMPLETE (718 tests at QA close)
 
   All six components complete. QA passes 1-4 complete.
   Key fixes across QA passes:
@@ -284,18 +284,20 @@ Phase E — Knowledge Store and Persistence: COMPLETE (718 tests)
     - CONTRADICTS edge creation deferred (I048 open)
   See ISSUES.md for full QA history.
 
-Phase F partial — read_url, arxiv_search tools: COMPLETE (792 tests)
-
-  Step 1  COMPLETE — dependencies (trafilatura, requests) + Config fields
-  Step 2  COMPLETE — read_url tool (trafilatura extraction, robots.txt check)
-  Step 3  COMPLETE — arxiv_search tool (arXiv Atom API, structured output)
-  Step 4  COMPLETE — arXiv ID deduplication in provenance.py
-  Step 5  COMPLETE — prompts, DECISIONS.md (D045, D046), CLAUDE.md, README.md
+Phase F partial — Core Tools: COMPLETE (804 tests)
+  read_url: trafilatura extraction, structured JSON output,
+    robots.txt check, Content-Type guard, streaming with
+    byte limit, try/finally connection close (D045)
+  arxiv_search: arXiv Atom API, arxiv_id + categories,
+    relevance sort, no key required (D046)
+  Source deduplication extended to arXiv ID (provenance.py)
+  QA passes 1-3 complete
 
 Next — do not begin without explicit instruction:
-  Eval harness — three reference topics, measure after each phase
-  Phase C remaining output mode renderers (parallel workstream)
-  Remaining Phase F items (citation extraction, source ranking)
+  Phase C remaining — dashboard and matrix output modes
+    (design check needed before implementation)
+  Packaging — Dockerfile, pipx
+  report_line match rate optimisation (deferred M007)
 
 ## Open issues and known gaps
 
@@ -354,7 +356,7 @@ Phase B  Output options (markdown/HTML/PDF)       COMPLETE
 Phase C  Evidence layer and output modes          LARGELY COMPLETE
 Phase D  Parallel research + multi-agent          COMPLETE
 Phase E  Memory and persistent knowledge          COMPLETE
-Phase F  Tools and sources (read_url priority)    PARTIAL (read_url + arxiv_search done)
+Phase F  Core Tools (read_url, arxiv_search)       COMPLETE
 PKG      Packaging (Docker/pipx)                  PENDING
 UI       Comprehensive web UI                     PENDING
 Phase G  Provider optimisation                    PARTIAL

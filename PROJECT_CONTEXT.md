@@ -389,6 +389,8 @@ Layer 3 hardcoded list in `classify_source_type()`:
 - Phase D Part 2 — Multi-agent architecture (701 tests, all QA passes complete)
 - Phase E — Knowledge store (Kuzu), Graph Verifier, Analyst
     Agent, RunState resume, follow-up mode (718 tests at QA close)
+- Phase F partial — read_url, arxiv_search tools (804 tests
+    at QA close)
 - Phase G.1 (mixed provider)
 
 ### Phase E — what was built
@@ -404,17 +406,13 @@ Layer 3 hardcoded list in `classify_source_type()`:
 - Open: I047 (lazy imports), I048 (CONTRADICTS edges deferred)
 
 ### Current priority order
-1. Eval harness — three reference topics, run after each phase,
-   compare outputs (report length, source count, claim count,
-   match rate, confidence distribution)
-2. Phase C remaining — output mode renderers (formatter.py only,
-   low risk; dashboard needs design check first)
-3. Phase F partial — read_url, arxiv_search tools
-4. Packaging — Dockerfile, pipx
-5. report_line match rate optimisation (deferred, M007)
-6. Confidence scoring calibration (86% flat at 0.5, unresolved)
-7. Web UI — full interface (after Phase E stable)
-8. Phase F remaining, Phase G remaining, Phase H, Phase I
+1. Phase C remaining — dashboard and matrix output modes
+   (design check needed before implementation)
+2. Packaging — Dockerfile, pipx
+3. report_line match rate optimisation (deferred M007)
+4. Confidence scoring calibration (86% flat at 0.5)
+5. Web UI — full interface (after Phase E stable)
+6. Phase F remaining, Phase G remaining, Phase H, Phase I
 
 User story drives prioritisation: Primary B (analyst) → report_line quality.
 Secondary A (journalist) → disputed claims display.
